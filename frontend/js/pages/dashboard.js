@@ -1,9 +1,16 @@
 // Dashboard agregado (US-080). Consome GET /api/dashboard, servido de cache.
 
+//: O painel da máquina tem relógio próprio. Guardar o último permite pará-lo
+//: quando a tela é redesenhada — senão cada visita empilha mais um relógio
+//: desenhando dentro de um container que já saiu do DOM.
+let maquinaAtual = null;
+
 import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
 import { icon } from '../lib/icons.js';
+import { machinePanel } from '../lib/machine-panel.js';
+import { powerToggle } from '../lib/power.js';
 import { emptyState, loading, pageHeader, showError, statCard, statusBadge } from '../lib/ui.js';
 
 function freshness(data, onReload) {
@@ -175,6 +182,54 @@ function portMap(portas, noAr) {
   ]);
 }
 
+/** Retomar o trabalho: fixados e recentes, com o botão de ligar na frente.
+ *
+ * O dashboard era só leitura. O gesto da manhã — "ligar o que vou usar hoje" —
+ * obrigava a sair daqui, ir a Projects e procurar o projeto na grade. Um painel
+ * de operação sem operação é um relatório.
+ *
+ * Só entram os que **não estão no ar**: quem já está rodando aparece em
+ * "Serviços ativos" logo acima, e repetir os dois lugares faria a tela dizer a
+ * mesma coisa duas vezes.
+ */
+function retomar(projetos, ativos, aoMudar) {
+  const noAr = new Set(ativos.map((s) => s.project_id));
+  const candidatos = projetos
+    .filter((p) => !noAr.has(p.id) && p.can_start && p.status !== 'MISSING')
+    .slice(0, 6);
+
+  if (!candidatos.length) {
+    return panelEmpty(
+      noAr.size
+        ? 'Tudo o que dá para ligar já está no ar.'
+        : 'Nenhum projeto com comando de subida conhecido.'
+    );
+  }
+
+  return el('div', { class: 'table-wrap' }, [
+    el('table', { class: 'table' }, [
+      el(
+        'tbody',
+        {},
+        candidatos.map((project) =>
+          el('tr', {}, [
+            el('td', {}, [
+              el('a', {
+                href: `#/projects/${encodeURIComponent(project.id)}`,
+                text: project.name,
+              }),
+            ]),
+            el('td', { class: 'field__hint', text: relativeTime(project.last_accessed_at) }),
+            el('td', { class: 'table__end' }, [
+              powerToggle(project, { on: false, onChanged: aoMudar }),
+            ]),
+          ])
+        )
+      ),
+    ]),
+  ]);
+}
+
 function recent(itens) {
   if (!itens.length) return panelEmpty('Nenhum projeto acessado ainda.');
 
@@ -199,7 +254,13 @@ export async function renderDashboard(container) {
 
   // O mapa de portas é opcional: ele enriquece a tela, mas uma falha nele não
   // pode derrubar o dashboard inteiro.
-  const [resultado, portas] = await Promise.allSettled([api.dashboard(), api.ports()]);
+  const [resultado, portas, lista] = await Promise.allSettled([
+    api.dashboard(),
+    api.ports(),
+    // A lista alimenta o bloco de retomar trabalho. Opcional como o mapa de
+    // portas: uma falha nela não pode derrubar o dashboard inteiro.
+    api.listProjects({ limit: 200 }),
+  ]);
 
   if (resultado.status === 'rejected') {
     showError(resultado.reason);
@@ -208,7 +269,14 @@ export async function renderDashboard(container) {
   }
 
   const data = resultado.value;
+
+  // O painel anterior continuaria com o relógio de pé, desenhando dentro de um
+  // container já descartado — cada visita ao dashboard empilharia mais um.
+  maquinaAtual?.parar();
+  const maquina = machinePanel();
+  maquinaAtual = maquina;
   const mapaDePortas = portas.status === 'fulfilled' ? portas.value.items : [];
+  const projetos = lista.status === 'fulfilled' ? lista.value.items : [];
 
   // Quais dessas portas estão de fato atendendo agora. Vem da mesma resposta,
   // do lado observado — nenhuma chamada a mais.
@@ -279,10 +347,22 @@ export async function renderDashboard(container) {
           })
         : null,
       panel({
-        title: 'Acessados recentemente',
+        title: 'Retomar trabalho',
         action: el('a', { class: 'panel__action', href: '#/projects', text: 'Ver todos' }),
-        body: recent(data.recent_projects),
+        body: retomar(projetos, data.active_services, () =>
+          // Ligar muda o estado de tudo o que esta tela mostra; a espera curta
+          // deixa o verificador alcançar antes de redesenhar.
+          window.setTimeout(() => renderDashboard(container), 2000)
+        ),
       }),
-    ])
+    ]),
+
+    // A máquina vem por último: é contexto, não o assunto. Quem abre o painel
+    // quer saber dos projetos primeiro, e do processador só quando algo está
+    // lento.
+    panel({
+      title: 'Máquina',
+      body: maquina.element,
+    })
   );
 }

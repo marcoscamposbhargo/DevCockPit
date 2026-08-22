@@ -15,7 +15,7 @@ from app.adapters.docker.adapter import DockerAdapter
 from app.adapters.git.adapter import GitAdapter
 from app.adapters.system.adapter import build_os_adapter
 from app.core.cache import TTLCache
-from app.core.config import RootsConfig, Settings
+from app.core.config import PROJECT_ROOT, RootsConfig, Settings
 from app.jobs.job_manager import JobManager
 from app.services.activity_service import ActivityService
 from app.services.dashboard_service import DashboardService
@@ -27,6 +27,7 @@ from app.services.environment_service import EnvironmentService
 from app.services.git_service import GitService
 from app.services.health_service import HealthService
 from app.services.manifest_service import ManifestService
+from app.services.metrics_service import MetricsService
 from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 from app.services.system_action_service import SystemActionService
@@ -214,3 +215,16 @@ def get_environment_service(request: Request) -> EnvironmentService:
         # como o Docker a entrega.
         discovery=request.app.state.port_discovery,
     )
+
+
+def get_metrics_service(request: Request) -> MetricsService:
+    """Instância única: o cache de temperatura e as amostras de processador só
+    fazem sentido acumulando entre requisições. Uma instância nova por chamada
+    devolveria 0% de CPU para sempre, porque `psutil` mede entre duas leituras.
+    """
+    if not hasattr(request.app.state, "metrics_service"):
+        request.app.state.metrics_service = MetricsService(
+            runner=request.app.state.command_runner,
+            project_root=PROJECT_ROOT,
+        )
+    return request.app.state.metrics_service

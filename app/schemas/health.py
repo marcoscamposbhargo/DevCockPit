@@ -231,3 +231,42 @@ class RunningServerOut(BaseModel):
 
 class RunningServerList(BaseModel):
     items: list[RunningServerOut] = Field(default_factory=list)
+
+
+# --- métricas da máquina ---
+
+
+class MachineMetricsOut(BaseModel):
+    cpu_percent: float
+    cpu_count: int
+    memory_percent: float
+    memory_used_gb: float
+    memory_total_gb: float
+    disk_percent: float
+    disk_free_gb: float
+    #: `None` quando a máquina não expõe zona térmica — o que vale para muito
+    #: desktop e para toda máquina virtual. A tela mostra "—", nunca zero:
+    #: "não sei" e "está frio" são coisas diferentes.
+    temperature_c: float | None = None
+
+
+class ServerMetricsOut(BaseModel):
+    """Consumo de um servidor de desenvolvimento, com o nome do projeto.
+
+    É o que o Gerenciador de Tarefas não sabe dizer: lá são dezoito `node.exe`
+    sem dono. Aqui cada árvore tem projeto, porque foi o painel que a subiu.
+    """
+
+    project_id: str
+    project_name: str
+    pid: int
+    #: Fração da máquina inteira, não soma por núcleo — é o que a barra na tela
+    #: representa.
+    cpu_percent: float
+    memory_mb: float
+    process_count: int
+
+
+class MetricsOut(BaseModel):
+    machine: MachineMetricsOut
+    servers: list[ServerMetricsOut] = Field(default_factory=list)

@@ -122,6 +122,7 @@ export const api = {
   // Todos os servidores no ar, de uma vez. Sem isto, saber o que está rodando
   // exige abrir projeto por projeto — e no fim do dia, lembrar quais foram.
   runningServers: () => request('GET', '/servers'),
+  systemMetrics: () => request('GET', '/system/metrics'),
   serverStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/server`),
   startServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/start`),
   stopServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/stop`),

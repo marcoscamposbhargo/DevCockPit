@@ -34,6 +34,7 @@ from app.api.routes import (
     health,
     jobs,
     manifest,
+    metrics,
     projects,
     services,
 )
@@ -144,6 +145,7 @@ def create_app(
     app.include_router(dev_server.router)
     app.include_router(dev_server.global_router)
     app.include_router(environment.router)
+    app.include_router(metrics.router)
 
     _register_error_handlers(app)
     _mount_frontend(app)

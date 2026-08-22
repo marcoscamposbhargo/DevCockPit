@@ -1,5 +1,6 @@
 import { api } from './lib/api.js';
 import { el, mount } from './lib/dom.js';
+import { invalidateTools } from './lib/actions.js';
 import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from './lib/theme.js';
 import { emptyState } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
@@ -71,6 +72,10 @@ async function refreshPinned() {
 async function refreshTools() {
   const indicator = document.getElementById('tools-indicator');
   try {
+    // Descarta o cache de disponibilidade junto: senão uma leitura feita com o
+    // servidor fora do ar (ou antes de instalar o `code`) manteria os botões
+    // desabilitados até a página ser recarregada.
+    invalidateTools();
     const health = await api.health();
     const marks = Object.entries(health.tools).map(([name, available]) =>
       el('span', {
@@ -134,6 +139,12 @@ wireSearch();
 window.addEventListener('devcockpit:projects-changed', refreshPinned);
 
 await refreshTools();
+
+// O PATH muda por fora (instalar o VS Code, subir o Docker Desktop) e a página
+// costuma ficar aberta o dia inteiro. Uma consulta por minuto é barata e evita
+// botão desabilitado por informação velha.
+window.setInterval(refreshTools, 60_000);
+
 await start(view, (match) => {
   highlightNav(match.name);
   refreshPinned();

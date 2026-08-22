@@ -8,16 +8,33 @@ import { api } from './api.js';
 import { el } from './dom.js';
 import { showError, toast } from './ui.js';
 
+const INDISPONIVEL = { git: false, docker: false, code: false };
+
 let toolsPromise = null;
 
+/** Disponibilidade das ferramentas, com cache **só do sucesso**.
+ *
+ * Guardar a falha era um bug de verdade: uma página aberta enquanto o servidor
+ * estava fora do ar cacheava "nenhuma ferramenta existe" para sempre, e todos
+ * os botões ficavam desabilitados até o usuário dar F5 — sem mensagem nenhuma,
+ * só o cursor de bloqueado.
+ */
 export function tools() {
   if (toolsPromise === null) {
     toolsPromise = api
       .health()
       .then((health) => health.tools)
-      .catch(() => ({ git: false, docker: false, code: false }));
+      .catch(() => {
+        toolsPromise = null;
+        return INDISPONIVEL;
+      });
   }
   return toolsPromise;
+}
+
+/** Descarta o cache: a próxima consulta pergunta ao servidor de novo. */
+export function invalidateTools() {
+  toolsPromise = null;
 }
 
 async function run(label, fn) {

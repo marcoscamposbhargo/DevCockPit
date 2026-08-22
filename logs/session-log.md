@@ -4,6 +4,56 @@ Registro cronológico do trabalho no projeto, para retomar contexto rapidamente.
 
 ---
 
+## Resumo executivo
+
+**O que é:** central local que inventaria os projetos de desenvolvimento da
+máquina e expõe Git, Docker, serviços e portas numa interface só, em
+`127.0.0.1:8765`.
+
+**Estado:** MVP completo em 2026-08-21. Fases 0 a 4, 131 pontos, 285 testes,
+cobertura 92%. Repositório próprio, commit inicial `fc464fe`.
+
+| Fase | Entrega | Testes |
+|------|---------|--------|
+| 0 | 14 docs, 8 ADRs, 44 histórias, modelo de segurança | — |
+| 1 | CRUD de projetos, CommandRunner, guards, frontend base | 74 |
+| 2 | Detecção de stack, Git somente leitura, varredura de diretório | 151 |
+| 3a | JobManager: saída incremental, timeout, kill de árvore | 190 |
+| 3b | Docker Compose: status, ações via job, logs | 242 |
+| 4 | Health check, poller, ações de SO, dashboard em 168 ms | 285 |
+
+**Decisão que organiza tudo:** a camada HTTP nunca conhece o sistema
+operacional, e o sistema operacional nunca é alcançado sem passar pelo
+`CommandRunner`. O cliente envia identificador de ação, nunca comando.
+
+### Os quatro bugs que valeram a pena
+
+Todos encontrados por teste, não por acaso:
+
+1. **Repositório pai vazando** (ADR-008) — `git rev-parse` sobe a árvore, e
+   como existe um repositório em `C:/Users/User`, os 36 projetos do Desktop
+   exibiriam a mesma branch e os mesmos milhares de arquivos sujos. Seria o
+   fim da confiança na ferramenta.
+2. **Teste subindo container de verdade** — o runner síncrono estava dublado,
+   mas jobs usam o assíncrono. O teste passava; os containers apareciam no
+   `docker ps` depois.
+3. **Truncamento que não truncava** — o corte da saída rodava só na primeira
+   ultrapassagem do limite. Um job com saída contínua comeria memória.
+4. **Poller quebrando em silêncio** — SQLite devolve datetime sem timezone;
+   o `TypeError` caía no `except` que protege o poller. Health check nunca
+   funcionaria, sem nenhum erro visível.
+
+### Onde retomar
+
+`PROJECT_STATUS.md` está em modo **EM USO**, com uma seção "Anotações de uso"
+no topo. O backlog agora vem do que incomodar no dia a dia.
+
+Pendente de verificação manual (abre janela na área de trabalho): botões
+VS Code, Pasta, Terminal e Abrir serviço; e o comportamento com o Docker
+Desktop desligado.
+
+---
+
 ## 2026-08-21 — Sessão 1: Fase 0 (Discovery, Specs e Docs)
 
 **Ponto de partida:** apenas o arquivo

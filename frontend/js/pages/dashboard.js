@@ -168,12 +168,17 @@ function portMap(portas, noAr) {
                   // listava as duas do mesmo jeito: uma coluna de números onde
                   // metade é intenção e metade é fato. O visitante tinha que ir
                   // à tela de Ports para saber qual era qual.
-                  noAr.has(item.port)
-                  ? el('span', { class: 'signal', dataset: { kind: 'on' }, title: noAr.get(item.port) }, [
+                  noAr.get(item.port)?.forte
+                  ? el('span', { class: 'signal', dataset: { kind: 'on' }, title: noAr.get(item.port).texto }, [
                       el('span', { class: 'signal__dot' }),
                       'no ar',
                     ])
-                  : null,
+                  : noAr.has(item.port)
+                    ? el('span', { class: 'signal', dataset: { kind: 'partial' }, title: noAr.get(item.port).texto }, [
+                        el('span', { class: 'signal__dot' }),
+                        'ocupada',
+                      ])
+                    : null,
             ]),
           ])
         )
@@ -280,12 +285,18 @@ export async function renderDashboard(container) {
 
   // Quais dessas portas estão de fato atendendo agora. Vem da mesma resposta,
   // do lado observado — nenhuma chamada a mais.
+  // Mesma distinção da tela de Ports: "no ar" exige prova de que o processo é
+  // deste projeto; sem prova, a marca diz só que a porta está ocupada.
   const portasNoAr = new Map(
     (portas.status === 'fulfilled' ? (portas.value.observed ?? []) : []).map((porta) => [
       porta.port,
-      porta.project_name
-        ? `${porta.process_name ?? 'processo'} de ${porta.project_name}`
-        : (porta.process_name ?? 'processo desconhecido'),
+      {
+        forte: Boolean(porta.strong_evidence),
+        texto: porta.strong_evidence
+          ? `${porta.process_name ?? 'processo'} de ${porta.project_name}`
+          : `Ocupada por ${porta.process_name ?? 'processo desconhecido'} — ` +
+            'o painel não consegue provar que é deste projeto.',
+      },
     ])
   );
 

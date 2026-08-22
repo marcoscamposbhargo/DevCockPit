@@ -78,6 +78,10 @@ class ObservedPortOut(BaseModel):
     #: Servidor de desenvolvimento largado — dentro de um root permitido e sem
     #: projeto que o reivindique. Só estes a tela oferece encerrar.
     orphan: bool = False
+    #: A atribuição é prova (`cwd`/`cmdline`) e não palpite (`container`, que
+    #: infere pelo número declarado). Só com prova a tela afirma "no ar"; com
+    #: palpite ela diz "ocupada por", que é verdade sem afirmar dono.
+    strong_evidence: bool = False
 
 
 class PortMismatch(BaseModel):

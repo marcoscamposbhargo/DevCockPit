@@ -282,12 +282,27 @@ function bindingRow(binding, { onEdit, noAr }) {
             ])
           : null,
         // Confirmação de que o número não é só declaração: alguém escuta ali.
-        noAr
-          ? el('span', { class: 'port-flag port-flag--live', title: noAr }, [
+        // Duas marcas, porque são duas afirmações diferentes.
+        //
+        // "no ar" diz **este serviço está de pé**, e isso exige prova: o
+        // processo roda dentro do diretório do projeto. "ocupada" diz só que
+        // alguém está na porta, sem afirmar quem.
+        //
+        // A distinção nasceu de um caso real: a 8000 estava com um container da
+        // PLATAFORMA, e o painel a atribuiu ao SmartDash porque só ele
+        // declarava 8000. A tela dizia "SmartDash Backend no ar" apontando para
+        // o servidor de outro projeto, com o do SmartDash morto.
+        noAr?.forte
+          ? el('span', { class: 'port-flag port-flag--live', title: noAr.texto }, [
               icon('plug', { size: 12 }),
               'no ar',
             ])
-          : null,
+          : noAr
+            ? el('span', { class: 'port-flag', title: noAr.texto }, [
+                icon('alert', { size: 12 }),
+                'ocupada',
+              ])
+            : null,
       ]),
     ]),
     el('td', {}, [
@@ -509,12 +524,21 @@ export async function renderPorts(container) {
       }
     };
 
+    // Quem está em cada porta, e se dá para **provar** de quem é. `forte` só
+    // quando o processo roda dentro do diretório do projeto; o resto é
+    // inferência pelo número declarado, que já apontou para o projeto errado.
     const emEscuta = new Map(
       (mapa.observed ?? []).map((porta) => [
         porta.port,
-        porta.project_name
-          ? `Escutando agora — ${porta.process_name ?? 'processo'} de ${porta.project_name}.`
-          : `Escutando agora — ${porta.process_name ?? 'processo desconhecido'}.`,
+        {
+          forte: Boolean(porta.strong_evidence),
+          texto: porta.strong_evidence
+            ? `${porta.process_name ?? 'processo'} de ${porta.project_name}, ` +
+              `rodando em ${porta.cwd ?? 'origem desconhecida'}.`
+            : `Ocupada por ${porta.process_name ?? 'processo desconhecido'}. ` +
+              'O painel não consegue provar que é deste projeto — pode ser ' +
+              'container de outro, ou algo fora dele.',
+        },
       ])
     );
 

@@ -54,6 +54,21 @@ class ObservedPort:
     project_name: str | None = None
     #: Como a atribuição foi feita: "cwd", "cmdline", "container" ou "unknown".
     matched_by: str = "unknown"
+
+    @property
+    def strong_evidence(self) -> bool:
+        """A atribuição é prova, e não palpite.
+
+        `cwd` e `cmdline` provam: o processo roda dentro do projeto. `container`
+        infere pelo número declarado, e inferência erra — o caso concreto foi a
+        porta 8000 de um container da PLATAFORMA sendo atribuída ao SmartDash,
+        que declarava 8000 e estava com tudo parado. A tela dizia "SmartDash
+        Backend no ar" apontando para o servidor de outro projeto.
+
+        Quem afirma "está no ar" precisa de prova. Quem só mostra "ocupada por
+        alguém" pode se contentar com o palpite, porque não está afirmando dono.
+        """
+        return self.matched_by in ("cwd", "cmdline")
     #: Diretório de trabalho do processo, quando foi possível ler. É o que
     #: identifica o processo para um humano — "node.exe" não diz nada, "node.exe
     #: rodando em Projetos/AI Procedures" diz tudo.

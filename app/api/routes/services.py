@@ -266,6 +266,7 @@ def port_map(
                 matched_by=porta.matched_by,
                 cwd=porta.cwd,
                 orphan=porta.orphan,
+                strong_evidence=porta.strong_evidence,
             )
             for porta in observacao.ports
         ],

@@ -55,10 +55,49 @@ class PortBinding(BaseModel):
     conflict: bool = False
 
 
+class ObservedPortOut(BaseModel):
+    """Porta que está escutando na máquina agora, e de quem parece ser.
+
+    Contraparte observada de `PortBinding`, que é o lado declarado. As duas
+    juntas são o que permite dizer "você declarou 3003 e o que responde é
+    8765" — a divergência que fazia o painel mostrar projeto parado com o
+    servidor no ar.
+    """
+
+    port: int
+    pid: int | None = None
+    process_name: str | None = None
+    project_id: str | None = None
+    project_name: str | None = None
+    #: "cwd", "cmdline", "container" ou "unknown". A UI usa isto para dizer
+    #: **por que** acha que a porta é daquele projeto, em vez de afirmar.
+    matched_by: str = "unknown"
+
+
+class PortMismatch(BaseModel):
+    """Serviço cujo número declarado não corresponde ao que está no ar."""
+
+    project_id: str
+    project_name: str
+    service_key: str
+    service_label: str
+    declared_port: int
+    #: Porta em escuta atribuída ao mesmo projeto. `None` quando nada do
+    #: projeto está escutando — aí é só "declarado e nada respondendo".
+    observed_port: int | None = None
+    process_name: str | None = None
+
+
 class PortMap(BaseModel):
     items: list[PortUsage] = Field(default_factory=list)
     bindings: list[PortBinding] = Field(default_factory=list)
     conflicts: int = 0
+    #: Vazio até o primeiro ciclo do poller, e também quando a varredura não
+    #: pôde ser feita. `observation_available` separa os dois casos: sem ele,
+    #: "não consegui olhar" apareceria como "nada escutando".
+    observed: list[ObservedPortOut] = Field(default_factory=list)
+    observation_available: bool = True
+    mismatches: list[PortMismatch] = Field(default_factory=list)
 
 
 class OpenBrowserRequest(BaseModel):

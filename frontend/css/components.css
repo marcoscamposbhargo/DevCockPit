@@ -1351,6 +1351,58 @@
   font-size: var(--fs-xs);
 }
 
+/* Confirmação de que a porta não é só declaração: alguém escuta ali agora.
+   Verde e não âmbar de propósito — `port-flag` sozinho é aviso, este é o
+   oposto, e as duas marcas aparecem lado a lado na mesma célula. */
+.port-flag--live {
+  border-color: color-mix(in srgb, var(--status-running) var(--tint-border-strength), transparent);
+  background: color-mix(in srgb, var(--status-running) var(--tint-strength), var(--bg-surface));
+  color: var(--status-running);
+}
+
+/* Uma linha por divergência entre o declarado e o que está no ar. Quebra em
+   vez de cortar: o nome do projeto e os dois números precisam caber juntos,
+   senão a linha deixa de contar a história inteira. */
+.mismatch-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.mismatch-row__real {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--status-running);
+}
+
+/* Portas de terceiros ficam recolhidas: são resposta para uma pergunta que só
+   aparece quando algo falha, e abertas empurrariam o mapa para fora da tela. */
+.ports-unclaimed {
+  margin-top: var(--sp-5);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.ports-unclaimed > summary {
+  cursor: pointer;
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+}
+
+.ports-unclaimed__list {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-4);
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
 /* O input ocupa a mesma largura da coluna em leitura: a linha não pode saltar
    ao entrar em edição, senão o olho perde a linha que estava seguindo. */
 .port-input {

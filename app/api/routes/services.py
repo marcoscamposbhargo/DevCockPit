@@ -8,21 +8,25 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import (
     get_health_service,
+    get_port_discovery,
     get_project_service,
     get_system_service,
 )
 from app.models.project import ProjectService as ProjectServiceModel
 from app.schemas.health import (
+    ObservedPortOut,
     OpenBrowserRequest,
     OpenResult,
     PortBinding,
     PortMap,
+    PortMismatch,
     PortUsage,
     ServiceList,
     ServicesReplace,
     ServiceStateOut,
 )
 from app.services.health_service import HealthService, targets_from_project
+from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 from app.services.system_action_service import SystemActionService
 
@@ -173,14 +177,23 @@ def open_browser(
 
 
 @global_router.get("/ports", response_model=PortMap)
-def port_map(projects: ProjectService = Depends(get_project_service)) -> PortMap:
-    """Mapa de portas declaradas, com quem ocupa cada uma.
+def port_map(
+    projects: ProjectService = Depends(get_project_service),
+    discovery: PortDiscoveryService = Depends(get_port_discovery),
+) -> PortMap:
+    """Mapa de portas: o que os projetos declaram e o que está de fato no ar.
 
-    Só lê o que os projetos **declaram**: nada aqui abre socket para descobrir
-    quem realmente está escutando (NFR-010). Conflito aqui é conflito de
-    configuração, que é o que dá para resolver mudando um número.
+    Nada aqui abre socket nem varre processo (NFR-010). O lado declarado vem do
+    banco; o lado observado vem do cache que o poller preenche a cada ciclo, e
+    vem vazio até o primeiro deles.
+
+    Cruzar os dois é o ponto da tela. Conflito entre dois declarados é conflito
+    de configuração. Divergência entre declarado e observado é a mentira que
+    fazia um projeto aparecer parado com o servidor no ar — e é a única das
+    duas que o painel não sabia contar.
     """
     todos, _ = projects.list(limit=500)
+    observacao = discovery.last_known()
 
     por_porta: dict[int, set[str]] = defaultdict(set)
     #: Conflito é contado por **serviço**, não por projeto: dois serviços do
@@ -233,4 +246,71 @@ def port_map(projects: ProjectService = Depends(get_project_service)) -> PortMap
         items=items,
         bindings=bindings,
         conflicts=sum(1 for item in items if item.conflict),
+        observed=[
+            ObservedPortOut(
+                port=porta.port,
+                pid=porta.pid,
+                process_name=porta.process_name,
+                project_id=porta.project_id,
+                project_name=porta.project_name,
+                matched_by=porta.matched_by,
+            )
+            for porta in observacao.ports
+        ],
+        observation_available=observacao.available,
+        mismatches=_mismatches(todos, observacao),
     )
+
+
+def _mismatches(projects, observacao) -> list[PortMismatch]:  # type: ignore[no-untyped-def]
+    """Serviço cuja porta declarada não é a que o projeto está usando.
+
+    Duas formas do mesmo problema, e a distinção importa para o texto da tela:
+
+    - o projeto tem porta escutando, só que **outra** — o número no cadastro
+      está velho e dá para corrigir apontando qual é o certo;
+    - o projeto não tem nada escutando — pode ser que esteja mesmo parado, e
+      afirmar "porta errada" aí seria chute.
+
+    O segundo caso só é reportado quando *alguma* porta do projeto foi
+    observada, para não transformar todo projeto desligado em alerta.
+    """
+    por_projeto: dict[str, list] = {}
+    for porta in observacao.ports:
+        if porta.project_id:
+            por_projeto.setdefault(porta.project_id, []).append(porta)
+
+    divergencias: list[PortMismatch] = []
+
+    for project in projects:
+        observadas = por_projeto.get(project.id, [])
+        if not observadas:
+            # Nada deste projeto está escutando: silêncio é o estado esperado
+            # de um projeto parado, não uma divergência.
+            continue
+
+        portas_observadas = {porta.port for porta in observadas}
+
+        for service in project.services:
+            if not service.port or service.port in portas_observadas:
+                continue
+
+            # O projeto está no ar em outra porta. Sugere a primeira observada
+            # que ainda não corresponde a nenhum serviço declarado dele.
+            declaradas = {s.port for s in project.services if s.port}
+            candidatas = [p for p in observadas if p.port not in declaradas]
+            sugestao = candidatas[0] if candidatas else None
+
+            divergencias.append(
+                PortMismatch(
+                    project_id=project.id,
+                    project_name=project.name,
+                    service_key=service.key,
+                    service_label=service.label,
+                    declared_port=service.port,
+                    observed_port=sugestao.port if sugestao else None,
+                    process_name=sugestao.process_name if sugestao else None,
+                )
+            )
+
+    return divergencias

@@ -22,6 +22,7 @@ from app.services.health_service import (
     should_poll,
     targets_from_project,
 )
+from app.services.port_discovery_service import PortDiscoveryService, refs_from_projects
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,17 @@ class HealthPoller:
         health: HealthService,
         interval_s: float = 30.0,
         recent_days: int = 7,
+        ports: PortDiscoveryService | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.health = health
         self.interval_s = interval_s
         self.recent_days = recent_days
+        #: Descoberta de porta viaja junto com o health por um motivo prático:
+        #: as duas perguntas ("responde?" e "quem está escutando?") só fazem
+        #: sentido lado a lado, e as duas leem a mesma lista de projetos. Um
+        #: segundo laço faria a mesma consulta de banco duas vezes.
+        self.ports = ports
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
@@ -71,15 +78,28 @@ class HealthPoller:
 
     async def run_once(self) -> int:
         """Verifica os projetos elegíveis. Devolve quantos serviços checou."""
-        targets = await asyncio.to_thread(self._collect_targets)
+        targets, refs = await asyncio.to_thread(self._collect)
+
+        if self.ports is not None:
+            # Numa thread porque `psutil` é síncrono. Custa ~5 ms nesta
+            # máquina, mas bloquear o event loop por qualquer tempo num
+            # servidor que também serve SSE não se justifica.
+            await asyncio.to_thread(self.ports.observe, refs)
+
         if not targets:
             return 0
 
         await self.health.check_many(targets)
         return len(targets)
 
-    def _collect_targets(self) -> list:
-        """Lê o banco numa thread: sessão do SQLAlchemy é síncrona."""
+    def _collect(self) -> tuple[list, list]:
+        """Lê o banco numa thread: sessão do SQLAlchemy é síncrona.
+
+        Devolve os alvos de health (só os projetos elegíveis, política Q-02) e
+        as referências para atribuição de porta (**todos** os projetos: uma
+        porta escutando dentro de um projeto que ninguém abre há meses continua
+        sendo daquele projeto).
+        """
         session = self.session_factory()
         try:
             projects, _ = ProjectRepository(session).list(limit=500)
@@ -87,6 +107,6 @@ class HealthPoller:
             for project in projects:
                 if should_poll(project, self.recent_days):
                     targets.extend(targets_from_project(project))
-            return targets
+            return targets, refs_from_projects(projects)
         finally:
             session.close()

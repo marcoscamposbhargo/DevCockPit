@@ -302,7 +302,7 @@ async def test_poller_nao_derruba_a_aplicacao_ao_falhar(session_factory) -> None
     def explode() -> list:
         raise RuntimeError("banco caiu")
 
-    poller._collect_targets = explode  # type: ignore[method-assign]
+    poller._collect = explode  # type: ignore[method-assign]
 
     poller.start()
     await asyncio.sleep(0.2)

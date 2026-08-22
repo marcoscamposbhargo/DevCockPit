@@ -25,6 +25,7 @@ from app.services.docker_service import DockerService
 from app.services.git_service import GitService
 from app.services.health_service import HealthService
 from app.services.manifest_service import ManifestService
+from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 from app.services.system_action_service import SystemActionService
 
@@ -140,6 +141,11 @@ def get_docker_service(
 def get_health_service(request: Request) -> HealthService:
     """Instância única: o cache de health é compartilhado com o poller."""
     return request.app.state.health_service
+
+
+def get_port_discovery(request: Request) -> PortDiscoveryService:
+    """Instância única, pelo mesmo motivo: quem varre é o poller, a API lê."""
+    return request.app.state.port_discovery
 
 
 def get_system_service(

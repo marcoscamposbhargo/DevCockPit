@@ -77,8 +77,108 @@ function conflictAlert(mapa) {
   ]);
 }
 
+/** Aviso de divergência: o declarado não é o que está no ar.
+ *
+ * É o aviso mais útil desta tela e o único que o painel não sabia dar. Um
+ * número velho no cadastro fazia o projeto aparecer parado com o servidor
+ * rodando — e depois de ver isso duas vezes ninguém mais acredita na coluna de
+ * estado. O botão aplica a porta observada de uma vez, porque a correção é
+ * sempre a mesma e digitar o número de novo é atrito puro.
+ */
+function mismatchAlert(mapa, { onAdotar }) {
+  if (!mapa.mismatches?.length) return null;
+
+  return el('div', { class: 'alert', role: 'status' }, [
+    el('span', { class: 'alert__icon' }, [icon('alert', { size: 16 })]),
+    el('div', { class: 'alert__body' }, [
+      el('strong', {
+        text:
+          mapa.mismatches.length === 1
+            ? '1 serviço está no ar em outra porta'
+            : `${mapa.mismatches.length} serviços estão no ar em outra porta`,
+      }),
+      el('p', {
+        class: 'field__hint',
+        text:
+          'O projeto tem processo escutando, só que não na porta cadastrada. ' +
+          'Enquanto os dois números não baterem, o painel mostra o serviço como desligado.',
+      }),
+      ...mapa.mismatches.map((divergencia) =>
+        el('div', { class: 'mismatch-row' }, [
+          el('span', { text: `${divergencia.project_name} · ${divergencia.service_label}` }),
+          el('span', { class: 'mono', text: `declarado ${divergencia.declared_port}` }),
+          divergencia.observed_port
+            ? el('span', { class: 'mono mismatch-row__real' }, [
+                icon('plug', { size: 12 }),
+                `no ar em ${divergencia.observed_port}`,
+                divergencia.process_name
+                  ? el('span', { class: 'field__hint', text: ` (${divergencia.process_name})` })
+                  : null,
+              ])
+            : null,
+          divergencia.observed_port
+            ? el('button', {
+                class: 'btn btn--sm btn--primary',
+                type: 'button',
+                text: `Usar ${divergencia.observed_port}`,
+                title: 'Grava a porta observada no cadastro deste serviço.',
+                onClick: () => onAdotar(divergencia),
+              })
+            : null,
+        ])
+      ),
+    ]),
+  ]);
+}
+
+/** Portas em escuta que nenhum serviço cadastrado declara.
+ *
+ * Responde a pergunta que aparece quando um `up` falha com "address already in
+ * use": quem está com a porta. Sem esta lista a resposta exigia `netstat` num
+ * terminal à parte.
+ */
+function unclaimedSection(mapa) {
+  if (!mapa.observation_available) {
+    return el('p', { class: 'field__hint', style: 'margin-top:var(--sp-4)' }, [
+      'Não foi possível ler as portas em escuta nesta máquina. ',
+      'O mapa acima mostra só o que os projetos declaram.',
+    ]);
+  }
+
+  const declaradas = new Set(mapa.bindings.map((b) => b.port));
+  const sobrando = (mapa.observed ?? []).filter((p) => !declaradas.has(p.port));
+  if (!sobrando.length) return null;
+
+  const rotulo = (porta) => {
+    if (porta.project_name) return `${porta.project_name} (não declarada)`;
+    if (porta.matched_by === 'container') return 'publicada por container';
+    return porta.process_name ?? 'processo desconhecido';
+  };
+
+  return el('details', { class: 'ports-unclaimed' }, [
+    el('summary', {
+      text: `${sobrando.length} porta(s) em escuta que nenhum serviço declara`,
+    }),
+    el('p', {
+      class: 'field__hint',
+      text: 'Útil quando o Compose falha com "address already in use".',
+    }),
+    el(
+      'ul',
+      { class: 'ports-unclaimed__list' },
+      sobrando.map((porta) =>
+        el('li', {}, [
+          el('span', { class: 'mono', text: String(porta.port) }),
+          ' · ',
+          rotulo(porta),
+        ])
+      )
+    ),
+  ]);
+}
+
 /** Linha em modo leitura. */
-function bindingRow(binding, { onEdit }) {
+function bindingRow(binding, { onEdit, noAr }) {
   const endereco = binding.url ?? `${binding.host}:${binding.port}`;
 
   return el('tr', { dataset: { conflict: String(binding.conflict) } }, [
@@ -91,6 +191,13 @@ function bindingRow(binding, { onEdit }) {
           ? el('span', { class: 'port-flag', title: 'Outro serviço declara esta mesma porta.' }, [
               icon('alert', { size: 12 }),
               'conflito',
+            ])
+          : null,
+        // Confirmação de que o número não é só declaração: alguém escuta ali.
+        noAr
+          ? el('span', { class: 'port-flag port-flag--live', title: noAr }, [
+              icon('plug', { size: 12 }),
+              'no ar',
             ])
           : null,
       ]),
@@ -266,15 +373,43 @@ export async function renderPorts(container) {
       await carregar();
     };
 
+    /** Adota a porta observada: a correção é sempre a mesma, então é um clique. */
+    const onAdotar = async (divergencia) => {
+      const binding = mapa.bindings.find(
+        (b) =>
+          b.project_id === divergencia.project_id &&
+          b.service_key === divergencia.service_key
+      );
+      if (!binding) return;
+      await onSave(binding, divergencia.observed_port);
+    };
+
+    const emEscuta = new Map(
+      (mapa.observed ?? []).map((porta) => [
+        porta.port,
+        porta.project_name
+          ? `Escutando agora — ${porta.process_name ?? 'processo'} de ${porta.project_name}.`
+          : `Escutando agora — ${porta.process_name ?? 'processo desconhecido'}.`,
+      ])
+    );
+
     const linhas = mapa.bindings.map((binding) =>
       editando === `${binding.project_id}:${binding.service_key}`
         ? editRow(binding, { ocupadas, onCancel, onSave })
-        : bindingRow(binding, { onEdit })
+        : bindingRow(binding, { onEdit, noAr: emEscuta.get(binding.port) ?? null })
     );
 
     const header = pageHeader({
       title: 'Ports',
-      subtitle: `${mapa.items.length} porta(s) declarada(s) · ${mapa.conflicts} conflito(s)`,
+      subtitle: [
+        `${mapa.items.length} porta(s) declarada(s)`,
+        `${mapa.conflicts} conflito(s)`,
+        // Só aparece quando há o que dizer: um "0 divergências" fixo vira
+        // ruído e a pessoa para de ler a linha inteira.
+        mapa.mismatches?.length ? `${mapa.mismatches.length} em outra porta` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
       actions: [
         el(
           'button',
@@ -314,6 +449,10 @@ export async function renderPorts(container) {
     mount(
       container,
       header,
+      // A divergência vem antes do conflito: o conflito é entre dois números
+      // que alguém escolheu, a divergência é entre o que se escolheu e o que a
+      // máquina está fazendo — e é a que faz o painel parecer quebrado.
+      mismatchAlert(mapa, { onAdotar }),
       conflictAlert(mapa),
       el('p', {
         class: 'field__hint',
@@ -335,7 +474,8 @@ export async function renderPorts(container) {
           ]),
           el('tbody', {}, linhas),
         ]),
-      ])
+      ]),
+      unclaimedSection(mapa)
     );
   };
 

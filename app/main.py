@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.adapters.system.ports import build_port_scanner
 from app.api.middleware import (
     CorrelationIdMiddleware,
     HostGuardMiddleware,
@@ -44,6 +45,7 @@ from app.runner.allowlist import assert_registry_is_safe
 from app.runner.command_runner import SubprocessCommandRunner
 from app.services.health_poller import HealthPoller
 from app.services.health_service import HealthService
+from app.services.port_discovery_service import PortDiscoveryService
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +103,16 @@ def create_app(
         # Dado mais velho que três ciclos do poller é marcado STALE.
         stale_after_s=settings.health_poll_interval * 3,
     )
+    app.state.port_discovery = PortDiscoveryService(
+        scanner=build_port_scanner(),
+        cache=app.state.cache,
+    )
     app.state.health_poller = HealthPoller(
         session_factory=app.state.session_factory,
         health=app.state.health_service,
         interval_s=settings.health_poll_interval,
         recent_days=settings.health_history_days,
+        ports=app.state.port_discovery,
     )
 
     # Ordem de execução: o último adicionado roda primeiro.

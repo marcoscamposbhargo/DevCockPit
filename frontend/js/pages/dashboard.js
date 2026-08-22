@@ -137,7 +137,7 @@ function activeServices(itens) {
 
 /** Mapa de portas — o que a tela não mostrava e é a pergunta de todo dia:
  *  "quem está ocupando a 8000?". Conflito aparece marcado na própria linha. */
-function portMap(portas) {
+function portMap(portas, noAr) {
   if (!portas.length) {
     return panelEmpty('Nenhuma porta declarada pelos projetos cadastrados.');
   }
@@ -157,7 +157,16 @@ function portMap(portas) {
                     el('span', { class: 'signal__dot' }),
                     'conflito',
                   ])
-                : null,
+                : // "Declarada" e "atendendo" são coisas diferentes, e o painel
+                  // listava as duas do mesmo jeito: uma coluna de números onde
+                  // metade é intenção e metade é fato. O visitante tinha que ir
+                  // à tela de Ports para saber qual era qual.
+                  noAr.has(item.port)
+                  ? el('span', { class: 'signal', dataset: { kind: 'on' }, title: noAr.get(item.port) }, [
+                      el('span', { class: 'signal__dot' }),
+                      'no ar',
+                    ])
+                  : null,
             ]),
           ])
         )
@@ -201,6 +210,17 @@ export async function renderDashboard(container) {
   const data = resultado.value;
   const mapaDePortas = portas.status === 'fulfilled' ? portas.value.items : [];
 
+  // Quais dessas portas estão de fato atendendo agora. Vem da mesma resposta,
+  // do lado observado — nenhuma chamada a mais.
+  const portasNoAr = new Map(
+    (portas.status === 'fulfilled' ? (portas.value.observed ?? []) : []).map((porta) => [
+      porta.port,
+      porta.project_name
+        ? `${porta.process_name ?? 'processo'} de ${porta.project_name}`
+        : (porta.process_name ?? 'processo desconhecido'),
+    ])
+  );
+
   if (data.totals.projects === 0) {
     mount(
       container,
@@ -239,7 +259,7 @@ export async function renderDashboard(container) {
       panel({
         title: 'Portas em uso',
         count: mapaDePortas.length,
-        body: portMap(mapaDePortas),
+        body: portMap(mapaDePortas, portasNoAr),
       }),
       panel({
         title: 'Alterações pendentes',

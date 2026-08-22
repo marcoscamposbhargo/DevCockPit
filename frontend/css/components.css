@@ -1324,6 +1324,107 @@
   text-underline-offset: 2px;
 }
 
+/* --- folha de atalhos ---
+   Seis gestos existiam e nenhum era descobrível fora do Ctrl+K no placeholder
+   da busca. Atalho que ninguém encontra é trabalho jogado fora. */
+
+.kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.shortcuts__layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+}
+
+.shortcuts__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 45%);
+}
+
+.shortcuts {
+  position: relative;
+  width: min(420px, calc(100vw - var(--sp-6)));
+  padding: var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.shortcuts__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.shortcuts__head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.shortcuts__head button {
+  margin-left: auto;
+}
+
+/* Duas colunas: a tecla à esquerda alinhada à direita, o que ela faz à direita.
+   O olho percorre a coluna de teclas procurando o gesto, não a descrição. */
+.shortcuts__list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: var(--sp-3) var(--sp-4);
+  margin: 0;
+}
+
+.shortcuts__list dt {
+  justify-self: end;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.shortcuts__list dd {
+  margin: 0;
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+}
+
+/* A dica é convite, não comando: fica no tom do rodapé e acende no hover. */
+.shortcuts-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: var(--sp-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.shortcuts-hint:hover {
+  color: var(--fg-secondary);
+}
+
 /* --- aba Server ---
    O cabeçalho responde "está no ar?" e os controles vêm ao lado, porque a ação
    é consequência do estado e não uma decisão separada. */

@@ -5,6 +5,7 @@ import { icon } from './lib/icons.js';
 import { mountRail } from './lib/rail.js';
 import { applyShell, railHidden, sidebarCollapsed, toggleRail, toggleSidebar } from './lib/shell.js';
 import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from './lib/theme.js';
+import { shortcutsHint, wireShortcuts } from './lib/shortcuts.js';
 import { emptyState } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
 import { renderDashboard } from './pages/dashboard.js';
@@ -234,6 +235,12 @@ function wireSearch() {
 wireShell();
 wireTheme();
 wireSearch();
+wireShortcuts();
+
+// A dica mora no rodapé da lateral, ao lado do estado das ferramentas: é o
+// canto onde já se olha para saber "como está o ambiente", e o custo visual de
+// mais uma linha ali é zero.
+document.querySelector('.sidebar__footer')?.prepend(shortcutsHint());
 mountRail();
 window.addEventListener('devcockpit:projects-changed', refreshPinned);
 

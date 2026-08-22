@@ -5,9 +5,17 @@
 // está — o botão "Subir" tinha a mesma cara com tudo no ar e com tudo parado.
 // Aqui o controle **mostra o estado** e a ação é a consequência dele.
 //
-// Só liga o que o DevCockpit sabe ligar: hoje, Compose. Projeto sem Compose
-// aparece desabilitado **com o motivo**, nunca como um clique que falha depois
-// (mesma regra de lib/actions.js).
+// Dois caminhos para ligar, escolhidos pelo que o projeto é:
+//
+// - com Compose, `docker compose up`/`stop`, que roda como job;
+// - sem Compose, o servidor de desenvolvimento do próprio projeto
+//   (`npm run dev`, `uvicorn`, `flask run`), que roda como processo de vida
+//   longa. Este segundo caminho existe porque a maioria dos projetos não tem
+//   Compose, e para eles o painel sabia dizer que estava parado sem saber
+//   fazer nada a respeito — sobrava abrir o terminal e digitar o comando.
+//
+// O que não dá para ligar continua desabilitado **com o motivo** na frente,
+// nunca como um clique que falha depois (mesma regra de lib/actions.js).
 
 import { api } from './api.js';
 import { el } from './dom.js';
@@ -15,6 +23,27 @@ import { icon } from './icons.js';
 import { showError, toast } from './ui.js';
 
 const DOCKER_TECHS = new Set(['docker', 'docker-compose']);
+
+//: Stacks para as quais existe um comando de subida derivável do próprio
+//: projeto. Espelha o que `app/services/run_plan.py` sabe resolver — e é
+//: heurística de propósito: perguntar ao servidor por projeto custaria uma
+//: chamada por card, que é justamente o que NFR-010 proíbe na lista.
+const RUN_TECHS = new Set([
+  'node',
+  'nextjs',
+  'nuxt',
+  'astro',
+  'vite',
+  'sveltekit',
+  'express',
+  'fastify',
+  'nestjs',
+  'fastapi',
+  'starlette',
+  'uvicorn',
+  'flask',
+  'django',
+]);
 
 const ESTADOS_FINAIS = new Set(['SUCCESS', 'FAILED', 'TIMEOUT', 'CANCELLED']);
 const POLL_MS = 900;
@@ -24,8 +53,17 @@ const POLL_MS = 900;
  * Perguntar ao Docker por projeto custaria uma chamada por card — a lista de
  * projetos não pode disparar isso (NFR-010). */
 export function hasDocker(project) {
+  return temTech(project, DOCKER_TECHS);
+}
+
+/** O projeto parece ter servidor de desenvolvimento que o painel sabe subir. */
+export function hasRunnableStack(project) {
+  return temTech(project, RUN_TECHS);
+}
+
+function temTech(project, conjunto) {
   const techs = project.technologies ?? [];
-  return techs.some((tech) => DOCKER_TECHS.has(typeof tech === 'string' ? tech : tech.name));
+  return techs.some((tech) => conjunto.has(typeof tech === 'string' ? tech : tech.name));
 }
 
 /** Espera um job terminar sem console: aqui o que importa é o desfecho. */
@@ -59,17 +97,83 @@ async function confirmarEstado(projectId, acao) {
   }
 }
 
+/** Liga ou desliga o servidor de desenvolvimento do projeto.
+ *
+ * Sem job: o processo nasce e a requisição acaba. O que demora é o servidor
+ * ficar pronto para atender, e quem responde isso é a verificação de porta —
+ * por isso o estado exibido sai dela, não do fato de o processo ter nascido.
+ */
+async function acionarServidor(project, { ligando, anterior, aplicar }) {
+  try {
+    const estadoServidor = ligando
+      ? await api.startServer(project.id)
+      : await api.stopServer(project.id);
+
+    if (!ligando) {
+      aplicar('off');
+      toast(`${project.name}: servidor parado.`, { kind: 'success' });
+      return;
+    }
+
+    // Um servidor de desenvolvimento leva alguns segundos entre nascer e
+    // atender. Perguntar imediatamente devolveria "desligado" para algo que
+    // acabou de subir, e o botão voltaria sozinho — o mesmo mal-entendido que
+    // o caminho do Docker já tinha.
+    const respondeu = await esperarResposta(project.id);
+    aplicar(respondeu ? 'on' : 'off');
+
+    if (respondeu) {
+      toast(`${project.name}: no ar.`, { kind: 'success' });
+    } else {
+      toast(`${project.name}: processo iniciado, mas a porta ainda não responde.`, {
+        kind: 'warning',
+        meta: `pid ${estadoServidor.pid} · veja o log na aba do projeto.`,
+      });
+    }
+  } catch (error) {
+    aplicar(anterior);
+    showError(error);
+  }
+}
+
+//: Quanto tempo esperar o servidor recém-subido começar a atender, e de quanto
+//: em quanto perguntar. Oito segundos cobre Vite e uvicorn com folga; o que
+//: passar disso o verificador de background resolve sozinho.
+const ESPERA_MAX_MS = 8000;
+const ESPERA_PASSO_MS = 800;
+
+async function esperarResposta(projectId) {
+  const limite = Date.now() + ESPERA_MAX_MS;
+  for (;;) {
+    const { items } = await api.checkServices(projectId).catch(() => ({ items: [] }));
+    if (items.some((item) => item.state === 'ONLINE')) return true;
+    if (Date.now() >= limite) return false;
+    await new Promise((resolve) => window.setTimeout(resolve, ESPERA_PASSO_MS));
+  }
+}
+
 const MOTIVOS = {
   missing: 'O diretório deste projeto não existe mais.',
-  semCompose:
-    'Sem Compose detectado: o DevCockpit não tem como subir este projeto. ' +
-    'Abra o terminal e use o comando do próprio projeto.',
+  semComando:
+    'O DevCockpit não achou como subir este projeto: sem Compose, sem script ' +
+    'de dev no package.json e sem framework Python reconhecido. Declare o ' +
+    'bloco `run:` no devcockpit.yml do projeto.',
 };
 
 const TEXTO = {
-  on: { label: 'Ligado', acao: 'Desligar', dica: 'Clique para parar os containers.' },
-  off: { label: 'Desligado', acao: 'Ligar', dica: 'Clique para subir o Compose.' },
-  busy: { label: 'Aguarde…', acao: 'aguardar', dica: 'Operação em andamento.' },
+  on: { label: 'Ligado', acao: 'Desligar' },
+  off: { label: 'Desligado', acao: 'Ligar' },
+  busy: { label: 'Aguarde…', acao: 'aguardar' },
+};
+
+//: A dica diz o que o clique faz *neste* projeto. "Clique para subir o
+//: Compose" num projeto de `npm run dev` estaria simplesmente errado.
+const DICA = {
+  docker: { on: 'Clique para parar os containers.', off: 'Clique para subir o Compose.' },
+  server: {
+    on: 'Clique para parar o servidor de desenvolvimento.',
+    off: 'Clique para subir o servidor de desenvolvimento do projeto.',
+  },
 };
 
 /**
@@ -84,8 +188,11 @@ const TEXTO = {
 export function powerToggle(project, { on = false, compact = false, onChanged } = {}) {
   const missing = project.status === 'MISSING';
   const docker = hasDocker(project);
-  const habilitado = docker && !missing;
-  const motivo = missing ? MOTIVOS.missing : MOTIVOS.semCompose;
+  // Compose primeiro: num projeto que tem os dois, subir a stack inteira é o
+  // que a pessoa quer — o servidor solto deixaria o banco de fora.
+  const via = docker ? 'docker' : hasRunnableStack(project) ? 'server' : null;
+  const habilitado = via !== null && !missing;
+  const motivo = missing ? MOTIVOS.missing : MOTIVOS.semComando;
 
   let estado = on ? 'on' : 'off';
   //: Rótulo do estado `busy`: "Subindo…" e "Parando…" dizem o que está
@@ -114,17 +221,28 @@ export function powerToggle(project, { on = false, compact = false, onChanged } 
       'aria-label',
       habilitado ? `${TEXTO[estado].acao} ${project.name}` : `${project.name}: ${motivo}`
     );
-    botao.title = habilitado ? TEXTO[estado].dica : motivo;
+    botao.title = habilitado
+      ? (DICA[via]?.[estado === 'busy' ? 'on' : estado] ?? '')
+      : motivo;
   };
 
   botao.addEventListener('click', async () => {
     if (!habilitado || estado === 'busy') return;
 
-    const acao = estado === 'on' ? 'stop' : 'up';
+    const ligando = estado !== 'on';
     const anterior = estado;
     estado = 'busy';
-    gerundio = acao === 'up' ? 'Subindo…' : 'Parando…';
+    gerundio = ligando ? 'Subindo…' : 'Parando…';
     desenhar();
+
+    if (via === 'server') {
+      await acionarServidor(project, { ligando, anterior, aplicar: (novo) => (estado = novo) });
+      desenhar();
+      onChanged?.(estado === 'on');
+      return;
+    }
+
+    const acao = ligando ? 'up' : 'stop';
 
     try {
       const aceito = await api.dockerAction(project.id, acao);

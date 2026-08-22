@@ -196,3 +196,30 @@ class HealthSnapshot(Base):
     __table_args__ = (
         Index("ix_health_service_checked", "project_id", "service_key", "checked_at"),
     )
+
+
+class DevServer(Base):
+    """Servidor de desenvolvimento que o painel subiu, e ainda está de pé.
+
+    Persistido porque o processo **sobrevive ao DevCockpit** de propósito:
+    reiniciar o painel não pode derrubar o servidor de ninguém. Sem a linha
+    aqui, reiniciar o painel tiraria o botão de parar junto e sobraria um
+    processo que só o Gerenciador de Tarefas alcança.
+
+    Uma linha por projeto: dois servidores do mesmo projeto disputariam a mesma
+    porta, então a chave primária é o próprio `project_id`.
+    """
+
+    __tablename__ = "dev_server"
+
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("project.id", ondelete="CASCADE"), primary_key=True
+    )
+    pid: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Guardado para conferir o PID na volta. O sistema recicla identificador
+    #: de processo, e parar o PID errado é matar processo de terceiro.
+    command: Mapped[str] = mapped_column(Text, nullable=False)
+    cwd: Mapped[str] = mapped_column(Text, nullable=False)
+    log_file: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=utcnow)

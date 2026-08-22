@@ -104,6 +104,15 @@ export const api = {
       body: { service_key: serviceKey },
     }),
 
+  // Servidor de desenvolvimento do projeto (sem Docker). Nenhuma destas rotas
+  // aceita comando: o cliente manda o id, e o comando sai do devcockpit.yml ou
+  // da detecção, no servidor.
+  serverStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/server`),
+  startServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/start`),
+  stopServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/stop`),
+  serverLogs: (id, lines = 200) =>
+    request('GET', `/projects/${encodeURIComponent(id)}/server/logs`, { params: { lines } }),
+
   dockerStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/docker/status`),
   dockerAction: (id, action, services = []) =>
     request('POST', `/projects/${encodeURIComponent(id)}/docker/${action}`, {

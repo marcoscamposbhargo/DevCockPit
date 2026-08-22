@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from pathlib import Path
@@ -20,6 +21,8 @@ from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.activity_service import ActivityService
 from app.services.detection_service import DetectionDiff, DetectionService
 from app.services.manifest_service import ManifestService
+
+logger = logging.getLogger(__name__)
 
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
@@ -70,7 +73,17 @@ class ProjectService:
         self.repo.add(project)
 
         if payload.run_detection:
-            self.detection.run_for(project, record=False)
+            # Mesma política do manifesto logo abaixo: quem acabou de apontar
+            # uma pasta quer o projeto na lista. Detecção que falha vira
+            # projeto sem stack — que a tela oferece redetectar num clique —,
+            # nunca um cadastro recusado.
+            try:
+                self.detection.run_for(project, record=False)
+            except Exception:  # noqa: BLE001 - detecção não bloqueia cadastro
+                logger.exception(
+                    "detecção falhou no cadastro",
+                    extra={"extra_fields": {"project_id": project.id, "path": stored_path}},
+                )
             self.session.flush()
 
         if payload.import_manifest:

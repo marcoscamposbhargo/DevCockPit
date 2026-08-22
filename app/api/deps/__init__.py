@@ -20,6 +20,7 @@ from app.jobs.job_manager import JobManager
 from app.services.activity_service import ActivityService
 from app.services.dashboard_service import DashboardService
 from app.services.detection_service import DetectionService
+from app.services.dev_server_service import DevServerService
 from app.services.discovery_service import DiscoveryService
 from app.services.docker_service import DockerService
 from app.services.git_service import GitService
@@ -173,3 +174,18 @@ def get_discovery_service(
     roots: RootsConfig = Depends(get_roots_dep),
 ) -> DiscoveryService:
     return DiscoveryService(session=session, roots=roots)
+
+
+def get_dev_server_service(
+    request: Request,
+    session: Session = Depends(get_session),
+    activity: ActivityService = Depends(get_activity_service),
+) -> DevServerService:
+    settings: Settings = request.app.state.settings
+    # O log de cada servidor vive ao lado do log da aplicação. Caminho de
+    # arquivo é configuração, e configuração mora em `Settings` (NFR-022).
+    return DevServerService(
+        session=session,
+        logs_dir=settings.resolve(settings.log_file).parent,
+        activity=activity,
+    )

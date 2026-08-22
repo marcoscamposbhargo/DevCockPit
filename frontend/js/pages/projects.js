@@ -164,7 +164,7 @@ function monogram(project) {
   });
 }
 
-function projectCard(project, { onDelete, onTogglePin, onPowerChanged, available, signals }) {
+function projectCard(project, { onDelete, onTogglePin, onPowerChanged, onDetect, available, signals }) {
   const isMissing = project.status === 'MISSING';
 
   return el(
@@ -200,9 +200,20 @@ function projectCard(project, { onDelete, onTogglePin, onPowerChanged, available
             text: `+${project.technologies.length - 6}`,
           })
         : null,
+      // Sem stack, a linha vira um convite em vez de um lamento. Antes dizia
+      // "Stack ainda não detectada" e parava aí: quem lesse tinha que abrir o
+      // projeto e caçar a ação de detectar. Um projeto pode chegar sem stack
+      // por vários caminhos — cadastro antes de o detector existir, arquivo de
+      // configuração mal formado na hora do cadastro, pasta que só ganhou o
+      // `package.json` depois. Em todos, a correção é a mesma e cabe num clique.
       project.technologies.length
         ? null
-        : el('span', { class: 'field__hint', text: 'Stack ainda não detectada' }),
+        : el('button', {
+            class: 'btn btn--sm',
+            type: 'button',
+            title: 'Relê os arquivos do projeto e preenche a stack.',
+            onClick: (event) => onDetect(project, event.currentTarget),
+          }, [icon('refresh', { size: 12 }), 'Detectar stack']),
     ]),
 
     // Abrir o editor é o motivo mais comum de procurar um projeto aqui; exigir
@@ -369,6 +380,41 @@ export async function renderProjects(container, _params, query) {
       }
     };
 
+    const onDetect = async (project, botao) => {
+      const original = botao.textContent;
+      botao.disabled = true;
+      botao.textContent = 'Lendo…';
+      try {
+        const diff = await api.detectProject(project.id);
+        if (diff.skipped) {
+          toast(`${project.name}: a stack está travada; a detecção foi ignorada.`, {
+            kind: 'warning',
+            meta: 'Destrave em Settings do projeto para detectar de novo.',
+          });
+        } else if (diff.added.length || diff.services_added.length) {
+          toast(`${project.name}: ${diff.added.join(', ') || 'stack atualizada'}.`, {
+            kind: 'success',
+            meta: diff.services_added.length
+              ? `+${diff.services_added.length} serviço(s) sugerido(s)`
+              : undefined,
+          });
+        } else {
+          // Nada encontrado é resposta legítima — uma pasta com PDF e planilha
+          // não tem stack. Dizer isso é melhor que repetir o mesmo botão.
+          toast(`${project.name}: nada reconhecível neste diretório.`, {
+            kind: 'warning',
+            meta: diff.warnings[0] ?? 'Sem package.json, pyproject, Compose ou equivalente.',
+          });
+        }
+        await carregar();
+        draw();
+      } catch (error) {
+        botao.disabled = false;
+        botao.textContent = original;
+        showError(error);
+      }
+    };
+
     // Ligar ou parar muda o sinal do card, mas o estado real só reaparece
     // depois que o verificador de fundo rodar. Recarregar na hora mostraria o
     // valor velho com cara de novo; a espera curta deixa o cache alcançar.
@@ -494,7 +540,7 @@ export async function renderProjects(container, _params, query) {
         'div',
         { class: 'grid-cards' },
         visiveis.map((project) =>
-          projectCard(project, { onDelete, onTogglePin, onPowerChanged, available, signals })
+          projectCard(project, { onDelete, onTogglePin, onPowerChanged, onDetect, available, signals })
         )
       );
     }

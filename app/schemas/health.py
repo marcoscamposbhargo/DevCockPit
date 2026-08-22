@@ -161,3 +161,29 @@ class DashboardOut(BaseModel):
     #: Explícito de propósito: a UI mostra a idade do dado em vez de fingir
     #: tempo real (decisão D-18).
     from_cache: bool
+
+
+# --- servidor de desenvolvimento ---
+
+
+class DevServerOut(BaseModel):
+    """Estado do servidor que o painel subiu para este projeto."""
+
+    running: bool
+    pid: int | None = None
+    #: O comando, como texto, para a tela mostrar o que roda antes do clique.
+    #: Ninguém deve descobrir o que o botão faz depois de apertá-lo.
+    command: str = ""
+    #: "manifest", "node" ou "python" — de onde o comando veio.
+    source: str = ""
+    #: O arquivo que sustenta a decisão, ex.: "package.json · scripts.dev (pnpm)".
+    evidence: str = ""
+    started_at: datetime | None = None
+    #: Há um comando conhecido, mesmo com nada rodando. Separa "posso ligar" de
+    #: "não sei como" — que na tela são um botão e uma explicação, não o mesmo
+    #: botão desabilitado sem motivo.
+    can_start: bool = False
+
+
+class DevServerLogs(BaseModel):
+    lines: list[str] = Field(default_factory=list)

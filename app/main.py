@@ -26,6 +26,7 @@ from app.api.middleware import (
 from app.api.routes import (
     activity,
     dashboard,
+    dev_server,
     discovery,
     docker,
     git,
@@ -139,6 +140,7 @@ def create_app(
     app.include_router(services.global_router)
     app.include_router(dashboard.router)
     app.include_router(activity.router)
+    app.include_router(dev_server.router)
 
     _register_error_handlers(app)
     _mount_frontend(app)

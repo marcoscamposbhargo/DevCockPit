@@ -2,6 +2,7 @@ from app.models.base import Base, create_session_factory, session_scope, utcnow
 from app.models.project import (
     ActivityLog,
     ActivityStatus,
+    DevServer,
     DockerConfig,
     GitRepository,
     HealthKind,
@@ -17,6 +18,7 @@ __all__ = [
     "ActivityLog",
     "ActivityStatus",
     "Base",
+    "DevServer",
     "DockerConfig",
     "GitRepository",
     "HealthSnapshot",

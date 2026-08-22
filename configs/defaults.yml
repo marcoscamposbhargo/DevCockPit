@@ -1,0 +1,74 @@
+# Defaults do DevCockpit
+#
+# Menor nível de precedência na configuração de projeto:
+#   defaults -> detecção -> devcockpit.yml -> edição manual do usuário
+# (ver docs/08-project-configuration-spec.md)
+
+# Nomes de arquivo Compose procurados, na ordem
+compose_filenames:
+  - docker-compose.yml
+  - docker-compose.yaml
+  - compose.yml
+  - compose.yaml
+
+# Rótulo padrão por chave de serviço conhecida
+service_labels:
+  frontend: Frontend
+  backend: Backend
+  api: API
+  api_docs: API Docs
+  database: Database
+  db: Database
+  redis: Redis
+  worker: Worker
+
+# Porta convencional por tecnologia; usada só como sugestão no cadastro,
+# nunca sobrescreve porta detectada no arquivo Compose
+suggested_ports:
+  vite: 5173
+  next: 3000
+  react: 3000
+  fastapi: 8000
+  django: 8000
+  flask: 5000
+  express: 3000
+  postgres: 5432
+  mysql: 3306
+  redis: 6379
+  mongodb: 27017
+
+# Tipo de health check padrão por tipo de serviço
+health_defaults:
+  http_ok_status: [200, 201, 204, 301, 302, 304]
+  # serviço sem health_url mas com porta usa TCP connect
+  fallback_kind: tcp
+
+# Detectores habilitados e ordem de execução
+detectors:
+  - python_requirements
+  - python_pyproject
+  - node_package
+  - docker_dockerfile
+  - docker_compose
+  - vite
+  - nextjs
+  - java_maven
+  - java_gradle
+  - go_mod
+  - rust_cargo
+  - static_html
+
+# Marcadores que caracterizam um diretório como candidato a projeto
+# durante a varredura de descoberta
+project_markers:
+  - .git
+  - pyproject.toml
+  - requirements.txt
+  - package.json
+  - docker-compose.yml
+  - compose.yml
+  - Dockerfile
+  - pom.xml
+  - build.gradle
+  - go.mod
+  - Cargo.toml

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevCockpit</title>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/layout.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar__brand">
+        <span class="sidebar__logo" aria-hidden="true">◈</span>
+        <span class="sidebar__title">DevCockpit</span>
+      </div>
+
+      <nav class="sidebar__nav" aria-label="Navegação principal">
+        <a class="nav-item" href="#/dashboard" data-route="dashboard">Dashboard</a>
+        <a class="nav-item" href="#/projects" data-route="projects">Projects</a>
+        <a class="nav-item" href="#/activity" data-route="activity">Activity</a>
+        <a class="nav-item" href="#/settings" data-route="settings">Settings</a>
+      </nav>
+
+      <div class="sidebar__section">
+        <h2 class="sidebar__heading">Fixados</h2>
+        <div id="pinned-list" class="sidebar__pinned"></div>
+      </div>
+
+      <div class="sidebar__footer">
+        <span id="tools-indicator" class="tools-indicator"></span>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <input
+          id="global-search"
+          class="topbar__search"
+          type="search"
+          placeholder="Buscar projeto…  (Ctrl+K)"
+          aria-label="Buscar projeto">
+        <div id="freshness" class="topbar__meta"></div>
+      </header>
+
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

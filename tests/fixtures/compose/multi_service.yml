@@ -1,0 +1,19 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+  backend:
+    build: ./backend
+    ports:
+      - "127.0.0.1:8000:8000"
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+  worker:
+    build: ./backend
+  ranged:
+    image: nginx
+    ports:
+      - "9000-9010:9000-9010"

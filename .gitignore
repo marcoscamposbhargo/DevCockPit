@@ -1,0 +1,94 @@
+# --- Segredos e configuração local -------------------------------------
+.env
+.env.*
+!.env.example
+
+# roots.yml contém paths reais da máquina; só o exemplo é versionado
+configs/roots.yml
+
+# --- Dados locais ------------------------------------------------------
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# --- Logs --------------------------------------------------------------
+logs/
+*.log
+
+# --- Python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib60/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Ambientes virtuais
+.venv/
+venv/
+ENV/
+env/
+
+# Ferramentas
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+.tox/
+.hypothesis/
+
+# --- Node (caso entre ferramenta de frontend no futuro) ----------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# --- Editor / IDE ------------------------------------------------------
+.vscode/*
+!.vscode/settings.json.example
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Sistema operacional -----------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- Temporários do projeto --------------------------------------------
+tmp/
+temp/
+*.bak
+*.orig
+
+# Log de sessao e versionado (convencao de trabalho); o resto de logs/ nao
+!logs/
+logs/*
+!logs/session-log.md
+
+# Artefatos de build do setuptools
+*.egg-info/

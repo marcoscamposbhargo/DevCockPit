@@ -1,0 +1,247 @@
+"""Health check de serviços locais (FR-060 a FR-064).
+
+Duas decisões que sustentam o requisito de dashboard abaixo de 500 ms:
+
+1. as verificações são **concorrentes**, com timeout individual curto;
+2. a API **nunca** verifica sob demanda no caminho da requisição — ela lê
+   cache, e quem preenche o cache é o poller de background.
+
+Sem isso, 30 projetos × 3 serviços seriam 90 conexões TCP a cada carga de tela.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import socket
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import StrEnum
+
+import httpx
+
+from app.core.cache import TTLCache
+from app.models.base import utcnow
+
+logger = logging.getLogger(__name__)
+
+
+class HealthState(StrEnum):
+    ONLINE = "ONLINE"
+    OFFLINE = "OFFLINE"
+    STARTING = "STARTING"
+    ERROR = "ERROR"
+    STALE = "STALE"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class ServiceTarget:
+    project_id: str
+    key: str
+    label: str
+    host: str
+    port: int | None
+    url: str | None
+    health_url: str | None
+    health_kind: str
+
+
+@dataclass
+class HealthResult:
+    project_id: str
+    key: str
+    state: HealthState
+    latency_ms: int | None = None
+    detail: str | None = None
+    checked_at: datetime | None = None
+
+    @property
+    def age_seconds(self) -> float | None:
+        if self.checked_at is None:
+            return None
+        return (utcnow() - self.checked_at).total_seconds()
+
+
+OK_STATUS = frozenset({200, 201, 202, 204, 301, 302, 303, 304, 307, 308})
+
+
+class HealthService:
+    def __init__(
+        self,
+        cache: TTLCache,
+        timeout_s: float = 2.0,
+        stale_after_s: float = 90.0,
+    ) -> None:
+        self.cache = cache
+        self.timeout_s = timeout_s
+        self.stale_after_s = stale_after_s
+
+    # --- verificação ---
+
+    async def check(self, target: ServiceTarget) -> HealthResult:
+        kind = (target.health_kind or "TCP").upper()
+
+        if kind == "NONE":
+            return self._store(
+                HealthResult(
+                    project_id=target.project_id,
+                    key=target.key,
+                    state=HealthState.UNKNOWN,
+                    detail="Serviço marcado como não monitorado.",
+                    checked_at=utcnow(),
+                )
+            )
+
+        if kind == "HTTP" and (target.health_url or target.url):
+            return self._store(await self._check_http(target))
+
+        if target.port:
+            return self._store(await self._check_tcp(target))
+
+        return self._store(
+            HealthResult(
+                project_id=target.project_id,
+                key=target.key,
+                state=HealthState.UNKNOWN,
+                detail="Sem porta nem URL para verificar.",
+                checked_at=utcnow(),
+            )
+        )
+
+    async def check_many(self, targets: list[ServiceTarget]) -> list[HealthResult]:
+        if not targets:
+            return []
+        return list(await asyncio.gather(*(self.check(target) for target in targets)))
+
+    async def _check_http(self, target: ServiceTarget) -> HealthResult:
+        url = target.health_url or target.url or ""
+        started = asyncio.get_running_loop().time()
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_s, follow_redirects=False) as client:
+                response = await client.get(url)
+        except httpx.ConnectError:
+            return self._result(target, HealthState.OFFLINE, started, "Conexão recusada.")
+        except (httpx.TimeoutException, TimeoutError):
+            return self._result(target, HealthState.ERROR, started, "Tempo esgotado.")
+        except httpx.HTTPError as exc:
+            return self._result(target, HealthState.ERROR, started, str(exc)[:200])
+
+        if response.status_code in OK_STATUS:
+            return self._result(target, HealthState.ONLINE, started)
+
+        # 5xx num serviço que responde geralmente é aplicação subindo.
+        if 500 <= response.status_code < 600:
+            return self._result(
+                target, HealthState.STARTING, started, f"HTTP {response.status_code}"
+            )
+
+        return self._result(target, HealthState.ERROR, started, f"HTTP {response.status_code}")
+
+    async def _check_tcp(self, target: ServiceTarget) -> HealthResult:
+        started = asyncio.get_running_loop().time()
+        host = target.host or "localhost"
+
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, target.port), timeout=self.timeout_s
+            )
+        except (ConnectionRefusedError, OSError, socket.gaierror):
+            return self._result(target, HealthState.OFFLINE, started, "Porta fechada.")
+        except TimeoutError:
+            return self._result(target, HealthState.ERROR, started, "Tempo esgotado.")
+
+        writer.close()
+        with contextlib.suppress(OSError):
+            await writer.wait_closed()
+
+        return self._result(target, HealthState.ONLINE, started)
+
+    def _result(
+        self,
+        target: ServiceTarget,
+        state: HealthState,
+        started: float,
+        detail: str | None = None,
+    ) -> HealthResult:
+        elapsed = asyncio.get_running_loop().time() - started
+        return HealthResult(
+            project_id=target.project_id,
+            key=target.key,
+            state=state,
+            latency_ms=int(elapsed * 1000),
+            detail=detail,
+            checked_at=utcnow(),
+        )
+
+    # --- cache ---
+
+    def _key(self, project_id: str, key: str) -> str:
+        return f"health:{project_id}:{key}"
+
+    def _store(self, result: HealthResult) -> HealthResult:
+        self.cache.set(self._key(result.project_id, result.key), result)
+        return result
+
+    def last_known(self, project_id: str, key: str) -> HealthResult:
+        """Último estado conhecido, marcando `STALE` quando o dado envelheceu.
+
+        Nunca verifica aqui: a API lê, o poller escreve. Dado velho apresentado
+        como tempo real é o que destrói a confiança na ferramenta (D-18).
+        """
+        entry = self.cache.get_with_age(self._key(project_id, key))
+        if entry is None:
+            return HealthResult(
+                project_id=project_id,
+                key=key,
+                state=HealthState.UNKNOWN,
+                detail="Ainda não verificado.",
+            )
+
+        result, _age = entry
+        idade = result.age_seconds
+        if idade is not None and idade > self.stale_after_s and result.state != HealthState.STALE:
+            return HealthResult(
+                project_id=result.project_id,
+                key=result.key,
+                state=HealthState.STALE,
+                latency_ms=result.latency_ms,
+                detail=f"Última verificação há {int(idade)}s.",
+                checked_at=result.checked_at,
+            )
+        return result
+
+    def invalidate(self, project_id: str) -> None:
+        self.cache.invalidate_prefix(f"health:{project_id}:")
+
+
+def targets_from_project(project) -> list[ServiceTarget]:  # type: ignore[no-untyped-def]
+    return [
+        ServiceTarget(
+            project_id=project.id,
+            key=service.key,
+            label=service.label,
+            host=service.host or "localhost",
+            port=service.port,
+            url=service.url,
+            health_url=service.health_url,
+            health_kind=service.health_kind,
+        )
+        for service in project.services
+    ]
+
+
+def should_poll(project, recent_days: int) -> bool:  # type: ignore[no-untyped-def]
+    """Quais projetos o poller acompanha (questão Q-02).
+
+    Verificar 36 projetos a cada 30 s é caro e inútil: a maioria está parada há
+    semanas. A política é **fixados + acessados recentemente**, que é onde o
+    dado fresco tem valor. Qualquer projeto pode ser verificado sob demanda.
+    """
+    if project.is_pinned:
+        return True
+    if project.last_accessed_at is None:
+        return False
+    return project.last_accessed_at >= utcnow() - timedelta(days=recent_days)

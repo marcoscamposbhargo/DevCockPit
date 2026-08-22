@@ -1,0 +1,1 @@
+f25ac69Marcos2026-08-21T20:47:02-03:00feat: primeiro commit6f3ba21Marcos2026-08-20T10:12:00-03:00fix: corrige, com virgula | e pipe

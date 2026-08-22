@@ -1,0 +1,46 @@
+# Allowlist de diretórios raiz do DevCockpit
+#
+# Copie para configs/roots.yml e ajuste.
+#
+# IMPORTANTE — este arquivo é a base da defesa D4 do modelo de segurança
+# (docs/07-security-model.md). Nenhum projeto pode ser cadastrado, varrido ou
+# operado fora destes diretórios.
+#
+# Este arquivo NÃO é editável pela API, por decisão (D-10): uma allowlist que o
+# próprio cliente consegue ampliar não é uma allowlist.
+#
+# Regras:
+#   - use paths absolutos
+#   - barra normal (/) funciona no Windows e evita escape
+#   - a comparação é feita entre paths já resolvidos, por componente de
+#     diretório — "Desktop" não abrange "Desktop-antigo"
+#   - quanto mais estreito, melhor: evite apontar para C:/ ou para a raiz do
+#     perfil do usuário
+
+allowed_roots:
+  - C:/Users/User/Desktop
+  - C:/Users/User/Documents
+
+# Diretórios ignorados durante a varredura de descoberta (FR-011).
+# Correspondência por nome de diretório, em qualquer profundidade.
+scan_ignore:
+  - node_modules
+  - .venv
+  - venv
+  - env
+  - __pycache__
+  - .git
+  - dist
+  - build
+  - .next
+  - .nuxt
+  - target
+  - vendor
+  - .pytest_cache
+  - .mypy_cache
+  - .ruff_cache
+  - coverage
+  - htmlcov
+
+# Profundidade máxima da varredura a partir de cada root.
+scan_max_depth: 3

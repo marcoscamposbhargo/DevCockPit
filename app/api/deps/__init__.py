@@ -1,0 +1,157 @@
+"""Injeção de dependência das rotas.
+
+Serviços recebem colaboradores por aqui, o que permite substituí-los por
+implementação fake nos testes (NFR-023).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+from fastapi import Depends, Request
+from sqlalchemy.orm import Session
+
+from app.adapters.docker.adapter import DockerAdapter
+from app.adapters.git.adapter import GitAdapter
+from app.adapters.system.adapter import build_os_adapter
+from app.core.cache import TTLCache
+from app.core.config import RootsConfig, Settings
+from app.jobs.job_manager import JobManager
+from app.services.activity_service import ActivityService
+from app.services.dashboard_service import DashboardService
+from app.services.detection_service import DetectionService
+from app.services.discovery_service import DiscoveryService
+from app.services.docker_service import DockerService
+from app.services.git_service import GitService
+from app.services.health_service import HealthService
+from app.services.project_service import ProjectService
+from app.services.system_action_service import SystemActionService
+
+
+def get_settings_dep(request: Request) -> Settings:
+    return request.app.state.settings
+
+
+def get_roots_dep(request: Request) -> RootsConfig:
+    return request.app.state.roots
+
+
+def get_cache(request: Request) -> TTLCache:
+    return request.app.state.cache
+
+
+def get_command_runner(request: Request):  # type: ignore[no-untyped-def]
+    return request.app.state.command_runner
+
+
+def get_job_manager(request: Request) -> JobManager:
+    return request.app.state.job_manager
+
+
+def get_session(request: Request) -> Iterator[Session]:
+    factory = request.app.state.session_factory
+    session = factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def get_activity_service(session: Session = Depends(get_session)) -> ActivityService:
+    return ActivityService(session)
+
+
+def get_detection_service(
+    session: Session = Depends(get_session),
+    activity: ActivityService = Depends(get_activity_service),
+) -> DetectionService:
+    return DetectionService(session, activity=activity)
+
+
+def get_project_service(
+    session: Session = Depends(get_session),
+    roots: RootsConfig = Depends(get_roots_dep),
+    activity: ActivityService = Depends(get_activity_service),
+    detection: DetectionService = Depends(get_detection_service),
+) -> ProjectService:
+    return ProjectService(
+        session=session,
+        allowed_roots=roots.allowed_roots,
+        activity=activity,
+        detection=detection,
+    )
+
+
+def get_git_service(
+    settings: Settings = Depends(get_settings_dep),
+    cache: TTLCache = Depends(get_cache),
+    runner=Depends(get_command_runner),  # noqa: B008
+) -> GitService:
+    adapter = GitAdapter(
+        runner=runner,
+        git_bin=settings.git_bin,
+        timeout_s=settings.timeout_git,
+    )
+    return GitService(adapter=adapter, cache=cache)
+
+
+def get_docker_service(
+    settings: Settings = Depends(get_settings_dep),
+    cache: TTLCache = Depends(get_cache),
+    runner=Depends(get_command_runner),  # noqa: B008
+    jobs: JobManager = Depends(get_job_manager),
+) -> DockerService:
+    adapter = DockerAdapter(
+        runner=runner,
+        docker_bin=settings.docker_bin,
+        read_timeout_s=settings.timeout_docker_read,
+    )
+    return DockerService(
+        adapter=adapter,
+        cache=cache,
+        jobs=jobs,
+        timeouts={
+            "up": settings.timeout_compose_up,
+            "down": settings.timeout_compose_control,
+            "start": settings.timeout_compose_control,
+            "stop": settings.timeout_compose_control,
+            "restart": settings.timeout_compose_control,
+            "default": settings.timeout_compose_control,
+        },
+    )
+
+
+def get_health_service(request: Request) -> HealthService:
+    """Instância única: o cache de health é compartilhado com o poller."""
+    return request.app.state.health_service
+
+
+def get_system_service(
+    settings: Settings = Depends(get_settings_dep),
+    runner=Depends(get_command_runner),  # noqa: B008
+    activity: ActivityService = Depends(get_activity_service),
+) -> SystemActionService:
+    adapter = build_os_adapter(
+        code_bin=settings.code_bin,
+        timeout_s=settings.timeout_system_action,
+    )
+    return SystemActionService(adapter=adapter, runner=runner, activity=activity)
+
+
+def get_dashboard_service(
+    session: Session = Depends(get_session),
+    cache: TTLCache = Depends(get_cache),
+    health: HealthService = Depends(get_health_service),
+) -> DashboardService:
+    return DashboardService(session=session, cache=cache, health=health)
+
+
+def get_discovery_service(
+    session: Session = Depends(get_session),
+    roots: RootsConfig = Depends(get_roots_dep),
+) -> DiscoveryService:
+    return DiscoveryService(session=session, roots=roots)

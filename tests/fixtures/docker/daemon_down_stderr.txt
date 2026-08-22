@@ -1,0 +1,1 @@
+error during connect: Get "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.51/containers/json": open //./pipe/dockerDesktopLinuxEngine: O sistema nao pode encontrar o arquivo especificado.

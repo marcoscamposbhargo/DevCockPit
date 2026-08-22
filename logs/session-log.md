@@ -13,7 +13,12 @@ máquina e expõe Git, Docker, serviços e portas numa interface só, em
 **Estado:** MVP completo em 2026-08-21 (fases 0 a 4, 131 pontos, 285 testes,
 cobertura 92%). Em uso desde então, com o backlog vindo do que incomoda no dia
 a dia: sessão 5 mexeu no frontend, sessão 6 varreu bugs e trouxe descoberta de
-porta e o botão de ligar sem terminal. **395 testes** hoje.
+porta, o botão de ligar sem terminal e a orquestração Docker → aplicação.
+**413 testes** hoje.
+
+**O que a ferramenta faz de novo, em uma frase:** um clique sobe o ambiente em
+container, espera as dependências responderem e sobe a aplicação nativa com hot
+reload; desligar para só a aplicação e deixa o ambiente de pé.
 
 | Fase | Entrega | Testes |
 |------|---------|--------|
@@ -50,14 +55,13 @@ Todos encontrados por teste, não por acaso:
 `PROJECT_STATUS.md` está em modo **EM USO**, com uma seção "Anotações de uso"
 no topo. O backlog agora vem do que incomodar no dia a dia.
 
-A decisão aberta é a ordem Docker para app: num projeto que tem Compose **e**
-bloco `run:` declarado, "Ligar" precisa subir os containers, esperar, e só
-então subir o servidor de desenvolvimento. Faltam duas respostas, e a última
-seção do log da sessão 6 as detalha.
+O trabalho da sessão 6 está na branch `varredura/bugs-e-organizacao`, oito
+commits, **fora da `main`**. Entrar ou não é decisão pendente.
 
-Pendente de verificação manual (abre janela na área de trabalho): botões
-VS Code, Pasta, Terminal e Abrir serviço; e o comportamento com o Docker
-Desktop desligado.
+Pendente de verificação manual (abre janela na área de trabalho): o botão
+VS Code trazendo a janela para frente; e o comportamento da aba Docker com o
+Docker Desktop desligado. O resto da interface foi exercitado no browser real
+ao final da sessão 6 — doze testes, nenhum erro de console.
 
 ---
 
@@ -1112,15 +1116,156 @@ O antídoto que funcionou foi banal: procurar por nome cada constante e cada
 ramo, e conferir se alguém os alcança. `FORBIDDEN_FLAGS` aparecia uma vez no
 repositório inteiro — na própria definição.
 
+### Continuação: a orquestração Docker + app
+
+A decisão que a seção anterior deixou aberta foi respondida no meio da sessão:
+**o Docker abre os ambientes, o sistema pega os ambientes já construídos e
+continua o processo.** Banco e fila em container; a aplicação nativa, com hot
+reload, falando com eles.
+
+**Quem é aplicação e quem é ambiente.** O bloco `run:` do manifesto decide.
+Havendo `run:`, a aplicação é o comando dele e o Compose inteiro vira ambiente.
+Não havendo, a aplicação é o próprio Compose.
+
+Declaração explícita compõe; inferência não. O ZAPBOT tem `api`, `nginx` e
+`worker` dentro do Compose: inferir "além dos containers, roda também o `npm run
+dev`" subiria a aplicação duas vezes na mesma porta. Escrever quatro linhas no
+manifesto é barato; desfazer um duplo start não é.
+
+**A ordem, e a espera.** `compose up -d` primeiro, sempre — é idempotente, então
+com tudo de pé retorna rápido e não mexe em nada. Depois a espera, depois a
+aplicação. A ordem inversa quebra: aplicação antes do banco morre no primeiro
+`connect`.
+
+Esperar tempo fixo seria chute — um Postgres com banco vazio abre em dois
+segundos, com trinta giga em vinte. Espera-se as portas dos serviços declarados
+**que não são a aplicação**, com teto de 30 s. A porta do próprio app fica fora
+por definição: ele ainda não subiu, e incluí-la estouraria o teto em toda
+subida. Passado o teto, a aplicação sobe assim mesmo com aviso: travar o clique
+para sempre é pior que deixá-la reclamar, que é o que ela faria no terminal.
+
+**A assimetria do desligar.** "Desligar" para a aplicação; os containers ficam.
+Banco e fila são caros de subir e não mudam entre uma execução e outra do
+backend — derrubá-los a cada parada trocaria um ciclo de dois segundos por um de
+trinta. Shift+clique derruba tudo, e o chip do Docker no card também. Quando o
+projeto não tem aplicação separada, "Desligar" para o Compose, senão o botão não
+faria nada.
+
+**O chip do Docker existe por causa disso.** Com o botão falando só da
+aplicação, parar o app deixaria o painel dizendo "Desligado" com o Postgres
+atendendo na porta — a mesma confusão que o caso do ZAPBOT expôs. Pelo mesmo
+motivo `ProjectSummary.app_running` é `None`, e não `false`, quando o projeto não
+tem aplicação separada: `false` diria "parado" com a stack inteira no ar.
+
+### O que o smartdash ensinou, rodando
+
+Três defeitos que a leitura do código não pegaria, um a cada tentativa:
+
+1. **Interpretador.** `plan_from_python` emitia `python` puro, que é o do PATH e
+   tem as dependências de outra pessoa. Deu `ModuleNotFoundError: No module
+   named 'duckdb'` — de uma biblioteca instalada, só que no `.venv` do projeto.
+   Agora o `.venv` local é procurado primeiro.
+2. **Caminho relativo de programa.** `CreateProcess` resolve caminho relativo
+   contra o diretório do processo que **chama**, não contra o `cwd` do filho, e
+   `.venv/Scripts/python.exe` no manifesto apontava para o lugar errado.
+3. **Já estar no ar virava falha.** `up` com a aplicação rodando levantava
+   `ServerAlreadyRunning` e marcava o job inteiro de vermelho — incluindo a
+   etapa do Compose que tinha dado certo. Subir é idempotente por decisão.
+
+Depois disso a sequência inteira funcionou:
+
+    Subindo os containers (docker-compose.yml)…
+     Container smartdash-db-1 Healthy
+     Container smartdash-backend-1 Started
+    Containers no ar.
+    Esperando as dependências responderem: Database…
+      Database respondeu.
+    Dependências prontas.
+    Aplicação no ar: .venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload …
+
+### Rede de proteção nova nos testes
+
+Escrever `test_environment.py` subiu um `node` de verdade num diretório
+temporário do pytest — e ele **sobreviveria ao pytest**, que é o que o
+`CREATE_NEW_PROCESS_GROUP` garante de propósito. O `conftest` já barrava execução
+real em job; o servidor de desenvolvimento não passa pelo `JobManager` e escapava
+da rede. Agora `start_background` também é barrado fora de teste `integration`.
+
+### A bateria no browser, e os três defeitos que ela achou
+
+Doze testes: ligar e desligar pelo botão, o "Abrir", o chip do Docker nos dois
+estados, o trilho por clique e por Ctrl+Alt+B, as seis telas, e o "Detectar
+stack" num projeto sem nada reconhecível e depois com `package.json`. Nenhum erro
+de console.
+
+**A sugestão de porta podia criar o conflito que ela existe para apontar.**
+`_mismatches` sugeria a mesma porta observada para todos os serviços divergentes
+do projeto. Com o SmartDash declarando 3004 e 3005 e uma só porta sua no ar, a
+tela oferecia "Usar 8000" nas duas linhas — inclusive na do banco. Agora uma
+porta observada só pode ser sugerida a um serviço, e com ambiguidade a
+divergência aparece sem sugestão, com um botão "Corrigir". Dizer "está errado"
+sem chutar o certo é honesto; chutar errado custa uma porta trocada à toa.
+
+**Porta de container não era atribuída a projeto nenhum.** O `cwd` do Docker
+aponta para a instalação dele, então nenhuma regra de atribuição casava. O banco
+do SmartDash aparecia como "sem dono" e o serviço declarado virava divergência —
+alarme falso justamente na configuração que o painel recomenda. Sobra o número:
+se um único projeto declara aquela porta, foi o Compose dele que a publicou.
+Declarada por dois, ninguém é atribuído.
+
+**O card sabia ligar e não sabia abrir.** Depois de ligar, a próxima coisa que se
+quer é ver, e "Abrir" só existia na página do projeto. O card ganhou o botão, com
+a **chave** do serviço e nunca a URL — quem abre é o backend, e aceitar URL do
+cliente reabriria o vetor que a decisão D-13 fecha.
+
+### Um susto que não era bug
+
+Durante a verificação, um `python.exe` com o caminho do interpretador global
+aparecia segurando a porta 8000, e por um momento pareceu processo órfão dos
+testes anteriores. Não era: o pid era filho do processo do `.venv`, e no Windows
+o `python.exe` de um ambiente virtual é um redirecionamento para o base — as
+dependências do venv estavam lá, tanto que o `duckdb` importou. Árvore só,
+saudável.
+
+Vale registrar porque o caminho no `cmdline` de um processo em venv no Windows
+**não** identifica o ambiente que ele está usando, e concluir o contrário custou
+uma investigação.
+
+### Números finais da sessão
+
+413 testes passando, 1 pulado. `ruff check` limpo. 50 arquivos, +5067 e −146
+linhas. Dependência nova: `psutil`.
+
+| Commit | Entrega |
+|--------|---------|
+| `877ad5f` | Seis defeitos da varredura, com regressão para cada um |
+| `74fd474` | Serviço desligado lia como erro; `serve.ps1` abortava na migração |
+| `d7b80c6` | Descoberta de porta e o aviso de declarado contra observado |
+| `84ab027` | Chave rotulada da barra de ativos; desligar confirmado por verificação |
+| `a290e31` | Servidor de desenvolvimento pelo painel, sem terminal |
+| `72d8895` | Orquestração: um clique sobe ambiente e app, na ordem |
+| `0e6d8df` | Sugestão de porta criava conflito; card ganhou "Abrir" |
+
+### A segunda lição do dia
+
+A primeira foi sobre código morto que parece proteção. A segunda é sobre onde os
+defeitos moram: dos onze problemas desta sessão, **seis só apareceram rodando** —
+`npm.CMD` e `PATHEXT`, `DETACHED_PROCESS` engolindo o log, caminho relativo
+resolvido contra o diretório errado, interpretador do venv, sugestão de porta
+duplicada, card sem botão de abrir. Nenhum deles é visível lendo o código, e
+quatro deles o teste unitário também não pegaria, porque o defeito estava na
+fronteira com o sistema operacional ou no que a tela oferece.
+
+O que os pegou foi sempre a mesma coisa: subir o servidor de verdade, clicar no
+browser de verdade, e olhar o que aconteceu.
+
 ### Continua com você
 
-- [ ] decidir a ordem Docker para app: com Compose **e** `run:` declarado,
-      "Ligar" deve subir os containers, esperar, e então subir o servidor de
-      dev. Faltam duas respostas: esperar o quê antes de subir o app (proposta:
-      as portas dos serviços declarados que não são o app, com teto de 30 s), e
-      se "Desligar" derruba o Compose junto ou só o app
-- [ ] declarar `run:` no `devcockpit.yml` do `smartdash` e do `zapcrm` — os dois
-      têm Compose e backend próprio, e são o caso que a orquestração resolve
+- [ ] declarar `run:` no `devcockpit.yml` do `zapcrm` — o do `smartdash` já está
+      escrito e comentado, e serve de modelo
+- [ ] a porta declarada do `Dashdate · Backend` é 3002 e ele está no ar em 8123:
+      é a única divergência real que sobrou na tela de Ports
+- [ ] clicar em VS Code e confirmar que a janela vem para frente — abre janela na
+      área de trabalho, então precisa do seu olho (pendente desde 22)
 - [ ] conferir a aba Docker com o Docker Desktop desligado (pendente desde 21)
-- [ ] clicar em VS Code e confirmar que a janela vem para frente (pendente
-      desde 22)
+- [ ] decidir se a branch `varredura/bugs-e-organizacao` entra na `main`

@@ -7,6 +7,8 @@ validado em `Settings` (NFR-001) e a allowlist de ações é conferida no startu
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -64,10 +66,23 @@ def create_app(
     )
     assert_registry_is_safe()
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if start_poller:
+            app.state.health_poller.start()
+        try:
+            yield
+        finally:
+            # Job em andamento é cancelado no encerramento: o estado é volátil
+            # por decisão (D-07), mas deixar processo órfão nunca é aceitável.
+            await app.state.health_poller.stop()
+            await app.state.job_manager.shutdown()
+
     app = FastAPI(
         title="DevCockpit",
         version=settings.version,
         description="Central local de gerenciamento dos projetos de desenvolvimento.",
+        lifespan=lifespan,
     )
 
     app.state.settings = settings
@@ -118,18 +133,6 @@ def create_app(
 
     _register_error_handlers(app)
     _mount_frontend(app)
-
-    @app.on_event("startup")
-    async def _start_poller() -> None:
-        if start_poller:
-            app.state.health_poller.start()
-
-    @app.on_event("shutdown")
-    async def _stop_background() -> None:
-        # Job em andamento é cancelado no encerramento: o estado é volátil por
-        # decisão (D-07), mas deixar processo órfão nunca é aceitável.
-        await app.state.health_poller.stop()
-        await app.state.job_manager.shutdown()
 
     logger.info(
         "devcockpit iniciado",

@@ -23,7 +23,9 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
-_Vazio por enquanto._
+- [x] (2026-08-21) `@app.on_event` estava deprecado no FastAPI e gerava 385
+      warnings na suíte. Migrado para `lifespan` em `app/main.py`. Sobra um
+      único warning, de terceiro (`starlette.testclient` pedindo `httpx2`).
 
 ## 🏁 MVP COMPLETO
 
@@ -340,14 +342,13 @@ Verificado via API:
 [x] `code` fora do PATH deixaria o botão desabilitado (GET /api/health)
 ```
 
-Faltam os que só fazem sentido com a tela aberta — abrem janela na sua área
-de trabalho, então deixei para você:
+Verificado no browser pelo usuário em 2026-08-21:
 
 ```
-[ ] botão VS Code abre o projeto correto
-[ ] botão Pasta abre o Explorer no diretório certo
-[ ] botão Terminal abre já posicionado no diretório
-[ ] botão Abrir serviço abre a URL certa
+[x] botão VS Code abre o projeto correto
+[x] botão Pasta abre o Explorer no diretório certo
+[x] botão Terminal abre já posicionado no diretório
+[x] botão Abrir serviço abre a URL certa
 [ ] aba Services mostra o estado e o botão "Verificar agora" funciona
 ```
 

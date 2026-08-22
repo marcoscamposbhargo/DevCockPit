@@ -584,3 +584,62 @@ Decisões `D-37` a `D-41` registradas em `docs/12-decisions.md`.
       botão Exportar, e o botão Tema alternando os três estados
 - [ ] Conferir a aba Docker com o Docker Desktop desligado
 - [ ] Usar por uma semana: o backlog daqui em diante sai do uso real
+
+---
+
+## Sessão 2026-08-21 (noite, parte 2) — rodada de browser
+
+**Pedido:** "ajuste" → conferir no browser em vez de deixar o checklist manual.
+
+Chromium headless dirigindo `127.0.0.1:8765` com o código novo. Antes de
+começar foi preciso reiniciar o servidor: havia dois processos uvicorn sem
+`--reload`, ambos servindo o código anterior ao manifesto.
+
+### Quatro defeitos encontrados e corrigidos (commit `4ba9551`)
+
+**1. Dois `null` na aba Manifest.** `container.replaceChildren(...)` não filtra
+filhos nulos como o `mount` faz — os blocos opcionais (avisos e diff) viravam
+o texto literal "null" na tela. Achado que nenhum teste de API pegaria: o
+backend estava certo.
+
+**2. Cabeçalho desatualizado depois de importar.** O painel redesenhava só a
+aba, mas nome e descrição vivem no cabeçalho da página. Importar renomeava o
+projeto e a tela continuava mostrando o nome antigo. Agora dispara
+`hashchange`, que é o que o router escuta.
+
+**3. Dashboard mostrando "0 Rodando" com quatro serviços online na mesma
+tela.** A contagem vinha da coluna `status`, que descreve o registro e nunca
+chega a `RUNNING` sozinha. Passou a vir do health observado (D-42). Agora: 3
+rodando, 3 parados, 6 projetos.
+
+**4. Check TCP dando OFFLINE para serviço que está no ar.** O mais sério dos
+quatro. No Windows `localhost` resolve `::1` antes de `127.0.0.1`; um serviço
+que só ouve em IPv4 fazia a tentativa IPv6 pendurar até estourar o timeout de
+2 s. Resolvido com `happy_eyeballs_delay=0.25` (D-43). O teste novo falha sem
+o fix — foi exatamente assim que o bug apareceu.
+
+Vale notar: o "porta 8000 do Dashdate: tempo esgotado, reportado como ERROR"
+registrado como comportamento correto no critério de saída da Fase 4 era, em
+parte, este bug.
+
+### Pedido no meio do caminho
+
+"Liberar as tools para abrir no projeto" — os botões estavam habilitados nos
+seis projetos, mas só na aba Overview. VS Code, Pasta e Terminal agora também
+aparecem no card da lista de Projects (D-44), com os botões extraídos para
+função compartilhada entre as duas telas.
+
+### Conferido e funcionando
+
+Aba Manifest (prévia, avisos, diff, importar, exportar com confirmação), tema
+nos três estados com persistência e sincronia entre topbar e Settings, abas
+Git/Docker/Services sem erro de console, "Verificar agora" trazendo ONLINE com
+latência real, e as telas legíveis em claro e escuro.
+
+302 testes, cobertura 92%, ruff limpo.
+
+### Continua com você
+
+- [ ] clicar em VS Code / Pasta / Terminal (abre janela na sua área de trabalho,
+      então não cliquei)
+- [ ] conferir a aba Docker com o Docker Desktop desligado

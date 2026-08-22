@@ -435,7 +435,7 @@ Verificado no browser pelo usuário em 2026-08-21:
 Falta, porque depende de você:
 
 ```
-[ ] Ctrl+Shift+R e conferir o layout novo (cards com sinais, filtros, painéis)
+[x] Ctrl+Shift+R e conferir o layout novo (confirmado por você em 2026-08-22)
 [ ] clicar em VS Code e confirmar que a janela agora vem para frente (D-46)
 [ ] dizer o que ainda incomoda visualmente
 [ ] conferir a aba Docker com o Docker Desktop desligado

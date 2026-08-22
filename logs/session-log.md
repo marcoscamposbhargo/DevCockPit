@@ -909,7 +909,9 @@ no cache do navegador. Nenhum dos dois aparece em `logs/devcockpit.log`.
 
 ### Continua com você
 
-- [ ] `Ctrl+Shift+R` na aba aberta e conferir o layout novo
+- [x] `Ctrl+Shift+R` na aba aberta e conferir o layout novo — **confirmado**:
+      o layout novo apareceu assim que o cache foi ignorado, o que fecha o
+      diagnóstico do D-51 no browser real e não só no headless
 - [ ] clicar em VS Code e confirmar que a janela agora vem para frente
 - [ ] dizer o que ainda incomoda visualmente — o polimento que sobra é o que
       só se decide olhando

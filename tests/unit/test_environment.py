@@ -336,3 +336,109 @@ def test_desligar_completo_quando_pedido(
     alvo = servico(session_factory, tmp_path).down(projeto, servers, include_docker=True)
 
     assert alvo == "docker"
+
+
+# --- falha de porta ocupada ----------------------------------------------
+
+
+class RunnerQueFalhaPorPorta(RunnerFalso):
+    """Reproduz a saída real do Docker quando a porta já está tomada."""
+
+    def __init__(self, saida: str) -> None:
+        super().__init__(ok=False)
+        self.saida = saida
+
+    async def run(self, spec, on_line=None, cancel_event=None):  # type: ignore[no-untyped-def]
+        self.chamadas.append(spec.argv)
+        return CommandResult(exit_code=1, stdout="", stderr=self.saida, duration_ms=1)
+
+
+class DescobertaFalsa:
+    def __init__(self, portas) -> None:  # type: ignore[no-untyped-def]
+        self._portas = portas
+
+    def last_known(self):  # type: ignore[no-untyped-def]
+        from app.services.port_discovery_service import PortObservation
+
+        return PortObservation(ports=self._portas)
+
+
+@pytest.mark.parametrize(
+    ("saida", "porta"),
+    [
+        (
+            "Error response from daemon: failed to set up container networking: "
+            "driver failed programming external connectivity on endpoint app-db-1 "
+            "(5be7): Bind for 0.0.0.0:5432 failed: port is already allocated",
+            5432,
+        ),
+        ("listen tcp 0.0.0.0:3000: bind: address already in use", 3000),
+    ],
+)
+def test_extrai_a_porta_das_duas_formas_do_docker(saida: str, porta: int) -> None:
+    """As duas formas trazem o número em posições diferentes da frase."""
+    from app.services.environment_service import _porta_ocupada
+
+    assert _porta_ocupada(saida) == porta
+
+
+def test_falha_que_nao_e_de_porta_nao_inventa_culpado() -> None:
+    from app.services.environment_service import _porta_ocupada
+
+    assert _porta_ocupada("Error: pull access denied for foo/bar") is None
+
+
+async def test_porta_ocupada_diz_quem_esta_com_ela(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """"Port is already allocated" é a falha mais comum e a mais inútil como o
+    Docker a entrega: diz que a porta está ocupada e não diz por quem."""
+    from app.services.port_discovery_service import ObservedPort
+
+    com_compose(projeto)
+    session.commit()
+
+    env = servico(
+        session_factory,
+        tmp_path,
+        runner=RunnerQueFalhaPorPorta(
+            "Bind for 0.0.0.0:5432 failed: port is already allocated"
+        ),
+    )
+    env.discovery = DescobertaFalsa(
+        [
+            ObservedPort(
+                port=5432,
+                pid=9,
+                process_name="com.docker.backend.exe",
+                project_name="Outro Projeto",
+                matched_by="container",
+            )
+        ]
+    )
+    job = Job(id="j1", action="environment.up", key="k")
+
+    with pytest.raises(Exception, match="Outro Projeto"):
+        await env.up(job, projeto.id)
+
+    assert any("5432" in linha and "ocupada" in linha for linha in job.lines)
+
+
+async def test_sem_descoberta_a_mensagem_continua_correta(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """A descoberta é opcional: sem ela o aviso perde o nome, não a verdade."""
+    com_compose(projeto)
+    session.commit()
+
+    env = servico(
+        session_factory,
+        tmp_path,
+        runner=RunnerQueFalhaPorPorta(
+            "Bind for 0.0.0.0:5432 failed: port is already allocated"
+        ),
+    )
+    job = Job(id="j1", action="environment.up", key="k")
+
+    with pytest.raises(Exception, match="5432"):
+        await env.up(job, projeto.id)

@@ -209,4 +209,8 @@ def get_environment_service(request: Request) -> EnvironmentService:
         health=request.app.state.health_service,
         logs_dir=settings.resolve(settings.log_file).parent,
         compose_timeout_s=settings.timeout_compose_up,
+        # Para dizer **quem** está com a porta quando o Compose falha por
+        # "port is already allocated" — a falha mais comum e a mais inútil
+        # como o Docker a entrega.
+        discovery=request.app.state.port_discovery,
     )

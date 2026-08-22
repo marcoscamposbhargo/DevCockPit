@@ -312,12 +312,25 @@ def _mismatches(projects, observacao) -> list[PortMismatch]:  # type: ignore[no-
         portas_observadas = {porta.port for porta in observadas}
         declaradas = {s.port for s in project.services if s.port}
 
+        candidatas = [p for p in observadas if p.port not in declaradas]
+
+        # **Só há divergência se alguma porta do projeto estiver escutando sem
+        # que serviço declarado nenhum a explique.** Sem esta condição, um
+        # projeto com o banco em container e a aplicação parada acusava o
+        # backend de "porta errada" — quando ele só estava desligado, que é o
+        # estado normal de metade dos projetos em qualquer momento do dia.
+        #
+        # O caso que a tela existe para pegar continua pegando: o DevCockpit
+        # declarava 3003 e escutava em 8765, e a 8765 é exatamente uma porta
+        # observada que nenhum serviço declarado explicava.
+        if not candidatas:
+            continue
+
         divergentes = [
             service
             for service in project.services
             if service.port and service.port not in portas_observadas
         ]
-        candidatas = [p for p in observadas if p.port not in declaradas]
 
         # Com um só serviço divergente, a porta que sobra é dele. Com vários,
         # não há como saber qual porta é de qual — e a resposta certa a "não

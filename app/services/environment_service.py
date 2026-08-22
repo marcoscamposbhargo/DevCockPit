@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -103,6 +104,7 @@ class EnvironmentService:
         logs_dir,  # type: ignore[no-untyped-def]
         runner: AsyncCommandRunner | None = None,
         compose_timeout_s: float = 300.0,
+        discovery=None,  # type: ignore[no-untyped-def]
     ) -> None:
         # Sessão própria por operação: o job roda depois que a requisição
         # acabou, e a sessão daquela requisição já está fechada.
@@ -112,6 +114,9 @@ class EnvironmentService:
         self.logs_dir = logs_dir
         self.runner = runner or AsyncCommandRunner()
         self.compose_timeout_s = compose_timeout_s
+        #: Só para explicar falha de porta ocupada. Opcional: sem ela a
+        #: mensagem continua correta, só menos útil.
+        self.discovery = discovery
 
     # --- leitura ---
 
@@ -225,11 +230,47 @@ class EnvironmentService:
             cancel_event=job.cancel_event,
         )
         if not resultado.ok:
-            raise DomainError(
+            raise DomainError(self._explain_failure(resultado, job))
+        job.append("Containers no ar.", limit=OUTPUT_LIMIT)
+
+    def _explain_failure(self, resultado, job: Job) -> str:  # type: ignore[no-untyped-def]
+        """Traduz a falha do Compose no que dá para fazer a respeito.
+
+        "port is already allocated" é a falha mais comum e a mais inútil como
+        vem: o Docker diz que a porta está ocupada e não diz por quem. Quem lê
+        precisa abrir um terminal e caçar — que é exatamente o trabalho que a
+        descoberta de porta já fez no último ciclo do poller.
+        """
+        saida = f"{resultado.stdout}\n{resultado.stderr}"
+        porta = _porta_ocupada(saida)
+
+        if porta is None:
+            return (
                 f"O Compose falhou ao subir ({resultado.exit_code}). "
                 "A saída acima tem o motivo."
             )
-        job.append("Containers no ar.", limit=OUTPUT_LIMIT)
+
+        culpado = self._quem_ocupa(porta)
+        job.append(f"A porta {porta} já está ocupada por {culpado}.", limit=OUTPUT_LIMIT)
+        return (
+            f"A porta {porta} já está ocupada por {culpado}. "
+            "Pare quem está com ela, ou troque a porta deste projeto."
+        )
+
+    def _quem_ocupa(self, porta: int) -> str:
+        """Descrição de quem está com a porta, do mais informativo ao menos."""
+        if self.discovery is None:
+            return "outro processo"
+
+        observada = self.discovery.last_known().by_port().get(porta)
+        if observada is None:
+            return "outro processo (não identificado na última varredura)"
+
+        if observada.project_name:
+            return f"{observada.project_name} ({observada.process_name or 'processo'})"
+        if observada.matched_by == "container":
+            return f"um container ({observada.process_name or 'Docker'})"
+        return observada.process_name or "outro processo"
 
     async def _wait_dependencies(self, job: Job, project: Project, plano: EnvironmentPlan) -> None:
         """Espera as portas das dependências responderem, com teto.
@@ -318,3 +359,34 @@ class EnvironmentService:
 
         servers.stop(project)
         return "docker" if include_docker else "app"
+
+
+#: As duas formas com que o Docker relata porta ocupada, conforme a versão e a
+#: camada que falhou:
+#:
+#:   Bind for 0.0.0.0:5432 failed: port is already allocated
+#:   listen tcp 0.0.0.0:3000: bind: address already in use
+#:
+#: Em ambas o número vem depois do último `:` do endereço, mas numa ele antecede
+#: a frase e na outra a sucede — daí dois padrões em vez de um espertinho.
+_FORMAS_PORTA_OCUPADA = (
+    re.compile(r"bind for\s+\S*?:(\d{1,5})\s+failed:\s*port is already allocated", re.I),
+    re.compile(r"\S*?:(\d{1,5}):\s*bind:\s*address already in use", re.I),
+)
+
+
+def _porta_ocupada(saida: str) -> int | None:
+    """Extrai a porta de uma falha de "porta já ocupada", se for esse o caso.
+
+    Devolve `None` para qualquer outra falha: quem chama cai na mensagem
+    genérica, que continua correta. Adivinhar porta de uma saída que não fala
+    de porta seria inventar um culpado.
+    """
+    for padrao in _FORMAS_PORTA_OCUPADA:
+        achado = padrao.search(saida)
+        if achado is None:
+            continue
+        numero = int(achado.group(1))
+        if 1 <= numero <= 65535:
+            return numero
+    return None

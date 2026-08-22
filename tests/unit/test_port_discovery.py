@@ -467,3 +467,87 @@ def test_porta_de_container_disputada_por_dois_projetos_nao_e_atribuida() -> Non
     ]
 
     assert disco.observe([a, b]).ports[0].project_id is None
+
+
+def test_aplicacao_parada_com_banco_de_pe_nao_e_divergencia(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """O estado mais comum de todos não pode virar alerta.
+
+    Projeto com banco em container e aplicação desligada: metade dos projetos
+    está assim em qualquer momento do dia. Acusar o backend de "porta errada"
+    aí é ruído puro — e ruído que aparece sempre treina a pessoa a ignorar o
+    aviso que um dia estiver certo.
+    """
+    from tests.conftest import WRITE_HEADERS
+
+    diretorio = workspace / "parado"
+    diretorio.mkdir(exist_ok=True)
+    criado = client.post(
+        "/api/projects",
+        json={"path": str(diretorio), "name": "parado", "run_detection": False},
+        headers=WRITE_HEADERS,
+    ).json()
+    client.put(
+        f"/api/projects/{criado['id']}/services",
+        json={
+            "items": [
+                {"key": "backend", "label": "Backend", "port": 8000},
+                {"key": "db", "label": "Database", "port": 5432},
+            ]
+        },
+        headers=WRITE_HEADERS,
+    )
+
+    # Só o banco está no ar, e ele está exatamente na porta declarada.
+    client.app.state.port_discovery.scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=5432,
+                pid=9,
+                process_name="com.docker.backend.exe",
+                cwd="C:/Docker",
+            )
+        ]
+    )
+    client.app.state.port_discovery.observe(
+        [
+            ProjectRef(
+                id=criado["id"],
+                name="parado",
+                path=str(diretorio),
+                declared_ports=(8000, 5432),
+            )
+        ]
+    )
+
+    assert client.get("/api/services/ports").json()["mismatches"] == []
+
+
+def test_porta_inexplicada_continua_virando_divergencia(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """O caso que a tela existe para pegar: declarado 3003, no ar em 8765."""
+    from tests.conftest import WRITE_HEADERS
+
+    diretorio = workspace / "movido"
+    diretorio.mkdir(exist_ok=True)
+    criado = client.post(
+        "/api/projects",
+        json={"path": str(diretorio), "name": "movido", "run_detection": False},
+        headers=WRITE_HEADERS,
+    ).json()
+    client.put(
+        f"/api/projects/{criado['id']}/services",
+        json={"items": [{"key": "backend", "label": "Backend", "port": 3003}]},
+        headers=WRITE_HEADERS,
+    )
+
+    client.app.state.port_discovery.scanner = FakePortScanner(
+        [ListeningPort(port=8765, pid=9, process_name="python.exe", cwd=str(diretorio))]
+    )
+    client.app.state.port_discovery.observe(
+        [ProjectRef(id=criado["id"], name="movido", path=str(diretorio))]
+    )
+
+    divergencias = client.get("/api/services/ports").json()["mismatches"]
+
+    assert len(divergencias) == 1
+    assert divergencias[0]["declared_port"] == 3003
+    assert divergencias[0]["observed_port"] == 8765

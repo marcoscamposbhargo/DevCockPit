@@ -189,3 +189,96 @@ def test_parar_processo_que_ja_morreu_conta_como_sucesso() -> None:
 def test_pid_invalido_nunca_esta_vivo() -> None:
     assert is_alive(0) is False
     assert is_alive(-1) is False
+
+
+# --- remoção do projeto ---------------------------------------------------
+
+
+def test_remover_projeto_encerra_o_servidor_dele(  # type: ignore[no-untyped-def]
+    session, workspace, tmp_path, monkeypatch
+) -> None:
+    """O PID só existe na linha de `dev_server`. Apagar o projeto sem parar o
+    processo apagava justamente o PID: sobrava um servidor de pé que só o
+    Gerenciador de Tarefas alcança, ocupando a porta."""
+    from app.services.project_service import ProjectService
+
+    diretorio = workspace / "com-servidor"
+    diretorio.mkdir()
+    project = Project(id="com-servidor", name="Com Servidor", path=str(diretorio))
+    session.add(project)
+    # Antes do registro que o referencia: a chave estrangeira exige o projeto
+    # já gravado, e os dois no mesmo flush não garantem a ordem.
+    session.flush()
+    session.add(
+        DevServer(
+            project_id=project.id,
+            pid=4242,
+            command="node server.js",
+            cwd=str(diretorio),
+            log_file="x.log",
+            source="manifest",
+        )
+    )
+    session.flush()
+
+    encerrados: list[int] = []
+    monkeypatch.setattr(
+        "app.services.project_service.stop_background",
+        lambda pid: encerrados.append(pid) or True,
+    )
+
+    ProjectService(session=session, allowed_roots=[workspace]).delete(project.id)
+
+    assert encerrados == [4242]
+    assert session.get(Project, "com-servidor") is None
+
+
+def test_servidor_teimoso_nao_impede_a_remocao(session, workspace, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Travar a remoção por causa de um processo que não obedece deixaria o
+    usuário com um projeto que ele não consegue tirar da tela."""
+    from app.services.project_service import ProjectService
+
+    diretorio = workspace / "teimoso"
+    diretorio.mkdir()
+    project = Project(id="teimoso", name="Teimoso", path=str(diretorio))
+    session.add(project)
+    session.flush()
+    session.add(
+        DevServer(
+            project_id=project.id,
+            pid=4243,
+            command="node server.js",
+            cwd=str(diretorio),
+            log_file="x.log",
+            source="manifest",
+        )
+    )
+    session.flush()
+
+    monkeypatch.setattr(
+        "app.services.project_service.stop_background", lambda pid: False
+    )
+
+    ProjectService(session=session, allowed_roots=[workspace]).delete(project.id)
+
+    assert session.get(Project, "teimoso") is None
+
+
+def test_remover_projeto_sem_servidor_nao_tenta_encerrar_nada(  # type: ignore[no-untyped-def]
+    session, workspace, monkeypatch
+) -> None:
+    from app.services.project_service import ProjectService
+
+    diretorio = workspace / "simples"
+    diretorio.mkdir()
+    session.add(Project(id="simples", name="Simples", path=str(diretorio)))
+    session.flush()
+
+    def nao_deveria(pid):  # type: ignore[no-untyped-def]
+        raise AssertionError(f"tentou encerrar o pid {pid} sem servidor registrado")
+
+    monkeypatch.setattr("app.services.project_service.stop_background", nao_deveria)
+
+    ProjectService(session=session, allowed_roots=[workspace]).delete("simples")
+
+    assert session.get(Project, "simples") is None

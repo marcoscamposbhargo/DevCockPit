@@ -145,8 +145,15 @@ class HealthService:
         host = target.host or "localhost"
 
         try:
+            # `happy_eyeballs_delay` existe por um bug real: no Windows,
+            # `localhost` resolve para `::1` antes de `127.0.0.1`, e um serviço
+            # que só ouve em IPv4 fazia a tentativa IPv6 pendurar até estourar
+            # o timeout — o serviço aparecia OFFLINE estando no ar. Com o
+            # atraso, as duas famílias são tentadas quase juntas e a primeira
+            # que responder vence.
             _, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, target.port), timeout=self.timeout_s
+                asyncio.open_connection(host, target.port, happy_eyeballs_delay=0.25),
+                timeout=self.timeout_s,
             )
         except (ConnectionRefusedError, OSError, socket.gaierror):
             return self._result(target, HealthState.OFFLINE, started, "Porta fechada.")

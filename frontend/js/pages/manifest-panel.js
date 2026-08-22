@@ -89,7 +89,10 @@ export async function renderManifestPanel(container) {
         { kind: 'success' }
       );
       window.dispatchEvent(new CustomEvent('devcockpit:projects-changed'));
-      await recarregar();
+      // A importação altera nome e descrição, que vivem no cabeçalho da
+      // página, fora deste painel. Redesenhar só a aba deixaria o nome antigo
+      // na tela até o próximo reload.
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       showError(error);
     }
@@ -129,7 +132,9 @@ export async function renderManifestPanel(container) {
     return;
   }
 
-  container.replaceChildren(
+  // `replaceChildren` não filtra `null` como o `mount` faz: um filho nulo vira
+  // o texto "null" na tela. Monta a lista e filtra antes de trocar.
+  const blocos = [
     el('div', { class: 'freshness' }, [
       summary(status),
       el('div', { class: 'card__footer' }, [
@@ -157,6 +162,8 @@ export async function renderManifestPanel(container) {
     el('section', { style: 'margin-top:var(--sp-5)' }, [
       el('h2', { class: 'section-title', text: 'O que a exportação escreveria' }),
       el('pre', { class: 'code-block' }, [el('code', { text: preview.content })]),
-    ])
-  );
+    ]),
+  ];
+
+  container.replaceChildren(...blocos.filter(Boolean));
 }

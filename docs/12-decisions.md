@@ -61,6 +61,9 @@ em `docs/adr/`.
 | D-39 | Ler o manifesto degrada; importar não | leitura acontece em toda carga de tela e precisa de `200` com aviso. Importar é ação explícita: recusar com `422` é mais honesto que aplicar metade |
 | D-40 | O manifesto é importado por padrão no cadastro de um projeto que já tem o arquivo | não há o que sobrescrever num projeto recém-criado, então a confirmação de FR-112 não se aplica. Manifesto quebrado não impede o cadastro |
 | D-41 | Preferência de tema mora no `localStorage`, não no banco | é ajuste de quem olha a tela, não configuração do projeto; guardar no servidor exigiria rota de escrita para mudar cor de fundo |
+| D-42 | "Rodando" no dashboard vem do health observado, não da coluna `status` | `status` descreve o registro, não o processo, e nunca chega a `RUNNING` sozinho. O painel mostrava "0 rodando" na mesma tela em que listava quatro serviços online |
+| D-43 | Check TCP usa `happy_eyeballs_delay` | no Windows `localhost` resolve `::1` antes de `127.0.0.1`; serviço que só ouve em IPv4 pendurava a tentativa IPv6 até estourar o timeout e aparecia OFFLINE estando no ar |
+| D-44 | Ferramentas (VS Code, Pasta, Terminal) também no card da lista | abrir o editor é o motivo mais comum de procurar um projeto; exigir dois cliques a mais até a aba Overview era atrito puro |
 
 ## Divergências em relação ao prompt original
 

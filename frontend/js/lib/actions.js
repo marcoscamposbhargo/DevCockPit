@@ -29,53 +29,67 @@ async function run(label, fn) {
   }
 }
 
-export async function actionBar(project) {
-  const available = await tools();
-  const missing = project.status === 'MISSING';
-  const motivoDir = 'O diretório deste projeto não existe mais.';
+const MOTIVO_DIR = 'O diretório deste projeto não existe mais.';
 
-  const botoes = [
+function toolActions(project, available) {
+  const missing = project.status === 'MISSING';
+
+  return [
     {
       label: 'VS Code',
       enabled: available.code && !missing,
-      reason: available.code ? motivoDir : "'code' não está no PATH.",
+      reason: available.code ? MOTIVO_DIR : "'code' não está no PATH.",
       onClick: () => run('VS Code', () => api.openVsCode(project.id)),
     },
     {
       label: 'Pasta',
       enabled: !missing,
-      reason: motivoDir,
+      reason: MOTIVO_DIR,
       onClick: () => run('Pasta', () => api.openFolder(project.id)),
     },
     {
       label: 'Terminal',
       enabled: !missing,
-      reason: motivoDir,
+      reason: MOTIVO_DIR,
       onClick: () => run('Terminal', () => api.openTerminal(project.id)),
     },
   ];
+}
+
+function toButton(botao, { size = '' } = {}) {
+  return el('button', {
+    class: `btn${size}`,
+    text: botao.label,
+    disabled: !botao.enabled,
+    title: botao.enabled ? '' : botao.reason,
+    onClick: botao.enabled ? botao.onClick : null,
+  });
+}
+
+/** Ferramentas direto no card da lista, sem entrar no projeto. */
+export function quickTools(project, available) {
+  return el(
+    'div',
+    { class: 'card__tools' },
+    toolActions(project, available).map((botao) => toButton(botao, { size: ' btn--sm' }))
+  );
+}
+
+export async function actionBar(project) {
+  const available = await tools();
+  const missing = project.status === 'MISSING';
+
+  const botoes = toolActions(project, available);
 
   const abriveis = project.services.filter((service) => service.url || service.port);
   for (const service of abriveis.slice(0, 3)) {
     botoes.push({
       label: `Abrir ${service.label}`,
       enabled: !missing,
-      reason: motivoDir,
+      reason: MOTIVO_DIR,
       onClick: () => run(service.label, () => api.openBrowser(project.id, service.key)),
     });
   }
 
-  return el(
-    'div',
-    { class: 'card__footer' },
-    botoes.map((botao) =>
-      el('button', {
-        class: 'btn',
-        text: botao.label,
-        disabled: !botao.enabled,
-        title: botao.enabled ? '' : botao.reason,
-        onClick: botao.enabled ? botao.onClick : null,
-      })
-    )
-  );
+  return el('div', { class: 'card__footer' }, botoes.map((botao) => toButton(botao)));
 }

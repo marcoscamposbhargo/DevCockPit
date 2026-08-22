@@ -26,6 +26,13 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 - [x] (2026-08-21) `@app.on_event` estava deprecado no FastAPI e gerava 385
       warnings na suíte. Migrado para `lifespan` em `app/main.py`. Sobra um
       único warning, de terceiro (`starlette.testclient` pedindo `httpx2`).
+- [x] (2026-08-21) Rodada no browser encontrou quatro defeitos, todos
+      corrigidos: dois `null` renderados na aba Manifest (`replaceChildren` não
+      filtra nulos como o `mount`); cabeçalho do projeto com o nome antigo
+      depois de importar; card "Rodando" sempre 0 no dashboard; e check TCP
+      dando OFFLINE para serviço IPv4 cadastrado como `localhost`.
+- [x] (2026-08-21) VS Code, Pasta e Terminal agora aparecem no card da lista de
+      projetos, não só na aba Overview.
 
 ## 🏁 MVP COMPLETO
 
@@ -374,14 +381,26 @@ Verificado no browser pelo usuário em 2026-08-21:
 [ ] aba Services mostra o estado e o botão "Verificar agora" funciona
 ```
 
-### Pontas soltas — o que falta conferir no browser
+### Rodada no browser — executada em 2026-08-21 (headless, Chromium)
 
 ```
-[ ] aba Manifest mostra prévia, avisos e diff
-[ ] botão "Exportar" pede confirmação antes de escrever
-[ ] botão "Importar do arquivo" fica desabilitado sem manifesto válido
-[ ] botão Tema no topo alterna Sistema → Escuro → Claro e sobrevive ao reload
-[ ] tela no tema claro continua legível em todas as abas
+[x] aba Manifest mostra prévia, avisos e diff
+[x] botão "Exportar" pede confirmação antes de escrever
+[x] botão "Importar do arquivo" fica desabilitado sem manifesto válido
+[x] importar aplica e o cabeçalho do projeto atualiza na hora
+[x] botão Tema no topo alterna Sistema → Escuro → Claro e sobrevive ao reload
+[x] Settings e topbar ficam em sincronia ao trocar o tema
+[x] tela no tema claro continua legível em Dashboard, Projects, Settings e abas
+[x] abas Git, Docker e Services carregam sem erro de console
+[x] "Verificar agora" traz ONLINE com latência real
+[x] VS Code, Pasta e Terminal habilitados nos 6 projetos, e agora no card
+```
+
+Falta, porque depende de você:
+
+```
+[ ] clicar em VS Code / Pasta / Terminal (abre janela na sua área de trabalho)
+[ ] conferir a aba Docker com o Docker Desktop desligado
 ```
 
 ---
@@ -394,7 +413,7 @@ Verificado no browser pelo usuário em 2026-08-21:
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
 | Cobertura de testes | 92% | >= 70% |
-| Testes | 301 passando, 1 pulado | — |
+| Testes | 302 passando, 1 pulado | — |
 
 ---
 
@@ -409,3 +428,4 @@ Verificado no browser pelo usuário em 2026-08-21:
 | 3b — Docker | 2026-08-21 | 2026-08-21 | 16 pontos, 242 testes, up/down real verificado |
 | 4 — Serviços e SO | 2026-08-21 | 2026-08-21 | 34 pontos, 285 testes, dashboard em 168 ms |
 | Pontas soltas | 2026-08-21 | 2026-08-21 | manifesto, tema claro, `lifespan`; 301 testes |
+| Rodada no browser | 2026-08-21 | 2026-08-21 | 4 defeitos corrigidos, ferramentas no card; 302 testes |

@@ -85,10 +85,12 @@ class DashboardService:
 
         projects, total = self.repo.list(limit=500)
 
+        active_services = self._active_services(projects)
+
         dashboard = Dashboard(
-            totals=self._totals(projects, total),
+            totals=self._totals(projects, total, active_services),
             pending_changes=self._pending_changes(projects),
-            active_services=self._active_services(projects),
+            active_services=active_services,
             port_conflicts=self._port_conflicts(projects),
             recent_projects=self._recent(projects),
             from_cache=False,
@@ -101,7 +103,20 @@ class DashboardService:
 
     # --- blocos ---
 
-    def _totals(self, projects: list[Project], total: int) -> dict[str, int]:
+    def _totals(
+        self,
+        projects: list[Project],
+        total: int,
+        active_services: list[ActiveService],
+    ) -> dict[str, int]:
+        """Contagens do topo do dashboard.
+
+        "Rodando" vem do **health observado**, não da coluna `status`. O
+        `status` do projeto nunca chega a `RUNNING` sozinho: ele descreve o
+        registro, não o processo. Contar por ele mostrava "0 rodando" na mesma
+        tela que listava quatro serviços online — a incoerência que faz o
+        usuário parar de acreditar no painel.
+        """
         by_status: dict[str, int] = defaultdict(int)
         for project in projects:
             by_status[project.status] += 1
@@ -112,12 +127,15 @@ class DashboardService:
             if any(tech.name in ("docker", "docker-compose") for tech in project.technologies)
         )
 
+        rodando = {service.project_id for service in active_services}
+        sem_diretorio = by_status.get(ProjectStatus.MISSING.value, 0)
+        parados = max(total - len(rodando) - sem_diretorio, 0)
+
         return {
             "projects": total,
-            "running": by_status.get(ProjectStatus.RUNNING.value, 0),
-            "stopped": by_status.get(ProjectStatus.STOPPED.value, 0)
-            + by_status.get(ProjectStatus.REGISTERED.value, 0),
-            "missing": by_status.get(ProjectStatus.MISSING.value, 0),
+            "running": len(rodando),
+            "stopped": parados,
+            "missing": sem_diretorio,
             "with_docker": com_docker,
             "pinned": sum(1 for project in projects if project.is_pinned),
         }

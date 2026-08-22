@@ -92,3 +92,4 @@ logs/*
 
 # Artefatos de build do setuptools
 *.egg-info/
+.gstack/

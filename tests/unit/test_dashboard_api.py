@@ -233,3 +233,39 @@ def test_dashboard_com_docker_conta_projetos(client: TestClient, workspace: Path
     client.post("/api/projects", json={"path": str(path)}, headers=WRITE_HEADERS)
 
     assert client.get("/api/dashboard").json()["totals"]["with_docker"] == 1
+
+
+def test_dashboard_conta_rodando_pelo_health_observado(
+    client: TestClient, projeto: str
+) -> None:
+    """O card "Rodando" vem do health, não da coluna `status`.
+
+    `status` nunca chega a `RUNNING` sozinho — ele descreve o registro, não o
+    processo. Contar por ele mostrava "0 rodando" na mesma tela que listava
+    serviços online.
+    """
+    with socket.socket() as servidor:
+        servidor.bind(("127.0.0.1", 0))
+        servidor.listen(1)
+        porta = servidor.getsockname()[1]
+
+        client.put(
+            f"/api/projects/{projeto}/services",
+            json={
+                "items": [
+                    {"key": "db", "label": "DB", "port": porta}
+                ]
+            },
+            headers=WRITE_HEADERS,
+        )
+        estado = client.post(
+            f"/api/projects/{projeto}/services/check", headers=WRITE_HEADERS
+        ).json()["items"][0]["state"]
+
+    assert estado == "ONLINE"
+
+    totals = client.get("/api/dashboard").json()["totals"]
+
+    assert totals["running"] == 1
+    assert totals["stopped"] == 0, "projeto com serviço online não pode contar como parado"
+    assert totals["projects"] == 1

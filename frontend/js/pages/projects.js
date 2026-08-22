@@ -1,10 +1,11 @@
+import { quickTools, tools } from '../lib/actions.js';
 import { api, ApiError } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
 import { emptyState, loading, pageHeader, showError, statusBadge, techChip, toast } from '../lib/ui.js';
 import { navigate } from '../router.js';
 
-function projectCard(project, { onDelete }) {
+function projectCard(project, { onDelete, available }) {
   const isMissing = project.status === 'MISSING';
 
   return el('article', { class: `card${isMissing ? ' card--missing' : ''}` }, [
@@ -21,6 +22,10 @@ function projectCard(project, { onDelete }) {
       : el('span', { class: 'field__hint', text: 'Stack ainda não detectada' }),
 
     el('div', { class: 'field__hint', text: `Último acesso: ${relativeTime(project.last_accessed_at)}` }),
+
+    // Abrir o editor é o motivo mais comum de procurar um projeto aqui; exigir
+    // dois cliques a mais para chegar na aba Overview era atrito puro.
+    quickTools(project, available),
 
     el('div', { class: 'card__footer' }, [
       el('button', {
@@ -98,8 +103,12 @@ export async function renderProjects(container, _params, query) {
 
   const draw = async () => {
     let data;
+    let available;
     try {
-      data = await api.listProjects({ q: query.q, limit: 200 });
+      [data, available] = await Promise.all([
+        api.listProjects({ q: query.q, limit: 200 }),
+        tools(),
+      ]);
     } catch (error) {
       mount(container, el('p', { class: 'loading', text: error.message }));
       return;
@@ -154,7 +163,7 @@ export async function renderProjects(container, _params, query) {
       ? el(
           'div',
           { class: 'grid-cards' },
-          data.items.map((project) => projectCard(project, { onDelete }))
+          data.items.map((project) => projectCard(project, { onDelete, available }))
         )
       : emptyState({
           title: 'Nenhum projeto ainda',

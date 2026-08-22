@@ -42,7 +42,11 @@ class SystemActionService:
     # --- abrir ferramentas ---
 
     def open_in_editor(self, project: Project) -> None:
-        self._execute(project, self.adapter.open_in_editor(self._project_dir(project)))
+        project_dir = self._project_dir(project)
+        self._execute(project, self.adapter.open_in_editor(project_dir))
+        # A janela só vem para frente com ajuda (D-46): `code` devolve 0 mesmo
+        # quando reaproveita uma janela que ficou atrás do browser.
+        self.adapter.focus_editor_window(project_dir)
 
     def open_folder(self, project: Project) -> None:
         # O `explorer` do Windows devolve 1 mesmo quando abre a pasta, então

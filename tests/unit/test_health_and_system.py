@@ -304,3 +304,87 @@ async def test_poller_nao_derruba_a_aplicacao_ao_falhar(session_factory) -> None
     await asyncio.sleep(0.2)
     await poller.stop()
     # Chegar aqui já é o teste: a exceção foi contida no ciclo.
+
+
+# --- foco da janela do editor (D-46) ---
+
+
+def test_windows_pede_foco_da_janela_do_projeto(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """`code` devolve 0 reaproveitando janela escondida; o foco é o que falta."""
+    pedidos: list[str] = []
+    monkeypatch.setattr(
+        "app.adapters.system.focus.focus_editor_window",
+        lambda nome: pedidos.append(nome),
+    )
+
+    WindowsOSAdapter().focus_editor_window(tmp_path)
+
+    assert pedidos == [tmp_path.name]
+
+
+def test_adapters_nao_windows_nao_tentam_focar(tmp_path: Path) -> None:
+    """No macOS e no Linux abrir já traz a janela; forçar foco seria intrusivo."""
+    assert MacOSAdapter().focus_editor_window(tmp_path) is None
+    assert LinuxOSAdapter().focus_editor_window(tmp_path) is None
+
+
+def test_busca_de_janela_casa_pelo_nome_da_pasta(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Com várias janelas do editor abertas, focar a errada é pior que não focar."""
+    from app.adapters.system import focus
+
+    monkeypatch.setattr(
+        focus,
+        "_visible_window_titles",
+        lambda _user32: [
+            (10, "Google Chrome"),
+            (20, "main.py - OUTRO-PROJETO - Visual Studio Code"),
+            (30, "bom dia! - DEVCOCKPIT - Visual Studio Code"),
+        ],
+    )
+
+    assert focus._find_editor_window(None, "DEVCOCKPIT") == 30
+    assert focus._find_editor_window(None, "OUTRO-PROJETO") == 20
+    assert focus._find_editor_window(None, "INEXISTENTE") is None
+
+
+def test_falha_ao_focar_nao_derruba_a_abertura(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A ação já deu certo: o foco é cortesia e não pode virar erro."""
+    from app.adapters.system import focus
+
+    def _explode(_nome: str) -> bool:
+        raise OSError("user32 indisponível")
+
+    monkeypatch.setattr(focus, "_focus_now", _explode)
+
+    focus._rodar_protegido("QUALQUER")  # não levanta
+
+
+def test_abrir_no_editor_pede_foco_depois_de_executar(tmp_path: Path) -> None:
+    """A ordem importa: só faz sentido focar a janela depois que `code` rodou."""
+    from app.adapters.system.adapter import BaseOSAdapter
+    from app.models.project import Project
+    from app.runner.fake import FakeCommandRunner
+    from app.services.system_action_service import SystemActionService
+
+    eventos: list[str] = []
+
+    class AdapterEspiao(BaseOSAdapter):
+        def open_in_editor(self, path: Path):  # type: ignore[no-untyped-def]
+            eventos.append("montou-comando")
+            return self._spec(["code", str(path)], path, "system.vscode")
+
+        def focus_editor_window(self, path: Path) -> None:
+            eventos.append(f"focou:{path.name}")
+
+    class AtividadeMuda:
+        def record(self, **_kwargs):  # type: ignore[no-untyped-def]
+            eventos.append("registrou")
+
+    runner = FakeCommandRunner()
+    servico = SystemActionService(AdapterEspiao(), runner, AtividadeMuda())  # type: ignore[arg-type]
+    projeto = Project(id="p", name="P", path=str(tmp_path))
+
+    servico.open_in_editor(projeto)
+
+    assert eventos == ["montou-comando", "registrou", f"focou:{tmp_path.name}"]
+    assert runner.labels == ["system.vscode"]

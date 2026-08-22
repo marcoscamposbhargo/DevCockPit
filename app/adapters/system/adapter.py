@@ -12,6 +12,7 @@ import shutil
 from pathlib import Path
 from typing import Protocol
 
+from app.adapters.system import focus
 from app.core.errors import ToolNotFound
 from app.runner.command_spec import CommandSpec
 
@@ -25,6 +26,7 @@ class OSAdapter(Protocol):
     def open_folder(self, path: Path) -> CommandSpec: ...
     def open_terminal(self, path: Path) -> CommandSpec: ...
     def tool_available(self, tool: str) -> bool: ...
+    def focus_editor_window(self, path: Path) -> None: ...
 
 
 class BaseOSAdapter:
@@ -36,6 +38,10 @@ class BaseOSAdapter:
 
     def tool_available(self, tool: str) -> bool:
         return shutil.which(tool) is not None
+
+    def focus_editor_window(self, path: Path) -> None:
+        """Sem efeito por padrão. Só o Windows precisa disto (D-46)."""
+        return None
 
     def _editor(self) -> str:
         return self.code_bin or "code"
@@ -65,6 +71,14 @@ class WindowsOSAdapter(BaseOSAdapter):
                 "'Shell Command: Install code command in PATH'."
             )
         return self._spec([resolved, str(path)], path, "system.vscode")
+
+    def focus_editor_window(self, path: Path) -> None:
+        """D-46 — `code` reaproveita a janela aberta e devolve 0 sem mostrá-la.
+
+        O Windows recusa `SetForegroundWindow` vindo de processo sem foco, então
+        a abertura era invisível para quem clicou. Best-effort: não levanta.
+        """
+        focus.focus_editor_window(path.name)
 
     def open_folder(self, path: Path) -> CommandSpec:
         # `explorer` devolve código de saída 1 mesmo quando funciona; quem

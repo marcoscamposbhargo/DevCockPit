@@ -32,6 +32,7 @@ class PendingChange:
 class ActiveService:
     project_id: str
     project_name: str
+    key: str
     label: str
     url: str | None
     port: int | None
@@ -176,6 +177,7 @@ class DashboardService:
                     ActiveService(
                         project_id=project.id,
                         project_name=project.name,
+                        key=service.key,
                         label=service.label,
                         url=service.url,
                         port=service.port,

@@ -133,6 +133,11 @@ class PendingChangeOut(BaseModel):
 class ActiveServiceOut(BaseModel):
     project_id: str
     project_name: str
+    #: A chave do serviço, e não só o rótulo. O trilho lateral abre o serviço
+    #: no navegador mandando a chave — sem ela ia `undefined` na requisição e o
+    #: backend recusava com "service_key: Field required", num botão que
+    #: parecia perfeitamente clicável.
+    key: str
     label: str
     url: str | None = None
     port: int | None = None

@@ -99,10 +99,22 @@ export const api = {
   openVsCode: (id) => request('POST', `/projects/${encodeURIComponent(id)}/open/vscode`),
   openFolder: (id) => request('POST', `/projects/${encodeURIComponent(id)}/open/folder`),
   openTerminal: (id) => request('POST', `/projects/${encodeURIComponent(id)}/open/terminal`),
-  openBrowser: (id, serviceKey) =>
-    request('POST', `/projects/${encodeURIComponent(id)}/open/browser`, {
+  // A chave é obrigatória e a falha por ausência dela era ilegível: o backend
+  // respondia "service_key: Field required" e a tela mostrava isso cru, sem
+  // dizer qual botão nem o que fazer. Falhar aqui, com o nome do chamador,
+  // custa uma linha e economiza a caçada.
+  openBrowser: (id, serviceKey) => {
+    if (!serviceKey) {
+      throw new ApiError({
+        code: 'MISSING_SERVICE_KEY',
+        message: 'Não foi possível identificar qual serviço abrir.',
+        status: 0,
+      });
+    }
+    return request('POST', `/projects/${encodeURIComponent(id)}/open/browser`, {
       body: { service_key: serviceKey },
-    }),
+    });
+  },
 
   // Servidor de desenvolvimento do projeto (sem Docker). Nenhuma destas rotas
   // aceita comando: o cliente manda o id, e o comando sai do devcockpit.yml ou

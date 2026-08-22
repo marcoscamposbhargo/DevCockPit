@@ -361,3 +361,42 @@ def test_projeto_sem_servico_declara_zero(client: TestClient, workspace: Path) -
     resumo = next(item for item in itens if item["id"] == criado["id"])
 
     assert resumo["services_total"] == 0
+
+
+def test_servico_ativo_traz_a_chave_e_nao_so_o_rotulo(client, projeto) -> None:  # type: ignore[no-untyped-def]
+    """O trilho lateral abre o serviço mandando a **chave**.
+
+    Sem ela ia `undefined` na requisição, e o backend recusava com
+    "service_key: Field required" — num botão que parecia perfeitamente
+    clicável. Rótulo não serve no lugar: é texto para humano e pode repetir
+    entre serviços do mesmo projeto.
+    """
+    import socket
+
+    from tests.conftest import WRITE_HEADERS
+
+    # Uma porta que responde de verdade: só serviço ONLINE entra em
+    # `active_services`, que é o payload sob teste.
+    escuta = socket.socket()
+    escuta.bind(("127.0.0.1", 0))
+    escuta.listen(1)
+    porta = escuta.getsockname()[1]
+
+    try:
+        client.put(
+            f"/api/projects/{projeto}/services",
+            json={
+                "items": [
+                    {"key": "backend", "label": "Backend", "port": porta, "health_kind": "TCP"}
+                ]
+            },
+            headers=WRITE_HEADERS,
+        )
+        client.post(f"/api/projects/{projeto}/services/check", headers=WRITE_HEADERS)
+
+        ativos = client.get("/api/dashboard").json()["active_services"]
+    finally:
+        escuta.close()
+
+    assert ativos, "o serviço deveria estar online com a porta escutando"
+    assert ativos[0]["key"] == "backend"

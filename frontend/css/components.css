@@ -1359,6 +1359,64 @@
   text-underline-offset: 2px;
 }
 
+/* --- Activity ---
+   Era um muro de linhas iguais em ordem cronológica. As três regras abaixo
+   existem para o olho achar o que procura: separador de dia, falha em
+   destaque, e a mensagem cedendo largura quando aperta. */
+
+.activity__dia td {
+  padding-top: var(--sp-4);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Primeiro separador não precisa do respiro de cima: ele encosta no cabeçalho. */
+.table--activity tbody tr.activity__dia:first-child td {
+  padding-top: var(--sp-2);
+}
+
+/* Uma linha vermelha entre cem verdes ainda é uma linha entre cem. A faixa na
+   borda dá à falha um peso que a cor do texto sozinha não dá. */
+.table--activity tr[data-problema='true'] {
+  background: color-mix(in srgb, var(--status-error) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--status-error);
+}
+
+.activity__quando {
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+/* A mensagem é a coluna elástica: ela cede espaço às outras e corta com
+   reticências, com o texto inteiro no tooltip. Deixá-la crescer empurrava a
+   tabela para fora da tela. */
+.activity__mensagem {
+  max-width: 380px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg-secondary);
+  font-size: var(--fs-xs);
+}
+
+.filter-bar__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 var(--sp-1);
+  background: var(--border);
+}
+
+.activity__mais {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--sp-4);
+}
+
 /* --- folha de atalhos ---
    Seis gestos existiam e nenhum era descobrível fora do Ctrl+K no placeholder
    da busca. Atalho que ninguém encontra é trabalho jogado fora. */

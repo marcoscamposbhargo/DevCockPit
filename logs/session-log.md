@@ -703,3 +703,42 @@ linha.
 - [ ] clicar em VS Code / Pasta / Terminal, que abrem janela na sua área de
       trabalho
 - [ ] conferir a aba Docker com o Docker Desktop desligado
+
+---
+
+## Encerramento da sessão de 2026-08-21
+
+Pedido de melhorar o frontend levantado e **adiado para a próxima sessão**, por
+decisão do usuário. As quatro frentes ficaram registradas em
+`PROJECT_STATUS.md`, na seção "Próximo" (item B2), com o raciocínio de cada
+uma — é por ali que a próxima sessão começa.
+
+### O que esta sessão entregou
+
+| Commit | Entrega |
+|--------|---------|
+| `15847ab` | `@app.on_event` → `lifespan` (385 warnings a menos) |
+| `4b262bf` | Manifesto `devcockpit.yml`: importar, exportar, comparar + tema claro |
+| `79bc054` | Log da sessão de pontas soltas |
+| `4ba9551` | Quatro defeitos achados no browser + ferramentas no card |
+| `5244d34` | Log da rodada de browser |
+| `ba02014` | Botão bloqueado para sempre após falha de rede |
+| `4854c46` | D-45 no registro de decisões |
+| `680380a` | Log do bug do botão bloqueado |
+
+302 testes passando, 1 pulado, cobertura 92%, `ruff check` limpo. Decisões
+`D-37` a `D-45` registradas.
+
+Cinco defeitos reais corrigidos, todos encontrados **abrindo o produto**, não
+lendo o código: dois `null` renderados, cabeçalho desatualizado após importar,
+"0 rodando" com quatro serviços online, check TCP falhando em `localhost`
+IPv4-only, e o cache de ferramentas guardando a falha.
+
+### Estado ao encerrar
+
+Servidor no ar em `127.0.0.1:8765` com o código atual. Nenhum arquivo de teste
+deixado para trás. Repositório limpo.
+
+### Primeira coisa ao voltar
+
+Ctrl+F5 na aba do DevCockpit, se ela ficou aberta desde antes do fix.

@@ -286,6 +286,21 @@ ajustes pequenos que valem mais que qualquer fase nova.
 **B — ~~Fechar as pontas soltas~~** — feito em 2026-08-21. Sobra apenas polir a
 UI com base no uso real, que depende de usar.
 
+**B2 — Melhorar o frontend** (próxima sessão, decidido em 2026-08-21)
+
+Levantado a partir das telas reais capturadas na rodada de browser. Quatro
+frentes, em ordem de valor percebido:
+
+1. **Card do projeto mais útil** — hoje mostra o path em três linhas e cinco
+   botões. Falta o que importa: serviços online, Git sujo, containers de pé.
+   Saber o que está rodando sem abrir o projeto.
+2. **Dashboard com mais densidade** — metade da tela fica vazia quando não há
+   alteração pendente. Cabe Docker, Git e portas em uso.
+3. **Busca e filtros de verdade** — por stack, fixados, com Docker, com
+   alteração pendente; e a busca do topo filtrando enquanto digita.
+4. **Polimento visual** — tipografia, espaçamento, hierarquia, foco e
+   transições, nos dois temas.
+
 **C — Fase 5: GitHub** (pós-MVP)
 - PRs abertos, issues e Actions por projeto
 - containerizar o próprio DevCockpit

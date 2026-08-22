@@ -167,7 +167,10 @@ def test_saida_e_truncada_pelo_comeco() -> None:
     assert job.output_bytes <= limite * 1.5
     assert "linha 0199" in job.output
     assert "linha 0000" not in job.output
-    assert "truncada" in job.lines[0]
+    # O marcador é apresentação e vive em `output`, não em `lines`: uma linha
+    # sintética na lista desalinharia o índice absoluto que o console usa.
+    assert "truncada" in job.output
+    assert all("truncada" not in linha for linha in job.lines)
 
 
 def test_revision_avanca_a_cada_linha() -> None:

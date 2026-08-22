@@ -146,3 +146,11 @@ def assert_registry_is_safe() -> None:
         for fragment in FORBIDDEN_FRAGMENTS:
             if all(part in lowered for part in fragment):
                 raise RuntimeError(f"Ação {label} produz comando proibido: {argv}")
+
+        # `FORBIDDEN_FLAGS` estava declarado e nunca conferido: a barreira que
+        # impede `down -v` de entrar no registro não existia de fato. As flags
+        # são checadas por igualdade e não por substring — `-v` casaria com
+        # `--verbose` e reprovaria ação legítima.
+        for flag in FORBIDDEN_FLAGS:
+            if flag in lowered:
+                raise RuntimeError(f"Ação {label} usa flag proibida {flag!r}: {argv}")

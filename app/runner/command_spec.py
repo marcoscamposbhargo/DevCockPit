@@ -18,6 +18,13 @@ class CommandSpec:
     label: str
     env_extra: dict[str, str] = field(default_factory=dict)
 
+    #: Programa que **abre uma janela e fica de pé** — terminal, editor,
+    #: explorador de arquivos. Esperar por ele é sempre errado: ou ele devolve
+    #: na hora (e a espera não custa nada) ou ele só termina quando o usuário
+    #: fecha a janela, e aí o timeout mata o que acabou de ser aberto. Com este
+    #: sinal o runner dispara e segue, sem pipe e sem espera.
+    detached: bool = False
+
     def __post_init__(self) -> None:
         if not self.argv:
             raise ValueError("argv não pode ser vazio.")

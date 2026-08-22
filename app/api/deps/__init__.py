@@ -112,6 +112,7 @@ def get_docker_service(
     cache: TTLCache = Depends(get_cache),
     runner=Depends(get_command_runner),  # noqa: B008
     jobs: JobManager = Depends(get_job_manager),
+    session: Session = Depends(get_session),
 ) -> DockerService:
     adapter = DockerAdapter(
         runner=runner,
@@ -130,6 +131,9 @@ def get_docker_service(
             "restart": settings.timeout_compose_control,
             "default": settings.timeout_compose_control,
         },
+        # Sem a sessão o serviço não enxerga `docker_config` e o `compose_file`
+        # declarado no manifesto ficaria sem efeito.
+        session=session,
     )
 
 

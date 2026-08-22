@@ -422,22 +422,32 @@
 }
 
 /* Abaixo de ~1100px o trilho e o conteúdo disputam a mesma largura, e quem
-   perde é o conteúdo — que é a razão da tela existir. O trilho sai sozinho;
-   o botão da topbar continua trazendo-o de volta em quem quiser. */
+   perde é o conteúdo — que é a razão da tela existir. Então aqui o trilho sai
+   da grade e vira uma gaveta sobreposta.
+
+   A versão anterior escondia o trilho **e** o botão que o traz de volta: numa
+   janela estreita ele sumia e não havia gesto nenhum capaz de reativá-lo, nem
+   recarregando. O botão agora fica; o que muda é a forma de apresentar. Quem
+   abre a página estreita pela primeira vez começa com a gaveta fechada — ver
+   `applyShell` em js/lib/shell.js. */
 @media (max-width: 1100px) {
   .app-shell,
-  .app-shell[data-rail='hidden'] {
+  .app-shell[data-rail='hidden'],
+  .app-shell[data-rail='shown'] {
     grid-template-columns: var(--sidebar-width) 1fr;
   }
 
   .app-shell[data-rail='shown'] .rail {
-    display: none;
-  }
-
-  /* Sem espaço para o trilho, o botão que o chama de volta é um clique que
-     não faz nada — pior do que não existir. */
-  .topbar__icon-btn {
-    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(var(--rail-width), 86vw);
+    border-left: 1px solid var(--border);
+    border-right: 0;
+    background: var(--bg-surface);
+    box-shadow: -12px 0 32px rgb(0 0 0 / 32%);
   }
 }
 
@@ -446,6 +456,7 @@
 @media (max-width: 900px) {
   .app-shell,
   .app-shell[data-rail='hidden'],
+  .app-shell[data-rail='shown'],
   .app-shell[data-sidebar='collapsed'] {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);

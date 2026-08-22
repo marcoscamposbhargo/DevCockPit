@@ -29,8 +29,22 @@ export function sidebarCollapsed() {
   return ler(CHAVE_SIDEBAR, 'expanded') === 'collapsed';
 }
 
+/** Largura abaixo da qual o trilho vira gaveta sobreposta (espelha layout.css). */
+const LARGURA_GAVETA = 1100;
+
 export function railHidden() {
-  return ler(CHAVE_RAIL, 'shown') === 'hidden';
+  const gravado = ler(CHAVE_RAIL, null);
+  if (gravado !== null) return gravado === 'hidden';
+
+  // Sem preferência gravada, o padrão depende do espaço: numa janela estreita
+  // o trilho é uma gaveta que cobre o conteúdo, e abrir por conta própria em
+  // cima do que a pessoa veio ler é o comportamento errado. Numa janela larga
+  // ele é uma coluna e aparece de saída, que é a razão de existir.
+  try {
+    return window.innerWidth < LARGURA_GAVETA;
+  } catch {
+    return false;
+  }
 }
 
 /** Escreve o estado no casco. O CSS lê `data-*`; nenhum componente sabe disso. */

@@ -38,6 +38,67 @@ class SubprocessCommandRunner:
         self._audit = audit_sink
 
     def run(self, spec: CommandSpec) -> CommandResult:
+        if spec.detached:
+            return self._spawn(spec)
+        return self._run_and_wait(spec)
+
+    def _spawn(self, spec: CommandSpec) -> CommandResult:
+        """Dispara e segue, para programa que abre janela.
+
+        Duas coisas que a espera quebrava, ambas verificadas nesta máquina:
+
+        1. `powershell.exe -NoExit` (a reserva de terminal quando não há
+           `wt.exe`) nunca termina sozinho. Esperado, ele estourava o timeout de
+           10 s e era morto — o terminal aparecia e sumia.
+        2. Capturar `stdout`/`stderr` amarra o processo a um pipe em vez de a um
+           console. O terminal subia sem janela nenhuma.
+
+        Por isso aqui não há `capture_output`, não há `timeout` e não há espera.
+        O sucesso é ter conseguido criar o processo.
+        """
+        started = time.perf_counter()
+        env = {**os.environ, **spec.env_extra} if spec.env_extra else None
+
+        creation_flags = 0
+        start_new_session = False
+        if _IS_WINDOWS:
+            # Console próprio: fechar o DevCockpit não pode fechar o terminal
+            # que o usuário abriu. `CREATE_NEW_CONSOLE` e `DETACHED_PROCESS`
+            # são mutuamente exclusivos no Windows — juntos, `CreateProcess`
+            # recusa com parâmetro inválido.
+            creation_flags = subprocess.CREATE_NEW_CONSOLE
+        else:
+            start_new_session = True
+
+        try:
+            subprocess.Popen(  # noqa: S603 - argv montado pelo OSAdapter, sem valor do cliente
+                spec.argv,
+                cwd=str(spec.cwd),
+                shell=False,
+                env=env,
+                creationflags=creation_flags,
+                start_new_session=start_new_session,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            result = CommandResult(
+                exit_code=127,
+                stdout="",
+                stderr=f"Não foi possível iniciar {spec.program}: {exc}",
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
+            self._record(spec, result, status="FAILED")
+            return result
+
+        result = CommandResult(
+            exit_code=0,
+            stdout="",
+            stderr="",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+        )
+        self._record(spec, result, status="SUCCESS")
+        return result
+
+    def _run_and_wait(self, spec: CommandSpec) -> CommandResult:
         started = time.perf_counter()
         env = {**os.environ, **spec.env_extra} if spec.env_extra else None
 

@@ -7,6 +7,7 @@ perto de virar argumento de comando.
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -19,18 +20,23 @@ def validate_local_http_url(value: str | None) -> str | None:
     """Restringe URLs a HTTP local (ver `docs/08-project-configuration-spec.md`).
 
     Sem isso, um manifesto transformaria o DevCockpit em cliente HTTP para
-    host arbitrário. Vive fora da classe porque o manifesto reusa a mesma
-    regra — duas cópias da regra seriam duas chances de divergir.
+    host arbitrário — e o poller de health passaria a bater nesse host a cada
+    ciclo. Vive fora da classe porque o manifesto reusa a mesma regra: duas
+    cópias da regra seriam duas chances de divergir.
+
+    A extração do host é feita por `urlparse`, nunca por fatiamento de string.
+    A forma `http://localhost:3000@evil.com/` tem `localhost:3000` como
+    *userinfo* e `evil.com` como host: qualquer parser caseiro que corte no
+    primeiro `:` lê o pedaço errado e libera destino externo.
     """
     if value is None:
         return None
     text = value.strip()
-    if not text.startswith(("http://", "https://")):
+    parsed = urlparse(text)
+    if parsed.scheme not in ("http", "https"):
         raise ValueError("A URL precisa usar http ou https.")
-    remainder = text.split("://", 1)[1]
-    hostport = remainder.split("/", 1)[0]
-    host = hostport.rsplit(":", 1)[0] if hostport.count(":") == 1 else hostport
-    if host.strip("[]") not in {h.strip("[]") for h in _LOCAL_HOSTS}:
+    host = (parsed.hostname or "").strip("[]")
+    if host not in {h.strip("[]") for h in _LOCAL_HOSTS}:
         raise ValueError("A URL precisa apontar para localhost.")
     return text
 

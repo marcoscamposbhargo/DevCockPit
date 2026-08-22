@@ -119,12 +119,63 @@ function pinButton(project, onToggle) {
   }, [icon('pin', { size: 14 })]);
 }
 
+/** Estado observado do projeto, resumido em uma palavra.
+ *
+ * É o que a faixa lateral colorida do card pinta. Existe para que uma grade de
+ * vinte projetos se leia pela borda, antes de qualquer texto: o olho encontra
+ * o que está de pé sem percorrer chip por chip.
+ */
+function liveState(project, signals) {
+  if (project.status === 'MISSING') return 'missing';
+  const total = project.services_total ?? 0;
+  const online = signals.online.get(project.id) ?? 0;
+  if (total === 0) return 'none';
+  if (online === 0) return 'off';
+  return online >= total ? 'on' : 'partial';
+}
+
+/** Monograma do projeto: âncora visual à esquerda do nome.
+ *
+ * Numa grade densa, todos os cards começam com um bloco de texto do mesmo
+ * tamanho e o olho não tem onde pousar. Duas letras com cor derivada do nome
+ * dão a cada card uma silhueta própria, e reencontrar um projeto conhecido
+ * passa a ser reconhecimento em vez de leitura.
+ */
+function monogram(project) {
+  const letras = String(project.name)
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((parte) => parte[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  // Hash estável do nome: o mesmo projeto tem sempre o mesmo tom, em qualquer
+  // recarga e em qualquer máquina.
+  let hash = 0;
+  for (const char of project.name) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+
+  return el('span', {
+    class: 'card__monogram',
+    'aria-hidden': 'true',
+    style: `--monogram-hue: ${hash}`,
+    text: letras || '?',
+  });
+}
+
 function projectCard(project, { onDelete, onTogglePin, onPowerChanged, available, signals }) {
   const isMissing = project.status === 'MISSING';
 
-  return el('article', { class: `card card--project${isMissing ? ' card--missing' : ''}` }, [
+  return el(
+    'article',
+    {
+      class: `card card--project${isMissing ? ' card--missing' : ''}`,
+      dataset: { live: liveState(project, signals) },
+    },
+    [
     el('div', { class: 'card__header' }, [
-      pinButton(project, onTogglePin),
+      monogram(project),
       el('div', { class: 'card__ident' }, [
         el('a', {
           class: 'card__title',
@@ -133,7 +184,7 @@ function projectCard(project, { onDelete, onTogglePin, onPowerChanged, available
         }),
         compactPath(project.path),
       ]),
-      el('div', { class: 'card__status' }, [statusBadge(project.status)]),
+      el('div', { class: 'card__status' }, [statusBadge(project.status), pinButton(project, onTogglePin)]),
     ]),
 
     signalRow(project, signals),
@@ -183,7 +234,8 @@ function projectCard(project, { onDelete, onTogglePin, onPowerChanged, available
         ),
       ]),
     ]),
-  ]);
+    ]
+  );
 }
 
 // --- busca e filtros ---

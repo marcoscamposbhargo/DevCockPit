@@ -10,6 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.adapters.docker.adapter import COMPOSE_ACTIONS, DockerAdapter
 from app.adapters.docker.models import ComposeStatus
@@ -25,7 +27,7 @@ from app.core.paths import resolve_within_project
 from app.detection.detectors.docker_stack import COMPOSE_FILENAMES, find_compose_file
 from app.jobs.job import Job
 from app.jobs.job_manager import JobManager
-from app.models.project import Project
+from app.models.project import DockerConfig, Project
 
 
 class DockerService:
@@ -35,11 +37,27 @@ class DockerService:
         cache: TTLCache,
         jobs: JobManager,
         timeouts: dict[str, float] | None = None,
+        session: Session | None = None,
     ) -> None:
         self.adapter = adapter
         self.cache = cache
         self.jobs = jobs
         self.timeouts = timeouts or {}
+        self.session = session
+
+    def configured_compose_file(self, project: Project) -> str | None:
+        """O `compose_file` que o manifesto gravou em `docker_config`.
+
+        Sem esta leitura o campo era escrito pelo import do `devcockpit.yml` e
+        nunca lido: um projeto com dois arquivos Compose subia sempre o que a
+        detecção escolhia, ignorando o que o manifesto declarava.
+        """
+        if self.session is None:
+            return None
+        config = self.session.execute(
+            select(DockerConfig).where(DockerConfig.project_id == project.id)
+        ).scalar_one_or_none()
+        return config.compose_file if config is not None else None
 
     # --- resolução do arquivo Compose ---
 
@@ -56,6 +74,7 @@ class DockerService:
         um `compose_file` que escape do diretório é recusado (defesa D4).
         """
         project_dir = self._project_dir(project)
+        configured = configured or self.configured_compose_file(project)
 
         if configured:
             resolved = resolve_within_project(project_dir, configured)

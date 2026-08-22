@@ -51,8 +51,23 @@ class BaseOSAdapter:
             raise ToolNotFound(f"'{tool}' não está no PATH. {instrucao}")
         return tool
 
-    def _spec(self, argv: list[str], cwd: Path, label: str) -> CommandSpec:
-        return CommandSpec(argv=argv, cwd=cwd, timeout_s=self.timeout_s, label=label)
+    def _spec(
+        self, argv: list[str], cwd: Path, label: str, *, detached: bool = False
+    ) -> CommandSpec:
+        return CommandSpec(
+            argv=argv, cwd=cwd, timeout_s=self.timeout_s, label=label, detached=detached
+        )
+
+    def _window_spec(self, argv: list[str], cwd: Path, label: str) -> CommandSpec:
+        """Spec de programa que abre janela: dispara e segue, nunca espera.
+
+        Terminal, editor e explorador de arquivos ficam de pé depois de abertos.
+        Alguns devolvem na hora (`wt.exe`, `explorer.exe`), outros só quando o
+        usuário fecha a janela (`powershell -NoExit`, `alacritty`, `kitty`).
+        Esperar pelo segundo grupo estourava o timeout e matava a janela recém
+        aberta — o clique em "Abrir terminal" piscava e não deixava nada.
+        """
+        return self._spec(argv, cwd, label, detached=True)
 
 
 class WindowsOSAdapter(BaseOSAdapter):
@@ -70,7 +85,7 @@ class WindowsOSAdapter(BaseOSAdapter):
                 f"'{editor}' não está no PATH. No VS Code, use "
                 "'Shell Command: Install code command in PATH'."
             )
-        return self._spec([resolved, str(path)], path, "system.vscode")
+        return self._window_spec([resolved, str(path)], path, "system.vscode")
 
     def focus_editor_window(self, path: Path) -> None:
         """D-46 — `code` reaproveita a janela aberta e devolve 0 sem mostrá-la.
@@ -83,7 +98,7 @@ class WindowsOSAdapter(BaseOSAdapter):
     def open_folder(self, path: Path) -> CommandSpec:
         # `explorer` devolve código de saída 1 mesmo quando funciona; quem
         # chama precisa saber disso (ver SystemActionService).
-        return self._spec(["explorer.exe", str(path)], path, "system.folder")
+        return self._window_spec(["explorer.exe", str(path)], path, "system.folder")
 
     def open_terminal(self, path: Path) -> CommandSpec:
         """Windows Terminal quando existe; PowerShell como reserva.
@@ -92,13 +107,13 @@ class WindowsOSAdapter(BaseOSAdapter):
         é em tempo de execução, não uma suposição.
         """
         if self.tool_available("wt.exe"):
-            return self._spec(
+            return self._window_spec(
                 ["wt.exe", "-d", str(path)],
                 path,
                 "system.terminal",
             )
 
-        return self._spec(
+        return self._window_spec(
             [
                 "powershell.exe",
                 "-NoExit",
@@ -117,13 +132,13 @@ class MacOSAdapter(BaseOSAdapter):
 
     def open_in_editor(self, path: Path) -> CommandSpec:
         editor = self._require(self._editor(), "Instale o comando 'code' pelo VS Code.")
-        return self._spec([editor, str(path)], path, "system.vscode")
+        return self._window_spec([editor, str(path)], path, "system.vscode")
 
     def open_folder(self, path: Path) -> CommandSpec:
-        return self._spec(["open", str(path)], path, "system.folder")
+        return self._window_spec(["open", str(path)], path, "system.folder")
 
     def open_terminal(self, path: Path) -> CommandSpec:
-        return self._spec(["open", "-a", "Terminal", str(path)], path, "system.terminal")
+        return self._window_spec(["open", "-a", "Terminal", str(path)], path, "system.terminal")
 
 
 class LinuxOSAdapter(BaseOSAdapter):
@@ -141,17 +156,17 @@ class LinuxOSAdapter(BaseOSAdapter):
 
     def open_in_editor(self, path: Path) -> CommandSpec:
         editor = self._require(self._editor(), "Instale o comando 'code' pelo VS Code.")
-        return self._spec([editor, str(path)], path, "system.vscode")
+        return self._window_spec([editor, str(path)], path, "system.vscode")
 
     def open_folder(self, path: Path) -> CommandSpec:
         tool = self._require("xdg-open", "Instale xdg-utils.")
-        return self._spec([tool, str(path)], path, "system.folder")
+        return self._window_spec([tool, str(path)], path, "system.folder")
 
     def open_terminal(self, path: Path) -> CommandSpec:
         for terminal, flags in self.TERMINALS:
             if self.tool_available(terminal):
                 argv = [terminal, *flags, str(path)] if flags else [terminal]
-                return self._spec(argv, path, "system.terminal")
+                return self._window_spec(argv, path, "system.terminal")
 
         raise ToolNotFound(
             "Nenhum emulador de terminal conhecido foi encontrado. "

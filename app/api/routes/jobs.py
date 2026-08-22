@@ -33,8 +33,13 @@ class JobNotFound(DomainError):
 
 
 def _to_out(job: Job, after: int = 0) -> JobOut:
-    """`after` permite ao cliente pedir só as linhas que ainda não viu."""
-    lines = job.lines[after:] if after > 0 else job.lines
+    """`after` permite ao cliente pedir só as linhas que ainda não viu.
+
+    É um índice **absoluto**: o cliente devolve o `line_count` que recebeu e
+    `lines_since` traduz para a posição atual, que muda quando a saída é
+    truncada pela frente.
+    """
+    lines = job.lines_since(after) if after > 0 else job.lines
     return JobOut(
         id=job.id,
         action=job.action,
@@ -48,7 +53,10 @@ def _to_out(job: Job, after: int = 0) -> JobOut:
         message=job.message,
         output="\n".join(lines),
         revision=job.revision,
-        line_count=len(job.lines),
+        # Cursor absoluto, não tamanho da lista: `lines` encolhe quando a saída
+        # é truncada, e devolver o tamanho fazia o cliente repetir o que já
+        # tinha — ou pular o que ainda não viu.
+        line_count=job.revision,
         output_truncated=job.output_truncated,
     )
 
@@ -106,8 +114,8 @@ async def stream_job(
                 break
 
             if job.revision > delivered:
-                chunk = job.lines[delivered:]
-                delivered = len(job.lines)
+                chunk = job.lines_since(delivered)
+                delivered = job.revision
                 idle = 0.0
                 payload = json.dumps({"lines": chunk, "revision": delivered})
                 yield f"event: log\ndata: {payload}\n\n"

@@ -77,7 +77,11 @@ async def test_tcp_com_porta_fechada_fica_offline(health: HealthService) -> None
     resultado = await health.check(target(port=porta_livre()))
 
     assert resultado.state == HealthState.OFFLINE
-    assert "fechada" in resultado.detail.lower()
+    # O detalhe varia por plataforma e é isso mesmo: no Windows a tentativa
+    # contra porta fechada costuma pendurar até o timeout em vez de ser
+    # recusada na hora. O estado é o contrato; o texto explica qual dos dois
+    # caminhos aconteceu.
+    assert any(termo in resultado.detail.lower() for termo in ("fechada", "sem resposta"))
 
 
 async def test_sem_porta_nem_url_fica_unknown(health: HealthService) -> None:

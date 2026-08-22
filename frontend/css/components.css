@@ -100,23 +100,96 @@
    olho perde o caminho de leitura logo no primeiro card. */
 .card--project {
   gap: 0;
+  position: relative;
+  overflow: hidden;
+  padding-left: calc(var(--sp-4) + 3px);
   transition: border-color var(--dur-med) var(--ease-out),
-    box-shadow var(--dur-med) var(--ease-out);
+    box-shadow var(--dur-med) var(--ease-out),
+    transform var(--dur-med) var(--ease-out);
+}
+
+/* Faixa de estado na borda esquerda.
+   Numa grade de vinte projetos, ler chip por chip para achar o que está de pé
+   é trabalho. A borda colorida responde antes de qualquer texto — e nunca
+   sozinha: os mesmos estados continuam escritos nos sinais logo abaixo, porque
+   cor isolada não é informação para quem não a distingue. */
+.card--project::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--live-color, transparent);
+  /* Elemento posicionado pinta acima do rodapé, que é o que mantém a faixa
+     contínua de topo a base. Sem isto ele também capturaria o clique. */
+  pointer-events: none;
+}
+
+.card--project[data-live='on'] {
+  --live-color: var(--status-running);
+}
+
+.card--project[data-live='partial'] {
+  --live-color: var(--status-warning);
+}
+
+.card--project[data-live='off'] {
+  --live-color: var(--border-strong);
+}
+
+.card--project[data-live='missing'] {
+  --live-color: var(--status-error);
 }
 
 .card--project:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .card--project:focus-within {
   border-color: var(--accent);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .card--project:hover {
+    transform: none;
+  }
+}
+
 .card__header {
   display: flex;
   align-items: flex-start;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
+}
+
+/* Monograma: âncora visual do card.
+   O tom vem de um hash do nome, escrito em `--monogram-hue` pelo JS. Saturação
+   e luminosidade são fixas aqui para que nenhum projeto sorteie um tom que
+   brigue com o texto — o que varia é só o matiz. */
+.card__monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid hsl(var(--monogram-hue, 210) 45% 50% / 32%);
+  border-radius: var(--radius-md);
+  background: hsl(var(--monogram-hue, 210) 45% 50% / 14%);
+  color: hsl(var(--monogram-hue, 210) 55% 68%);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-caps);
+  line-height: 1;
+}
+
+:root[data-theme='light'] .card__monogram {
+  color: hsl(var(--monogram-hue, 210) 55% 38%);
+}
+
+.card--missing .card__monogram {
+  filter: grayscale(1);
+  opacity: 0.65;
 }
 
 .card__ident {
@@ -126,7 +199,14 @@
   min-width: 0;
 }
 
+/* Estado e "fixar" moram juntos, no canto oposto ao nome. Antes o alfinete
+   abria a linha, à esquerda do título: o primeiro elemento do card era um
+   controle secundário, e o nome — a única coisa que se procura numa grade —
+   começava deslocado e diferente em cada card. */
 .card__status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
   margin-left: auto;
   padding-top: 2px;
 }
@@ -179,7 +259,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  margin: -2px 0 0 -4px;
+  margin: -2px -4px 0 0;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: none;
@@ -861,6 +941,18 @@
   margin-top: auto;
   padding-top: var(--sp-3);
   border-top: 1px solid var(--border);
+}
+
+/* No card de projeto a linha de ação vira rodapé de verdade: sangra até a
+   borda e ganha fundo recuado. Uma linha de botões flutuando sobre o mesmo
+   fundo do conteúdo lê como "mais conteúdo"; com o degrau de superfície, lê
+   como "o que dá para fazer daqui". */
+.card--project .card__actions {
+  margin: var(--sp-4) calc(var(--sp-4) * -1) calc(var(--sp-4) * -1);
+  margin-left: calc((var(--sp-4) + 3px) * -1);
+  padding: var(--sp-3) var(--sp-4);
+  padding-left: calc(var(--sp-4) + 3px);
+  background: color-mix(in srgb, var(--bg-subtle) 55%, transparent);
 }
 
 .card__tools {

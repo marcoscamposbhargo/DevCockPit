@@ -52,6 +52,10 @@ class Job:
     lines: list[str] = field(default_factory=list)
     output_bytes: int = 0
     output_truncated: bool = False
+    #: Quantas linhas já foram descartadas pela frente. É o deslocamento entre
+    #: o índice absoluto que o cliente acompanha e a posição atual em `lines`.
+    #: Sem ele, tudo que sai depois do primeiro truncamento some no caminho.
+    dropped: int = 0
 
     _cancel: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     #: Incrementa a cada linha nova; usado pelo SSE e pelo polling para saber
@@ -75,22 +79,32 @@ class Job:
 
         Precisa rodar em **toda** ultrapassagem, não só na primeira: um job que
         produz saída sem parar tem que continuar cabendo no limite.
-        """
-        if self.output_truncated and self.lines and self.lines[0] == TRUNCATION_MARKER:
-            self.lines.pop(0)
-            self.output_bytes -= _size(TRUNCATION_MARKER)
 
+        O marcador de truncamento **não entra** em `lines`. Ele é apresentação,
+        e uma linha sintética na lista desalinharia o índice absoluto que o SSE
+        e o polling usam para saber o que já entregaram — o efeito era a saída
+        parar de aparecer no console a partir do primeiro corte. Quem exibe lê
+        `output_truncated`.
+        """
         while len(self.lines) > 1 and self.output_bytes > limit:
             removed = self.lines.pop(0)
             self.output_bytes -= _size(removed)
+            self.dropped += 1
 
         self.output_truncated = True
-        self.lines.insert(0, TRUNCATION_MARKER)
-        self.output_bytes += _size(TRUNCATION_MARKER)
+
+    def lines_since(self, absolute_index: int) -> list[str]:
+        """Linhas a partir de um índice **absoluto**, contado desde a primeira.
+
+        O cliente guarda um cursor que nunca retrocede; `lines` retrocede a
+        cada truncamento. Esta é a única tradução entre os dois.
+        """
+        return self.lines[max(0, absolute_index - self.dropped) :]
 
     @property
     def output(self) -> str:
-        return "\n".join(self.lines)
+        corpo = "\n".join(self.lines)
+        return f"{TRUNCATION_MARKER}\n{corpo}" if self.output_truncated else corpo
 
     @property
     def duration_ms(self) -> int | None:

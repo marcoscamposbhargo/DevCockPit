@@ -155,10 +155,24 @@ class HealthService:
                 asyncio.open_connection(host, target.port, happy_eyeballs_delay=0.25),
                 timeout=self.timeout_s,
             )
-        except (ConnectionRefusedError, OSError, socket.gaierror):
-            return self._result(target, HealthState.OFFLINE, started, "Porta fechada.")
         except TimeoutError:
-            return self._result(target, HealthState.ERROR, started, "Tempo esgotado.")
+            # Este ramo precisa vir **antes** de `OSError`: desde o Python 3.10
+            # `TimeoutError` é subclasse de `OSError` e, na ordem inversa, era
+            # código morto — nenhum estouro de tempo chegava aqui.
+            #
+            # O estado continua OFFLINE, e isso é deliberado: no Windows a
+            # tentativa contra porta fechada frequentemente **pendura** até o
+            # timeout em vez de ser recusada na hora, então promover isso a
+            # ERROR marcaria de vermelho o caso mais comum e mais banal. O que
+            # muda é o texto, que agora diz o que de fato aconteceu.
+            return self._result(
+                target,
+                HealthState.OFFLINE,
+                started,
+                f"Sem resposta em {self.timeout_s:g}s.",
+            )
+        except (ConnectionRefusedError, socket.gaierror, OSError):
+            return self._result(target, HealthState.OFFLINE, started, "Porta fechada.")
 
         writer.close()
         with contextlib.suppress(OSError):

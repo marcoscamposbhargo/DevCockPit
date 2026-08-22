@@ -513,3 +513,74 @@ arquivos sujos do repositório de `C:/Users/User`.
 
 `PROJECT_STATUS.md` passou para o modo **EM USO**, com uma seção de anotações
 de uso no topo. A partir daqui o backlog vem do que incomodar no dia a dia.
+
+---
+
+## Sessão 2026-08-21 (noite) — pontas soltas fechadas
+
+**Pedido:** "falta algo pra melhorar?", seguido de "vamos finalizar o projeto e
+melhorá-lo".
+
+### O que entrou
+
+**1. `lifespan` no lugar de `@app.on_event`** (commit `15847ab`)
+
+O FastAPI deprecou o decorador e a suíte emitia 385 warnings por isso. O poller
+de health e o encerramento do `JobManager` passaram para um contextmanager
+passado ao construtor do `FastAPI`. Comportamento idêntico, incluindo cancelar
+job em andamento no encerramento (D-07). Sobrou 1 warning, de terceiro:
+`starlette.testclient` pedindo `httpx2`.
+
+**2. Manifesto `devcockpit.yml` — US-090 e US-091** (commit `4b262bf`)
+
+Quatro rotas em `app/api/routes/manifest.py`, com a lógica em
+`app/services/manifest_service.py`:
+
+| Rota | Efeito |
+|------|--------|
+| `GET /manifest` | estado, avisos e diff campo a campo |
+| `GET /manifest/preview` | o YAML que a exportação escreveria |
+| `POST /manifest/import` | aplica ao banco, upsert por chave de serviço |
+| `POST /manifest/export` | escreve o arquivo, exige `confirm: true` |
+
+A assimetria que organiza o módulo: **ler degrada, importar não**. Ler acontece
+em toda carga da tela do projeto, então YAML quebrado, versão desconhecida e
+campo estranho devolvem `200` com aviso. Importar é ação explícita do usuário,
+então manifesto inválido recusa com `422` — aplicar metade seria pior.
+
+As duas defesas que justificam o cuidado, ambas verificadas ao vivo: URL do
+manifesto restrita a `localhost` (senão um repo clonado apontaria o health
+check para host arbitrário) e `compose_file` que escape do diretório recusado
+com `PATH_NOT_ALLOWED`.
+
+**3. Tema claro**
+
+Só tokens mudam — nenhum componente conhecia cor literal, exceto um `#fff` que
+virou `--fg-on-accent`. Três estados: Sistema, Escuro, Claro. A preferência
+mora no `localStorage` (D-41) e é aplicada por um script inline no `<head>`,
+antes do primeiro paint, senão a tela pisca escura antes de virar clara.
+
+### Verificação ao vivo
+
+Servidor em porta separada (8799), banco temporário e projeto descartável no
+Desktop, tudo removido no fim:
+
+- cadastro importou o manifesto sozinho — nome, descrição e serviço `api`
+- divergência apareceu em 4 campos, sem alterar nada
+- exportar sem `confirm` devolveu `422` e não tocou no arquivo
+- importar e exportar em seguida deixou o projeto `in_sync`
+- `compose_file: ../../fora/...` → `403 PATH_NOT_ALLOWED`
+- `health: http://evil.example.com/ping` invalidou o manifesto, com aviso
+- YAML quebrado → `200` com aviso, projeto intacto
+
+### Números
+
+301 testes passando (19 novos), 1 pulado, cobertura 92%, `ruff check` limpo.
+Decisões `D-37` a `D-41` registradas em `docs/12-decisions.md`.
+
+### Pendências para você
+
+- [ ] Conferir no browser: aba Manifest (prévia, avisos, diff), confirmação do
+      botão Exportar, e o botão Tema alternando os três estados
+- [ ] Conferir a aba Docker com o Docker Desktop desligado
+- [ ] Usar por uma semana: o backlog daqui em diante sai do uso real

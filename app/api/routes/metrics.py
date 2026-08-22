@@ -9,10 +9,21 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_dev_server_service, get_metrics_service, get_project_service
-from app.schemas.health import MachineMetricsOut, MetricsOut, ServerMetricsOut
+from app.api.deps import (
+    get_dev_server_service,
+    get_metrics_service,
+    get_port_discovery,
+    get_project_service,
+)
+from app.schemas.health import (
+    MachineMetricsOut,
+    MetricsOut,
+    ProcessStopped,
+    ServerMetricsOut,
+)
 from app.services.dev_server_service import DevServerService
 from app.services.metrics_service import MetricsService
+from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -62,3 +73,17 @@ def system_metrics(
             for s in dados.servers
         ],
     )
+
+
+@router.post("/processes/{pid}/stop", response_model=ProcessStopped)
+def stop_orphan_process(
+    pid: int,
+    discovery: PortDiscoveryService = Depends(get_port_discovery),
+) -> ProcessStopped:
+    """Encerra um servidor de desenvolvimento largado.
+
+    Rota fina de propósito: quem valida se aquele PID pode ser tocado é o
+    serviço que o classificou como órfão, e não esta camada.
+    """
+    observada = discovery.stop_orphan(pid)
+    return ProcessStopped(stopped=True, pid=pid, port=observada.port)

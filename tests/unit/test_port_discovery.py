@@ -551,3 +551,118 @@ def test_porta_inexplicada_continua_virando_divergencia(client, workspace) -> No
     assert len(divergencias) == 1
     assert divergencias[0]["declared_port"] == 3003
     assert divergencias[0]["observed_port"] == 8765
+
+
+# --- servidor largado, e a guarda para encerrá-lo -------------------------
+
+
+def raiz_permitida() -> str:
+    return RAIZ
+
+
+def test_processo_dentro_de_root_sem_projeto_e_orfao() -> None:
+    """O caso que motivou tudo: subir o servidor, remover o projeto do painel,
+    e o processo continuar de pé segurando a porta sem caminho de volta."""
+    scanner = FakePortScanner(
+        [ListeningPort(port=3000, pid=77, process_name="node.exe", cwd=f"{RAIZ}/removido")]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz_permitida()]
+    )
+
+    porta = disco.observe([]).ports[0]
+
+    assert porta.orphan is True
+    assert porta.cwd == f"{RAIZ}/removido"
+
+
+@pytest.mark.parametrize(
+    ("cwd", "motivo"),
+    [
+        ("C:/WINDOWS/system32", "fora dos roots permitidos"),
+        (None, "sem diretório legível"),
+    ],
+)
+def test_processo_fora_dos_roots_nunca_e_orfao(cwd, motivo: str) -> None:
+    """A defesa D4 reusada: `svchost`, Docker Desktop e o navegador ficam fora
+    de alcance por construção, não por uma lista de exceções."""
+    scanner = FakePortScanner(
+        [ListeningPort(port=445, pid=4, process_name="svchost.exe", cwd=cwd)]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz_permitida()]
+    )
+
+    assert disco.observe([]).ports[0].orphan is False, motivo
+
+
+def test_processo_de_projeto_cadastrado_nao_e_orfao() -> None:
+    """Ele tem dono; encerrar é papel do botão do projeto, não desta seção."""
+    scanner = FakePortScanner(
+        [ListeningPort(port=8000, pid=78, process_name="python.exe", cwd=f"{RAIZ}/app")]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz_permitida()]
+    )
+
+    assert disco.observe([projeto("app", "app")]).ports[0].orphan is False
+
+
+def test_sem_roots_configurados_nada_e_orfao() -> None:
+    """Padrão seguro: sem allowlist, o painel não se autoriza a encerrar nada."""
+    scanner = FakePortScanner(
+        [ListeningPort(port=3000, pid=77, process_name="node.exe", cwd=f"{RAIZ}/qualquer")]
+    )
+    disco = PortDiscoveryService(scanner=scanner, cache=TTLCache(ttl_seconds=300))
+
+    assert disco.observe([]).ports[0].orphan is False
+
+
+def test_encerrar_pid_que_nao_esta_na_varredura_e_recusado() -> None:
+    """O PID vem do cliente e não é obedecido: serve para procurar."""
+    from app.core.errors import ValidationError
+
+    disco = PortDiscoveryService(
+        scanner=FakePortScanner(), cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz_permitida()]
+    )
+    disco.observe([])
+
+    with pytest.raises(ValidationError, match="não está na última varredura"):
+        disco.stop_orphan(9999)
+
+
+def test_encerrar_processo_nao_orfao_e_recusado() -> None:
+    """Um PID que aponte para `svchost` não passa da guarda, mesmo estando na
+    varredura."""
+    from app.core.errors import ActionNotAllowed
+
+    scanner = FakePortScanner(
+        [ListeningPort(port=445, pid=4, process_name="svchost.exe", cwd="C:/WINDOWS/system32")]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz_permitida()]
+    )
+    disco.observe([])
+
+    with pytest.raises(ActionNotAllowed, match="não é um servidor de desenvolvimento"):
+        disco.stop_orphan(4)
+
+
+def test_encerrar_orfao_que_ja_morreu_conta_como_sucesso() -> None:
+    """Chegou-se onde se queria: a porta está livre."""
+    scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=3000,
+                pid=4_000_000_000,
+                process_name="node.exe",
+                cwd=f"{RAIZ}/removido",
+            )
+        ]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz_permitida()]
+    )
+    disco.observe([])
+
+    assert disco.stop_orphan(4_000_000_000).port == 3000

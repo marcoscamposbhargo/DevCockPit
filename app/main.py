@@ -109,6 +109,9 @@ def create_app(
     app.state.port_discovery = PortDiscoveryService(
         scanner=build_port_scanner(),
         cache=app.state.cache,
+        # Os mesmos roots que limitam onde um projeto pode ser cadastrado
+        # limitam o que a tela oferece encerrar (defesa D4, reusada).
+        allowed_roots=roots.allowed_roots,
     )
     app.state.health_poller = HealthPoller(
         session_factory=app.state.session_factory,

@@ -72,6 +72,12 @@ class ObservedPortOut(BaseModel):
     #: "cwd", "cmdline", "container" ou "unknown". A UI usa isto para dizer
     #: **por que** acha que a porta é daquele projeto, em vez de afirmar.
     matched_by: str = "unknown"
+    #: Onde o processo roda. É o que identifica o processo para um humano:
+    #: "node.exe" não diz nada, "node.exe em Projetos/AI Procedures" diz tudo.
+    cwd: str | None = None
+    #: Servidor de desenvolvimento largado — dentro de um root permitido e sem
+    #: projeto que o reivindique. Só estes a tela oferece encerrar.
+    orphan: bool = False
 
 
 class PortMismatch(BaseModel):
@@ -270,3 +276,9 @@ class ServerMetricsOut(BaseModel):
 class MetricsOut(BaseModel):
     machine: MachineMetricsOut
     servers: list[ServerMetricsOut] = Field(default_factory=list)
+
+
+class ProcessStopped(BaseModel):
+    stopped: bool
+    pid: int
+    port: int

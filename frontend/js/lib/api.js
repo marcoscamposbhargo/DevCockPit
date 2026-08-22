@@ -123,6 +123,10 @@ export const api = {
   // exige abrir projeto por projeto — e no fim do dia, lembrar quais foram.
   runningServers: () => request('GET', '/servers'),
   systemMetrics: () => request('GET', '/system/metrics'),
+  // O PID vai como identificador para o servidor procurar na última varredura,
+  // nunca como ordem: quem decide se aquele processo pode ser encerrado é o
+  // servidor, pelo que ele mesmo observou.
+  stopProcess: (pid) => request('POST', `/system/processes/${encodeURIComponent(pid)}/stop`),
   serverStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/server`),
   startServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/start`),
   stopServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/stop`),

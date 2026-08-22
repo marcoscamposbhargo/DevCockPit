@@ -1561,6 +1561,17 @@
   white-space: nowrap;
 }
 
+/* Servidor largado é o aviso mais acionável desta tela: tem um processo de pé
+   do outro lado, custando uma porta agora. Vermelho e não âmbar. */
+.alert--orfaos {
+  border-color: color-mix(in srgb, var(--status-error) 40%, var(--border));
+  background: color-mix(in srgb, var(--status-error) var(--tint-strength), var(--bg-surface));
+}
+
+.alert--orfaos .alert__icon {
+  color: var(--status-error);
+}
+
 /* --- Activity ---
    Era um muro de linhas iguais em ordem cronológica. As três regras abaixo
    existem para o olho achar o que procura: separador de dia, falha em

@@ -140,11 +140,86 @@ function mismatchAlert(mapa, { onAdotar, onEditarPorta }) {
   ]);
 }
 
+/** Servidores de desenvolvimento largados, com a opção de encerrar.
+ *
+ * Estes estavam escondidos. Iam para o mesmo acordeão recolhido das trinta e
+ * cinco portas de sistema — junto de `svchost`, `Discord` e `AnyDesk` —, e o
+ * sinal que importa sumia no ruído: um `node.exe` de um projeto que já foi
+ * removido do painel, segurando a porta 3000 indefinidamente, sem nenhum
+ * caminho de volta pela interface.
+ *
+ * Só entra aqui o que roda **dentro de um root permitido**. É a mesma defesa
+ * que limita onde um projeto pode ser cadastrado, reusada para limitar o que
+ * pode ser encerrado: o resto da máquina fica fora de alcance por construção, e
+ * não por uma lista de exceções que alguém precisaria manter.
+ */
+function orphanSection(mapa, { onEncerrar }) {
+  const orfaos = (mapa.observed ?? []).filter((porta) => porta.orphan);
+  if (!orfaos.length) return null;
+
+  const caminhoCurto = (cwd) => {
+    if (!cwd) return 'origem desconhecida';
+    // As duas barras: o caminho chega do Windows com `\`, e a classe precisa
+    // aceitar as duas para o corte funcionar dos dois lados.
+    const partes = String(cwd).split(/[\\/]/).filter(Boolean);
+    return partes.length > 2 ? `…/${partes.slice(-2).join('/')}` : cwd;
+  };
+
+  return el('div', { class: 'alert alert--orfaos', role: 'status' }, [
+    el('span', { class: 'alert__icon' }, [icon('alert', { size: 16 })]),
+    el('div', { class: 'alert__body' }, [
+      el('strong', {
+        text:
+          orfaos.length === 1
+            ? '1 servidor de desenvolvimento sem projeto'
+            : `${orfaos.length} servidores de desenvolvimento sem projeto`,
+      }),
+      el('p', {
+        class: 'field__hint',
+        text:
+          'Rodando dentro dos seus diretórios de trabalho, mas nenhum projeto ' +
+          'cadastrado o reivindica. Costuma ser servidor que sobreviveu à ' +
+          'remoção do projeto e ficou segurando a porta.',
+      }),
+      ...orfaos.map((porta) => {
+        const botao = el('button', {
+          class: 'btn btn--sm btn--danger',
+          type: 'button',
+          text: 'Encerrar',
+        });
+        botao.addEventListener('click', () => onEncerrar(porta, botao));
+
+        return el('div', { class: 'mismatch-row' }, [
+          el('span', { class: 'mono', text: `porta ${porta.port}` }),
+          el('span', { text: porta.process_name ?? 'processo' }),
+          el('span', {
+            class: 'field__hint mono',
+            text: caminhoCurto(porta.cwd),
+            title: porta.cwd ?? '',
+          }),
+          el('a', {
+            class: 'field__hint',
+            href: `http://localhost:${porta.port}`,
+            target: '_blank',
+            rel: 'noreferrer',
+            text: 'ver',
+            title: 'Abrir para conferir o que é antes de encerrar.',
+          }),
+          botao,
+        ]);
+      }),
+    ]),
+  ]);
+}
+
 /** Portas em escuta que nenhum serviço cadastrado declara.
  *
  * Responde a pergunta que aparece quando um `up` falha com "address already in
  * use": quem está com a porta. Sem esta lista a resposta exigia `netstat` num
  * terminal à parte.
+ *
+ * Recolhida de propósito: aqui mora o ruído da máquina — `svchost`, Discord,
+ * AnyDesk. O que tem ação vai para a seção de órfãos, em destaque.
  */
 function unclaimedSection(mapa) {
   if (!mapa.observation_available) {
@@ -155,7 +230,11 @@ function unclaimedSection(mapa) {
   }
 
   const declaradas = new Set(mapa.bindings.map((b) => b.port));
-  const sobrando = (mapa.observed ?? []).filter((p) => !declaradas.has(p.port));
+  // Órfão tem seção própria, em destaque. Repetir aqui faria a mesma porta
+  // aparecer duas vezes na tela, e a de cima é a que tem o que fazer.
+  const sobrando = (mapa.observed ?? []).filter(
+    (p) => !declaradas.has(p.port) && !p.orphan
+  );
   if (!sobrando.length) return null;
 
   const rotulo = (porta) => {
@@ -404,6 +483,32 @@ export async function renderPorts(container) {
       onEdit(binding);
     };
 
+    /** Encerra um servidor largado. Confirma antes: não se desfaz. */
+    const onEncerrar = async (porta, botao) => {
+      const segue = window.confirm(
+        `Encerrar o processo ${porta.process_name ?? ''} (pid ${porta.pid}) ` +
+          `que está na porta ${porta.port}?
+
+` +
+          `Ele roda em ${porta.cwd ?? 'origem desconhecida'}.
+` +
+          'A ação não pode ser desfeita — o processo é encerrado junto com os filhos dele.'
+      );
+      if (!segue) return;
+
+      botao.disabled = true;
+      botao.textContent = 'Encerrando…';
+      try {
+        await api.stopProcess(porta.pid);
+        toast(`Porta ${porta.port} liberada.`, { kind: 'success' });
+        await carregar();
+      } catch (error) {
+        botao.disabled = false;
+        botao.textContent = 'Encerrar';
+        showError(error);
+      }
+    };
+
     const emEscuta = new Map(
       (mapa.observed ?? []).map((porta) => [
         porta.port,
@@ -472,6 +577,9 @@ export async function renderPorts(container) {
       // A divergência vem antes do conflito: o conflito é entre dois números
       // que alguém escolheu, a divergência é entre o que se escolheu e o que a
       // máquina está fazendo — e é a que faz o painel parecer quebrado.
+      // Antes do resto: é a única coisa nesta tela que está custando uma porta
+      // agora, e a única com um processo de pé do outro lado.
+      orphanSection(mapa, { onEncerrar }),
       mismatchAlert(mapa, { onAdotar, onEditarPorta }),
       conflictAlert(mapa),
       el('p', {

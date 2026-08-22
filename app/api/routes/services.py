@@ -264,6 +264,8 @@ def port_map(
                 project_id=porta.project_id,
                 project_name=porta.project_name,
                 matched_by=porta.matched_by,
+                cwd=porta.cwd,
+                orphan=porta.orphan,
             )
             for porta in observacao.ports
         ],

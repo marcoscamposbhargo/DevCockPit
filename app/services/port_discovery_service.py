@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 
 from app.adapters.system.ports import ListeningPort, PortScanner, normalized
 from app.core.cache import TTLCache
+from app.core.errors import ActionNotAllowed, ValidationError
+from app.runner.background import is_alive, stop_background
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,19 @@ class ObservedPort:
     project_name: str | None = None
     #: Como a atribuição foi feita: "cwd", "cmdline", "container" ou "unknown".
     matched_by: str = "unknown"
+    #: Diretório de trabalho do processo, quando foi possível ler. É o que
+    #: identifica o processo para um humano — "node.exe" não diz nada, "node.exe
+    #: rodando em Projetos/AI Procedures" diz tudo.
+    cwd: str | None = None
+    #: Processo de desenvolvimento rodando dentro de um root permitido e que
+    #: **nenhum projeto cadastrado reivindica**. É o servidor que sobreviveu à
+    #: remoção do projeto, ou que foi subido antes de o painel existir.
+    #:
+    #: Só isto é oferecido para encerrar. A regra é a mesma defesa D4 que limita
+    #: onde um projeto pode ser cadastrado: processo fora dos roots permitidos
+    #: nunca é tocado, o que mantém `svchost`, Docker Desktop e o resto da
+    #: máquina fora de alcance por construção.
+    orphan: bool = False
 
     @property
     def claimed(self) -> bool:
@@ -88,9 +103,17 @@ class ProjectRef:
 
 
 class PortDiscoveryService:
-    def __init__(self, scanner: PortScanner, cache: TTLCache) -> None:
+    def __init__(
+        self,
+        scanner: PortScanner,
+        cache: TTLCache,
+        allowed_roots: list | None = None,
+    ) -> None:
         self.scanner = scanner
         self.cache = cache
+        #: Limita o que pode ser marcado como órfão — e, por consequência, o que
+        #: a tela oferece encerrar. Sem roots, nada é órfão: é o padrão seguro.
+        self.allowed_roots = allowed_roots or []
 
     # --- varredura ---
 
@@ -119,6 +142,60 @@ class PortDiscoveryService:
         observacao, _idade = entrada
         return observacao
 
+    # --- encerrar órfão ---
+
+    def stop_orphan(self, pid: int) -> ObservedPort:
+        """Encerra um processo de desenvolvimento largado. Devolve a porta dele.
+
+        **O PID vem do cliente**, e é o único lugar do painel onde um valor do
+        cliente participa de uma operação destrutiva. Por isso ele não é
+        obedecido: serve para *procurar* na última observação, e quem decide é
+        o que o servidor mesmo classificou.
+
+        Duas guardas, as duas aqui e não na tela:
+
+        1. o PID precisa estar na última varredura **marcado como órfão** — o
+           que significa processo dentro de um root permitido e sem projeto que
+           o reivindique (defesa D4, reusada);
+        2. o processo precisa continuar vivo, ou já se chegou onde se queria.
+
+        PID inventado, ou apontando para `svchost`, para o Docker Desktop ou
+        para qualquer coisa fora dos roots, não passa da primeira.
+
+        A nota de `app/runner/process.py` é a razão deste cuidado: nunca se
+        localiza processo por porta para matar. Aqui se encerra um PID que o
+        próprio painel observou e classificou.
+        """
+        observada = next(
+            (porta for porta in self.last_known().ports if porta.pid == pid),
+            None,
+        )
+
+        if observada is None:
+            raise ValidationError(
+                f"O processo {pid} não está na última varredura de portas. "
+                "Recarregue a tela e tente de novo."
+            )
+
+        if not observada.orphan:
+            raise ActionNotAllowed(
+                f"O processo {pid} não é um servidor de desenvolvimento largado. "
+                "O painel só encerra processos que rodam dentro de um root "
+                "permitido e que nenhum projeto cadastrado reivindica."
+            )
+
+        # Morreu entre a varredura e o clique: é o resultado desejado.
+        if not is_alive(pid):
+            return observada
+
+        if not stop_background(pid):
+            raise ValidationError(
+                f"O processo {pid} não respondeu ao pedido de encerramento. "
+                "Pode ser preciso encerrá-lo pelo Gerenciador de Tarefas."
+            )
+
+        return observada
+
     # --- atribuição ---
 
     def _assign(
@@ -135,7 +212,7 @@ class PortDiscoveryService:
         if dono is not None:
             return self._observed(porta, dono, "cmdline")
 
-        if porta.via_container_runtime:
+        if porta.via_container_runtime:  # noqa: SIM102 - a ordem das regras é o contrato
             # O `cwd` do Docker aponta para a instalação dele, então as duas
             # regras acima nunca casam com uma porta publicada por container.
             # Sobra o número: se **um único** projeto declara aquela porta, foi
@@ -147,7 +224,40 @@ class PortDiscoveryService:
             declarado_por = dono_por_porta.get(porta.port)
             return self._observed(porta, declarado_por, "container")
 
-        return self._observed(porta, None, "unknown")
+        return self._observed(porta, None, "unknown", orphan=self._is_orphan(porta))
+
+    def _is_orphan(self, porta: ListeningPort) -> bool:
+        """Processo de desenvolvimento largado, dentro de um root permitido.
+
+        Duas condições, e as duas são necessárias:
+
+        1. **Dentro de um root permitido.** É a mesma defesa D4 que limita onde
+           um projeto pode ser cadastrado, reusada para limitar o que pode ser
+           encerrado. `svchost`, Docker Desktop e o navegador ficam fora de
+           alcance por construção, e não por uma lista de exceções que alguém
+           precisaria manter.
+        2. **Nenhum projeto o reivindica.** Chegar até aqui já significa que as
+           regras de atribuição falharam — o processo roda numa pasta que não é
+           de projeto cadastrado nenhum.
+
+        O caso que isto pega: subir o servidor de um projeto, remover o projeto
+        do painel, e o processo continuar de pé segurando a porta sem nenhum
+        caminho de volta pela interface.
+        """
+        if not self.allowed_roots or porta.cwd is None:
+            return False
+
+        atual = normalized(porta.cwd)
+        if atual is None:
+            return False
+
+        for raiz in self.allowed_roots:
+            comparavel = normalized(str(raiz))
+            if comparavel is None:
+                continue
+            if len(atual) >= len(comparavel) and atual[: len(comparavel)] == comparavel:
+                return True
+        return False
 
     @staticmethod
     def _sole_declarers(projects: list[ProjectRef]) -> dict[int, ProjectRef]:
@@ -196,7 +306,11 @@ class PortDiscoveryService:
 
     @staticmethod
     def _observed(
-        porta: ListeningPort, project: ProjectRef | None, matched_by: str
+        porta: ListeningPort,
+        project: ProjectRef | None,
+        matched_by: str,
+        *,
+        orphan: bool = False,
     ) -> ObservedPort:
         return ObservedPort(
             port=porta.port,
@@ -205,6 +319,8 @@ class PortDiscoveryService:
             project_id=project.id if project else None,
             project_name=project.name if project else None,
             matched_by=matched_by,
+            cwd=porta.cwd,
+            orphan=orphan,
         )
 
 

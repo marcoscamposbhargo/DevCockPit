@@ -59,6 +59,11 @@ function portConflicts(conflitos) {
           ` usada por ${item.projects.join(', ')}`,
         ])
       ),
+      // Avisar sem oferecer o conserto obrigava a caçar o projeto na lista e
+      // achar a aba certa. O conserto fica a um clique do aviso.
+      el('div', { style: 'margin-top:var(--sp-2)' }, [
+        el('a', { href: '#/ports', text: 'Resolver em Ports →' }),
+      ]),
     ]),
   ]);
 }

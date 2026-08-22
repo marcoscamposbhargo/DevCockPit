@@ -98,6 +98,10 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
   --sidebar-width: 216px;
+  /* Recolhida ainda precisa caber o ícone de 16 com área de clique de 40 e o
+     respiro lateral: menos que isso e o alvo fica menor que o dedo. */
+  --sidebar-width-collapsed: 56px;
+  --rail-width: 264px;
   --topbar-height: 52px;
   --content-max: 1600px;
 }

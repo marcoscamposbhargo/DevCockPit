@@ -15,6 +15,7 @@ from app.models.project import ProjectService as ProjectServiceModel
 from app.schemas.health import (
     OpenBrowserRequest,
     OpenResult,
+    PortBinding,
     PortMap,
     PortUsage,
     ServiceList,
@@ -73,6 +74,14 @@ def replace_services(
     project = projects.get(project_id)
 
     project.services.clear()
+    #: O flush precisa acontecer **entre** o clear e os appends. Sem ele o
+    #: SQLAlchemy emite os INSERT antes dos DELETE na mesma descarga, e
+    #: reenviar a lista com as mesmas chaves estoura
+    #: `UNIQUE(project_id, key)` — o PUT respondia 200 e a transação era
+    #: desfeita depois da resposta, então a tela mostrava salvo e o banco
+    #: continuava com o valor velho.
+    projects.session.flush()
+
     for item in payload.items:
         project.services.append(
             ProjectServiceModel(
@@ -165,16 +174,63 @@ def open_browser(
 
 @global_router.get("/ports", response_model=PortMap)
 def port_map(projects: ProjectService = Depends(get_project_service)) -> PortMap:
+    """Mapa de portas declaradas, com quem ocupa cada uma.
+
+    Só lê o que os projetos **declaram**: nada aqui abre socket para descobrir
+    quem realmente está escutando (NFR-010). Conflito aqui é conflito de
+    configuração, que é o que dá para resolver mudando um número.
+    """
     todos, _ = projects.list(limit=500)
 
     por_porta: dict[int, set[str]] = defaultdict(set)
+    #: Conflito é contado por **serviço**, não por projeto: dois serviços do
+    #: mesmo projeto na mesma porta também não sobem juntos, e por nome de
+    #: projeto esse caso passava despercebido.
+    quantos: dict[int, int] = defaultdict(int)
+    brutos: list[tuple[int, str, str, str, str, str, str | None]] = []
+
     for project in todos:
         for service in project.services:
-            if service.port:
-                por_porta[service.port].add(project.name)
+            if not service.port:
+                continue
+            por_porta[service.port].add(project.name)
+            quantos[service.port] += 1
+            brutos.append(
+                (
+                    service.port,
+                    project.id,
+                    project.name,
+                    service.key,
+                    service.label,
+                    service.host,
+                    service.url,
+                )
+            )
 
     items = [
-        PortUsage(port=porta, projects=sorted(nomes), conflict=len(nomes) > 1)
+        PortUsage(port=porta, projects=sorted(nomes), conflict=quantos[porta] > 1)
         for porta, nomes in sorted(por_porta.items())
     ]
-    return PortMap(items=items, conflicts=sum(1 for item in items if item.conflict))
+    conflitantes = {item.port for item in items if item.conflict}
+
+    bindings = [
+        PortBinding(
+            port=porta,
+            project_id=project_id,
+            project_name=project_name,
+            service_key=key,
+            service_label=label,
+            host=host,
+            url=url,
+            conflict=porta in conflitantes,
+        )
+        for porta, project_id, project_name, key, label, host, url in sorted(
+            brutos, key=lambda linha: (linha[0], linha[2], linha[4])
+        )
+    ]
+
+    return PortMap(
+        items=items,
+        bindings=bindings,
+        conflicts=sum(1 for item in items if item.conflict),
+    )

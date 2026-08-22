@@ -2,6 +2,7 @@ import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
 import { actionBar } from '../lib/actions.js';
+import { powerToggle } from '../lib/power.js';
 import { loading, pageHeader, showError, statusBadge, techChip, toast } from '../lib/ui.js';
 import { navigate } from '../router.js';
 import { renderDockerPanel } from './docker-panel.js';
@@ -123,6 +124,17 @@ export async function renderProject(container, params, query) {
 
   const activeTab = TABS.some((tab) => tab.key === query.tab) ? query.tab : 'overview';
 
+  // Quantos serviços responderam na última verificação. Vem do cache dos
+  // serviços do próprio projeto — abrir a página do projeto já é o momento em
+  // que essa leitura é barata e esperada.
+  let online = 0;
+  try {
+    const estado = await api.listServices(project.id);
+    online = estado.items.filter((item) => item.state === 'ONLINE').length;
+  } catch {
+    /* sem o estado, a chave começa em "desligado" e o clique ainda funciona. */
+  }
+
   const togglePin = async () => {
     try {
       await api.updateProject(project.id, { is_pinned: !project.is_pinned });
@@ -178,6 +190,10 @@ export async function renderProject(container, params, query) {
       title: project.name,
       subtitle: project.path,
       actions: [
+        powerToggle(project, {
+          on: online > 0,
+          onChanged: () => renderProject(container, params, query),
+        }),
         el('button', {
           class: 'btn',
           onClick: togglePin,

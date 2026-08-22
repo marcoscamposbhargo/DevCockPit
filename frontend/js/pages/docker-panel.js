@@ -9,10 +9,21 @@ import { jobConsole } from '../lib/job-console.js';
 import { loading, showError, toast } from '../lib/ui.js';
 
 const ACTIONS = [
-  { key: 'up', label: 'Subir', primary: true },
-  { key: 'stop', label: 'Parar' },
-  { key: 'restart', label: 'Reiniciar' },
-  { key: 'down', label: 'Derrubar' },
+  { key: 'up', label: 'Subir', primary: true, dica: 'docker compose up -d' },
+  { key: 'stop', label: 'Parar', dica: 'Para os containers e mantém tudo como está.' },
+  { key: 'restart', label: 'Reiniciar', dica: 'docker compose restart' },
+  {
+    key: 'down',
+    label: 'Derrubar',
+    danger: true,
+    dica: 'Para e remove os containers e a rede do Compose.',
+    // Parar é reversível com um clique; derrubar destrói o container e o que
+    // não estiver em volume nomeado vai junto. Os dois estavam lado a lado
+    // com o mesmo peso visual e o mesmo silêncio no clique.
+    confirmar:
+      'Derrubar remove os containers e a rede deste Compose.\n\n' +
+      'Dados fora de volume nomeado se perdem. Continuar?',
+  },
 ];
 
 const STATE_COLOR = {
@@ -157,14 +168,22 @@ export async function renderDockerPanel(container) {
   const consoleSlot = el('div', {});
   const logsSlot = el('div', {});
 
+  const botoesAcao = [];
+
+  const travarAcoes = (travado) => {
+    for (const botao of botoesAcao) botao.disabled = travado;
+  };
+
   const runAction = async (action) => {
     logsSlot.replaceChildren();
+    travarAcoes(true);
     try {
       const accepted = await api.dockerAction(projectId, action);
       const view = jobConsole({
         jobId: accepted.job_id,
         title: `docker compose ${action}`,
         onFinish: (state) => {
+          travarAcoes(false);
           if (state === 'SUCCESS') {
             toast(`"${action}" concluído.`, { kind: 'success' });
             // Recarrega só a tabela: o console permanece visível para leitura.
@@ -174,6 +193,7 @@ export async function renderDockerPanel(container) {
       });
       consoleSlot.replaceChildren(view.element);
     } catch (error) {
+      travarAcoes(false);
       showError(error);
     }
   };
@@ -225,13 +245,20 @@ export async function renderDockerPanel(container) {
       el(
         'div',
         { class: 'page-header__actions' },
-        ACTIONS.map((action) =>
-          el('button', {
-            class: `btn${action.primary ? ' btn--primary' : ''}`,
+        ACTIONS.map((action) => {
+          const botao = el('button', {
+            class: `btn${action.primary ? ' btn--primary' : ''}${action.danger ? ' btn--danger' : ''}`,
+            type: 'button',
             text: action.label,
-            onClick: () => runAction(action.key),
-          })
-        )
+            title: action.dica,
+            onClick: () => {
+              if (action.confirmar && !window.confirm(action.confirmar)) return;
+              runAction(action.key);
+            },
+          });
+          botoesAcao.push(botao);
+          return botao;
+        })
       ),
     ]),
     consoleSlot,

@@ -33,6 +33,7 @@ derivável e coloca as ações a um clique.
 | **Git** | branch, alterações, último commit, histórico, remotes — **somente leitura** |
 | **Docker** | containers, `compose up/down/start/stop/restart`, logs em tempo real |
 | **Services** | health check de `localhost` com estado `ONLINE`/`OFFLINE`/`ERROR` |
+| **Ports** | mapa das portas declaradas, conflito marcado e troca do número na própria linha |
 | **Ações** | abrir no VS Code, abrir pasta, abrir terminal no diretório, abrir o app |
 | **Activity** | log de auditoria de tudo que foi executado |
 
@@ -171,8 +172,12 @@ Primeira vez:
 3. **Dashboard** passa a responder: o que está no ar, o que tem alteração
    pendente, que porta está em conflito.
 
-Atalhos: `Ctrl+K` busca projeto, `g d` vai para o Dashboard, `g p` para
-Projects, `r` recarrega a tela.
+Atalhos: `Ctrl+K` busca projeto, `Ctrl+B` recolhe a barra lateral, `g d` vai
+para o Dashboard, `g p` para Projects, `r` recarrega a tela.
+
+O **trilho** à direita da barra lateral mostra o que está no ar sem sair da
+tela em que você está, com a chave liga/desliga de cada projeto. O botão de
+camadas na topbar o esconde.
 
 ### Testes
 
@@ -259,11 +264,12 @@ Os testes que exigem Docker estão marcados e não rodam por padrão.
 - guards de `Host` e `Origin`, bind loopback validado no startup
 - log de auditoria com `correlation_id`
 
-**Interface**: Dashboard, Projects, descoberta com console de job, página do
-projeto com abas Overview, Git, Docker, Services e Manifest, Activity e
-Settings. Tema claro e escuro, seguindo o sistema por padrão.
+**Interface**: Dashboard, Projects, Ports, descoberta com console de job,
+página do projeto com abas Overview, Git, Docker, Services e Manifest,
+Activity e Settings. Barra lateral recolhível e trilho de projetos ativos.
+Tema claro e escuro, seguindo o sistema por padrão.
 
-301 testes passando, cobertura de 92%.
+316 testes passando, cobertura de 92%.
 
 ## Como contribuir com este código
 

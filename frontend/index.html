@@ -23,18 +23,36 @@
   </script>
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app-shell" data-sidebar="expanded" data-rail="shown">
     <aside class="sidebar">
       <div class="sidebar__brand">
         <span class="sidebar__logo" aria-hidden="true">◈</span>
         <span class="sidebar__title">DevCockpit</span>
+        <button
+          id="sidebar-toggle"
+          class="sidebar__collapse"
+          type="button"
+          aria-controls="sidebar-nav"
+          aria-label="Recolher a barra lateral"
+          title="Recolher a barra lateral (Ctrl+B)"></button>
       </div>
 
-      <nav class="sidebar__nav" aria-label="Navegação principal">
-        <a class="nav-item" href="#/dashboard" data-route="dashboard">Dashboard</a>
-        <a class="nav-item" href="#/projects" data-route="projects">Projects</a>
-        <a class="nav-item" href="#/activity" data-route="activity">Activity</a>
-        <a class="nav-item" href="#/settings" data-route="settings">Settings</a>
+      <nav id="sidebar-nav" class="sidebar__nav" aria-label="Navegação principal">
+        <a class="nav-item" href="#/dashboard" data-route="dashboard" data-icon="grid">
+          <span class="nav-item__label">Dashboard</span>
+        </a>
+        <a class="nav-item" href="#/projects" data-route="projects" data-icon="layers">
+          <span class="nav-item__label">Projects</span>
+        </a>
+        <a class="nav-item" href="#/ports" data-route="ports" data-icon="plug">
+          <span class="nav-item__label">Ports</span>
+        </a>
+        <a class="nav-item" href="#/activity" data-route="activity" data-icon="pulse">
+          <span class="nav-item__label">Activity</span>
+        </a>
+        <a class="nav-item" href="#/settings" data-route="settings" data-icon="gear">
+          <span class="nav-item__label">Settings</span>
+        </a>
       </nav>
 
       <div class="sidebar__section">
@@ -47,6 +65,8 @@
       </div>
     </aside>
 
+    <aside id="project-rail" class="rail" aria-label="Projetos ativos"></aside>
+
     <div class="main">
       <header class="topbar">
         <input
@@ -56,6 +76,12 @@
           placeholder="Buscar e filtrar projetos…  (Ctrl+K)"
           aria-label="Buscar projeto">
         <div id="freshness" class="topbar__meta"></div>
+        <button
+          id="rail-toggle"
+          class="topbar__icon-btn"
+          type="button"
+          aria-controls="project-rail"
+          aria-label="Mostrar ou ocultar o trilho de projetos ativos"></button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Alternar tema"></button>
       </header>
 

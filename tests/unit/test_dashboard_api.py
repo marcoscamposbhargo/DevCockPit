@@ -105,6 +105,30 @@ def test_get_de_servicos_nao_verifica(client: TestClient, projeto: str) -> None:
     assert itens[0]["checked_at"] is None
 
 
+def test_trocar_a_porta_de_um_servico_existente_persiste(
+    client: TestClient, projeto: str
+) -> None:
+    """Reenviar a lista com as mesmas chaves precisa sobreviver ao commit.
+
+    O `clear()` + `append()` sem flush no meio faz o SQLAlchemy inserir antes
+    de apagar: `UNIQUE(project_id, key)` estoura **depois** da resposta, o
+    cliente vê 200 e o banco fica com o valor velho.
+    """
+    antes = client.get(f"/api/projects/{projeto}").json()["services"]
+    trocado = [
+        {**servico, "port": 9100} if servico["key"] == "backend" else servico
+        for servico in antes
+    ]
+
+    resposta = client.put(
+        f"/api/projects/{projeto}/services", json={"items": trocado}, headers=WRITE_HEADERS
+    )
+    assert resposta.status_code == 200
+
+    depois = client.get(f"/api/projects/{projeto}").json()["services"]
+    assert {s["key"]: s["port"] for s in depois}["backend"] == 9100
+
+
 # --- mapa de portas -------------------------------------------------------
 
 
@@ -121,6 +145,40 @@ def test_conflito_de_porta_entre_projetos(client: TestClient, workspace: Path) -
     assert conflito["conflict"] is True
     assert set(conflito["projects"]) == {"um", "dois"}
     assert mapa["conflicts"] == 1
+
+
+def test_mapa_de_portas_diz_quem_ocupa_cada_uma(client: TestClient, projeto: str) -> None:
+    """Sem o id do projeto e a chave do serviço a tela não teria como editar."""
+    mapa = client.get("/api/services/ports").json()
+
+    binding = next(item for item in mapa["bindings"] if item["port"] == 8000)
+
+    assert binding["project_id"] == projeto
+    assert binding["service_key"] == "backend"
+    assert binding["conflict"] is False
+
+
+def test_dois_servicos_do_mesmo_projeto_na_mesma_porta_conflitam(
+    client: TestClient, projeto: str
+) -> None:
+    """Contar por nome de projeto escondia este caso: um `set` de um nome só."""
+    client.put(
+        f"/api/projects/{projeto}/services",
+        json={
+            "items": [
+                {"key": "api", "label": "API", "port": 8000},
+                {"key": "admin", "label": "Admin", "port": 8000},
+            ]
+        },
+        headers=WRITE_HEADERS,
+    )
+
+    mapa = client.get("/api/services/ports").json()
+
+    porta = next(item for item in mapa["items"] if item["port"] == 8000)
+    assert porta["conflict"] is True
+    assert mapa["conflicts"] == 1
+    assert all(item["conflict"] for item in mapa["bindings"] if item["port"] == 8000)
 
 
 # --- ações de sistema -----------------------------------------------------

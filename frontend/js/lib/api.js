@@ -90,6 +90,10 @@ export const api = {
 
   listServices: (id) => request('GET', `/projects/${encodeURIComponent(id)}/services`),
   checkServices: (id) => request('POST', `/projects/${encodeURIComponent(id)}/services/check`),
+  // Substituição em bloco: o backend não tem PATCH de serviço solto, então
+  // editar uma porta é reenviar a lista inteira do projeto.
+  replaceServices: (id, items) =>
+    request('PUT', `/projects/${encodeURIComponent(id)}/services`, { body: { items } }),
   ports: () => request('GET', '/services/ports'),
 
   openVsCode: (id) => request('POST', `/projects/${encodeURIComponent(id)}/open/vscode`),

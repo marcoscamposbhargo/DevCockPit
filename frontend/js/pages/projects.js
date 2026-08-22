@@ -3,6 +3,7 @@ import { api, ApiError } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
 import { icon } from '../lib/icons.js';
+import { hasDocker, powerToggle } from '../lib/power.js';
 import {
   emptyState,
   pageHeader,
@@ -13,8 +14,6 @@ import {
   toast,
 } from '../lib/ui.js';
 import { navigate } from '../router.js';
-
-const DOCKER_TECHS = new Set(['docker', 'docker-compose']);
 
 /** Sinais por projeto, cruzados do dashboard — que já vem de cache.
  *
@@ -35,10 +34,6 @@ function buildSignals(dashboard) {
   }
 
   return { online, git };
-}
-
-function hasDocker(project) {
-  return project.technologies.some((tech) => DOCKER_TECHS.has(tech));
 }
 
 const SIGNAL_ICON = { docker: 'container', dirty: 'branch', clean: 'branch' };
@@ -124,7 +119,7 @@ function pinButton(project, onToggle) {
   }, [icon('pin', { size: 14 })]);
 }
 
-function projectCard(project, { onDelete, onTogglePin, available, signals }) {
+function projectCard(project, { onDelete, onTogglePin, onPowerChanged, available, signals }) {
   const isMissing = project.status === 'MISSING';
 
   return el('article', { class: `card card--project${isMissing ? ' card--missing' : ''}` }, [
@@ -160,8 +155,14 @@ function projectCard(project, { onDelete, onTogglePin, available, signals }) {
     ]),
 
     // Abrir o editor é o motivo mais comum de procurar um projeto aqui; exigir
-    // dois cliques a mais para chegar na aba Overview era atrito puro.
+    // dois cliques a mais para chegar na aba Overview era atrito puro. A chave
+    // liga/desliga vem antes das ferramentas: ela é a decisão, elas são o que
+    // se faz depois de tomá-la.
     el('div', { class: 'card__actions' }, [
+      powerToggle(project, {
+        on: (signals.online.get(project.id) ?? 0) > 0,
+        onChanged: onPowerChanged,
+      }),
       quickTools(project, available),
       el('div', { class: 'card__actions-end' }, [
         el('span', {
@@ -316,6 +317,20 @@ export async function renderProjects(container, _params, query) {
       }
     };
 
+    // Ligar ou parar muda o sinal do card, mas o estado real só reaparece
+    // depois que o verificador de fundo rodar. Recarregar na hora mostraria o
+    // valor velho com cara de novo; a espera curta deixa o cache alcançar.
+    const onPowerChanged = () => {
+      window.setTimeout(async () => {
+        try {
+          await carregar();
+          draw();
+        } catch {
+          /* a tela continua utilizável com o dado anterior. */
+        }
+      }, 2000);
+    };
+
     const todos = sortProjects(data.items);
     const counts = Object.fromEntries(
       FILTERS.map((filtro) => [filtro.key, todos.filter((p) => filtro.match(p, signals)).length])
@@ -427,7 +442,7 @@ export async function renderProjects(container, _params, query) {
         'div',
         { class: 'grid-cards' },
         visiveis.map((project) =>
-          projectCard(project, { onDelete, onTogglePin, available, signals })
+          projectCard(project, { onDelete, onTogglePin, onPowerChanged, available, signals })
         )
       );
     }

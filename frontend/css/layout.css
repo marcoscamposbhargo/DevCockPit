@@ -1,7 +1,20 @@
+/* Três colunas: navegação, trilho de projetos ativos, área de trabalho.
+   As duas primeiras são recolhíveis e o estado vive em `data-*` no casco —
+   ver js/lib/shell.js. Grid, e não `position: fixed`, porque recolher precisa
+   devolver a largura para o conteúdo em vez de deixar uma faixa vazia. */
 .app-shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: var(--sidebar-width) var(--rail-width) 1fr;
   height: 100%;
+  transition: grid-template-columns var(--dur-med) var(--ease-out);
+}
+
+.app-shell[data-sidebar='collapsed'] {
+  --sidebar-width: var(--sidebar-width-collapsed);
+}
+
+.app-shell[data-rail='hidden'] {
+  grid-template-columns: var(--sidebar-width) 1fr;
 }
 
 /* --- sidebar --- */
@@ -23,6 +36,28 @@
   padding: var(--sp-1) var(--sp-2);
 }
 
+.sidebar__collapse {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast),
+    border-color var(--dur-fast);
+}
+
+.sidebar__collapse:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg-primary);
+}
+
 .sidebar__logo {
   color: var(--accent);
   font-size: var(--fs-lg);
@@ -40,11 +75,32 @@
 }
 
 .nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-md);
   color: var(--fg-secondary);
   font-size: var(--fs-md);
+  white-space: nowrap;
   transition: background var(--dur-fast), color var(--dur-fast);
+}
+
+.nav-item .icon {
+  flex: none;
+  color: var(--fg-muted);
+  transition: color var(--dur-fast);
+}
+
+.nav-item:hover .icon,
+.nav-item[aria-current="page"] .icon {
+  color: var(--accent);
+}
+
+.nav-item__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-item:hover {
@@ -111,6 +167,155 @@
   gap: var(--sp-2);
   color: var(--fg-muted);
   font-size: var(--fs-xs);
+}
+
+/* --- barra lateral recolhida ---
+   Some o texto, fica o ícone. O que desaparece precisa continuar alcançável:
+   cada item mantém `title` e `aria-label` (ver decorateNav em js/main.js), e
+   as seções que só fazem sentido com texto — fixados e ferramentas — saem de
+   cena inteiras em vez de virar um amontoado de ícone sem legenda. */
+
+.app-shell[data-sidebar='collapsed'] .sidebar {
+  padding-inline: var(--sp-2);
+  align-items: stretch;
+}
+
+.app-shell[data-sidebar='collapsed'] .sidebar__brand {
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0;
+}
+
+.app-shell[data-sidebar='collapsed'] .sidebar__collapse {
+  margin-left: 0;
+}
+
+.app-shell[data-sidebar='collapsed'] .sidebar__title,
+.app-shell[data-sidebar='collapsed'] .nav-item__label,
+.app-shell[data-sidebar='collapsed'] .sidebar__section,
+.app-shell[data-sidebar='collapsed'] .sidebar__footer {
+  display: none;
+}
+
+.app-shell[data-sidebar='collapsed'] .nav-item {
+  justify-content: center;
+  padding-inline: 0;
+  min-height: 36px;
+}
+
+/* --- trilho de projetos ativos ---
+   Coluna própria, entre a navegação e o conteúdo: responde "o que está de pé"
+   sem tirar ninguém da tela em que está. */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-base);
+  overflow: hidden;
+}
+
+.app-shell[data-rail='hidden'] .rail {
+  display: none;
+}
+
+.rail__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--topbar-height);
+  flex: none;
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.rail__title {
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+
+.rail__badge {
+  min-width: 20px;
+  padding: 1px var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--fg-secondary);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.rail__icon-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast),
+    border-color var(--dur-fast);
+}
+
+.rail__icon-btn:first-of-type {
+  margin-left: auto;
+}
+
+.rail__icon-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg-primary);
+}
+
+.rail__body {
+  flex: 1;
+  padding: var(--sp-3);
+  overflow-y: auto;
+}
+
+.rail__section + .rail__section {
+  margin-top: var(--sp-4);
+}
+
+.rail__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  padding-inline: var(--sp-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+
+.rail__heading span {
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.rail__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.rail__empty {
+  padding: var(--sp-2) var(--sp-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
 }
 
 /* --- main --- */
@@ -216,12 +421,55 @@
   margin-bottom: var(--sp-5);
 }
 
+/* Abaixo de ~1100px o trilho e o conteúdo disputam a mesma largura, e quem
+   perde é o conteúdo — que é a razão da tela existir. O trilho sai sozinho;
+   o botão da topbar continua trazendo-o de volta em quem quiser. */
+@media (max-width: 1100px) {
+  .app-shell,
+  .app-shell[data-rail='hidden'] {
+    grid-template-columns: var(--sidebar-width) 1fr;
+  }
+
+  .app-shell[data-rail='shown'] .rail {
+    display: none;
+  }
+
+  /* Sem espaço para o trilho, o botão que o chama de volta é um clique que
+     não faz nada — pior do que não existir. */
+  .topbar__icon-btn {
+    display: none;
+  }
+}
+
 /* Abaixo de ~900px a barra lateral custa mais do que entrega: vira uma faixa
    de navegação no topo e a área de trabalho fica com a largura toda. */
 @media (max-width: 900px) {
-  .app-shell {
+  .app-shell,
+  .app-shell[data-rail='hidden'],
+  .app-shell[data-sidebar='collapsed'] {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  /* Na faixa horizontal o item recolhido não existe: rótulo sempre visível,
+     senão sobram cinco ícones sem legenda ocupando a largura toda. */
+  .app-shell[data-sidebar='collapsed'] .nav-item__label {
+    display: inline;
+  }
+
+  .app-shell[data-sidebar='collapsed'] .nav-item {
+    justify-content: flex-start;
+    padding-inline: var(--sp-3);
+  }
+
+  .sidebar__collapse {
+    display: none;
+  }
+
+  .app-shell[data-sidebar='collapsed'] .sidebar,
+  .app-shell[data-sidebar='collapsed'] .sidebar__brand {
+    flex-direction: row;
+    align-items: center;
   }
 
   .sidebar {

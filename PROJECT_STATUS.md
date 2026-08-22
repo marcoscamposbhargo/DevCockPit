@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-22 (frontend B2 entregue; foco do VS Code, servidor solto e cache do frontend)
+**Última atualização:** 2026-08-22 (polimento de layout: lateral recolhível, trilho de ativos, liga/desliga e tela de portas)
 
 ---
 
@@ -52,6 +52,21 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 - [x] (2026-08-22) "Não vi modificação no layout" — o servidor entregava o
       arquivo novo; faltava `Cache-Control` no frontend, então o navegador
       guardava CSS e JS sem nunca revalidar (D-51).
+
+- [x] (2026-08-22) Polimento de layout pedido por você: barra lateral
+      recolhível (`Ctrl+B`), trilho de projetos ativos como coluna própria à
+      direita dela, e o liga/desliga do projeto virando uma chave de estado
+      única — no card, no trilho e no cabeçalho do projeto (D-52, D-53, D-54).
+- [x] (2026-08-22) "Trocar as portas do servidor local pra ter mais autonomia":
+      tela **Ports**, com o mapa das portas declaradas, o conflito marcado e a
+      troca do número na própria linha, com sugestão de porta livre. Ela edita
+      o registro do DevCockpit, nunca o arquivo do projeto (D-55, D-56).
+- [x] (2026-08-22) Defeito achado ao testar a troca de porta no browser:
+      `PUT /api/projects/{id}/services` respondia **200 e não gravava**. O
+      `clear()` seguido de `append()` fazia o SQLAlchemy emitir os INSERT antes
+      dos DELETE na mesma descarga; `UNIQUE(project_id, key)` estourava depois
+      da resposta e a transação era desfeita em silêncio. Um `flush()` entre os
+      dois resolve; há teste de regressão que falha sem ele.
 
 ## 🏁 MVP COMPLETO
 
@@ -439,6 +454,10 @@ Falta, porque depende de você:
 [ ] clicar em VS Code e confirmar que a janela agora vem para frente (D-46)
 [ ] dizer o que ainda incomoda visualmente
 [ ] conferir a aba Docker com o Docker Desktop desligado
+[ ] clicar na chave Ligado/Desligado de um projeto com Compose e confirmar que
+    sobe e para de verdade (não testado aqui: subiria seus containers reais)
+[ ] trocar uma porta em Ports e conferir que o "Abrir" do serviço leva ao
+    endereço novo
 ```
 
 ---
@@ -451,7 +470,7 @@ Falta, porque depende de você:
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
 | Cobertura de testes | 92% | >= 70% |
-| Testes | 313 passando, 1 pulado | — |
+| Testes | 316 passando, 1 pulado | — |
 
 ---
 
@@ -468,3 +487,4 @@ Falta, porque depende de você:
 | Pontas soltas | 2026-08-21 | 2026-08-21 | manifesto, tema claro, `lifespan`; 301 testes |
 | Rodada no browser | 2026-08-21 | 2026-08-21 | 4 defeitos corrigidos, ferramentas no card; 302 testes |
 | Frontend (B2) | 2026-08-22 | 2026-08-22 | card com sinais, dashboard denso, busca única; 313 testes |
+| Layout e portas | 2026-08-22 | 2026-08-22 | lateral recolhível, trilho de ativos, liga/desliga, tela Ports; 316 testes |

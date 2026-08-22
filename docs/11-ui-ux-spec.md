@@ -34,25 +34,37 @@ copiado. O que se aproveita:
 ## Layout
 
 ```
-┌────────────┬─────────────────────────────────────────────────┐
-│            │  Topbar: busca (Ctrl+K) · estado global · tema  │
-│  Sidebar   ├─────────────────────────────────────────────────┤
-│  200px     │                                                 │
-│            │  Área de conteúdo                               │
-│  Dashboard │                                                 │
-│  Projects  │                                                 │
-│  Git       │                                                 │
-│  Docker    │                                                 │
-│  Services  │                                                 │
-│  Activity  │                                                 │
-│  Settings  │                                                 │
-│            │                                                 │
-│  ── ─── ── │                                                 │
-│  Pinned    │                                                 │
-│  · KitEasy │                                                 │
-│  · ZapBot  │                                                 │
-└────────────┴─────────────────────────────────────────────────┘
+┌──────────┬────────────────┬───────────────────────────────────┐
+│          │ Ativos      3  │ Topbar: busca (Ctrl+K) · trilho ·  │
+│ Sidebar  ├────────────────┤         tema                      │
+│ 216px    │ ● Dashdate     ├───────────────────────────────────┤
+│ (56px    │   1/2 online   │                                   │
+│ recolhida)│  [Ligado]     │  Área de conteúdo                 │
+│          │                │                                   │
+│ Dashboard│ ● ZapBot       │                                   │
+│ Projects │   2/2 online   │                                   │
+│ Ports    │   [Ligado]     │                                   │
+│ Activity │                │                                   │
+│ Settings │ FIXADOS        │                                   │
+│          │ ○ KitEasy      │                                   │
+│ ── ── ── │   [Desligado]  │                                   │
+│ Pinned   │                │                                   │
+└──────────┴────────────────┴───────────────────────────────────┘
 ```
+
+Três colunas, e as duas primeiras recolhem. O estado de cada uma mora no
+`localStorage` (`devcockpit:sidebar`, `devcockpit:rail`), pelo mesmo motivo do
+tema: é preferência de quem olha a tela naquele monitor.
+
+**Sidebar recolhida** (`Ctrl+B`) some com o texto e deixa o ícone. Cada item
+mantém `title` e `aria-label`, e as seções que só existem como texto — fixados
+e ferramentas — saem inteiras em vez de virar ícone sem legenda.
+
+**Trilho de projetos** responde "o que está de pé agora?" sem tirar ninguém da
+tela em que está. Lê o mesmo cache agregado do dashboard: um painel sempre
+visível não pode disparar verificação por projeto (NFR-010/NFR-011). Abaixo de
+1100px ele sai de cena — nessa largura ele e o conteúdo disputam o mesmo espaço,
+e quem perde é o conteúdo.
 
 Projetos fixados na sidebar é adição ao esboço do prompt: com dezenas de
 projetos, "os 4 que eu uso hoje" precisam de acesso em um clique.
@@ -131,7 +143,9 @@ ações diferentes.
 | Componente | Uso |
 |------------|-----|
 | `StatCard` | número grande + rótulo + delta; usado no dashboard |
-| `ProjectCard` | nome, path em mono, chips de stack, badge de status, badge Git, ações rápidas |
+| `ProjectCard` | nome, path em mono, chips de stack, badge de status, badge Git, chave liga/desliga, ações rápidas |
+| `RailCard` | versão condensada do `ProjectCard` para o trilho: ponto de estado, nome, `x/y online`, chave liga/desliga |
+| `PowerToggle` | chave de estado do projeto: mostra ligado/desligado/em operação e age no clique |
 | `StatusBadge` | ponto colorido + rótulo |
 | `TechChip` | tecnologia detectada; contorno quando `MANUAL` |
 | `ContainerRow` | serviço, estado, imagem, portas, uptime, ações inline |
@@ -203,6 +217,18 @@ Services     2 online · 1 offline
 Abas evitam a página gigante que rola sem fim. Overview responde a pergunta
 mais comum sem clique adicional.
 
+### Ports
+
+Uma tela para o conflito que aparece sozinho com dezenas de projetos locais:
+todo mundo quer 3000, 5173 e 8000. Lista as portas **declaradas** no registro,
+marca as que mais de um serviço reivindica e troca o número na própria linha —
+com sugestão da primeira porta livre.
+
+O que ela edita é a porta do registro do DevCockpit: o que ele verifica e o que
+ele abre. Não reescreve `.env`, Compose nem `vite.config` — arquivo do projeto é
+do projeto. A tela diz isso na cara, e o toast repete depois de salvar, para
+ninguém trocar aqui e achar que o servidor mudou de porta sozinho.
+
 ### Docker
 
 Tabela de containers com ação por linha, botões de Compose no topo, console de
@@ -228,6 +254,7 @@ de reverificar. Não é toast de erro: é estado da tela.
 | Atalho | Ação |
 |--------|------|
 | `Ctrl+K` | busca de projeto |
+| `Ctrl+B` | recolhe ou expande a barra lateral |
 | `g d` | Dashboard |
 | `g p` | Projects |
 | `Esc` | fecha painel ou diálogo |

@@ -248,6 +248,29 @@ comando.
 }
 ```
 
+`GET /api/services/ports` devolve duas leituras da mesma coisa:
+
+```json
+{
+  "items": [{ "port": 8000, "projects": ["Dashdate", "DevCockpit"], "conflict": true }],
+  "bindings": [{
+    "port": 8000, "project_id": "dashdate", "project_name": "Dashdate",
+    "service_key": "backend", "service_label": "Backend",
+    "host": "localhost", "url": "http://localhost:8000", "conflict": true
+  }],
+  "conflicts": 1
+}
+```
+
+`items` responde "esta porta está em conflito?". `bindings` diz **quem** ocupa
+cada uma, com o id do projeto e a chave do serviço — sem isso a tela de portas
+teria que buscar cada projeto só para descobrir de quem é a porta antes de
+poder trocá-la. `conflict` conta por serviço, não por nome de projeto (D-56).
+
+Trocar a porta é `PUT /api/projects/{id}/services` com a lista **inteira**: não
+há PATCH de serviço solto, e a substituição em bloco é o que mantém a lista
+consistente com o manifesto.
+
 ## Ações de sistema
 
 | Endpoint | Ação |

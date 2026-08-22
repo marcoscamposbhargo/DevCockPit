@@ -36,8 +36,28 @@ class PortUsage(BaseModel):
     conflict: bool
 
 
+class PortBinding(BaseModel):
+    """Quem ocupa a porta, no detalhe que a tela precisa para editá-la.
+
+    `PortUsage` responde "esta porta está em conflito?" com nomes de projeto.
+    Para *trocar* a porta a tela precisa do id do projeto e da chave do
+    serviço — sem isso ela teria que buscar cada projeto para descobrir a
+    quem a porta pertence.
+    """
+
+    project_id: str
+    project_name: str
+    service_key: str
+    service_label: str
+    host: str
+    port: int
+    url: str | None = None
+    conflict: bool = False
+
+
 class PortMap(BaseModel):
     items: list[PortUsage] = Field(default_factory=list)
+    bindings: list[PortBinding] = Field(default_factory=list)
     conflicts: int = 0
 
 

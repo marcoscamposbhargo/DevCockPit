@@ -3,7 +3,9 @@
 import { api } from '../lib/api.js';
 import { el } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
+import { icon } from '../lib/icons.js';
 import { loading, showError, toast } from '../lib/ui.js';
+import { navigate } from '../router.js';
 
 const STATE_COLOR = {
   ONLINE: 'var(--status-running)',
@@ -102,6 +104,18 @@ export async function renderServicesPanel(container) {
           text: 'Estado servido de cache; o verificador roda em background para projetos fixados e recentes.',
         }),
         el('button', { class: 'btn btn--sm', text: 'Verificar agora', onClick: verificar }),
+        // A porta é o campo que mais muda aqui, e trocá-la é decisão que se
+        // toma olhando *todos* os projetos — por isso vive numa tela só.
+        el(
+          'button',
+          {
+            class: 'btn btn--sm',
+            type: 'button',
+            title: 'Ver e trocar as portas declaradas, com os conflitos à vista.',
+            onClick: () => navigate('/ports'),
+          },
+          [icon('plug', { size: 13 }), 'Portas']
+        ),
       ]),
       table(items, { onOpen })
     );

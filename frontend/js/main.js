@@ -1,12 +1,16 @@
 import { api } from './lib/api.js';
 import { el, mount } from './lib/dom.js';
 import { invalidateTools } from './lib/actions.js';
+import { icon } from './lib/icons.js';
+import { mountRail } from './lib/rail.js';
+import { applyShell, sidebarCollapsed, toggleRail, toggleSidebar } from './lib/shell.js';
 import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from './lib/theme.js';
 import { emptyState } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderDiscovery } from './pages/discovery.js';
 import { renderProject } from './pages/project.js';
+import { renderPorts } from './pages/ports.js';
 import { renderProjects } from './pages/projects.js';
 import { renderSettings } from './pages/settings.js';
 import { navigate, register, setNotFound, start } from './router.js';
@@ -17,6 +21,7 @@ register('dashboard', '/dashboard', renderDashboard);
 register('projects', '/projects', renderProjects);
 register('discovery', '/discovery', renderDiscovery);
 register('project', '/projects/:id', renderProject);
+register('ports', '/ports', renderPorts);
 register('activity', '/activity', renderActivity);
 register('settings', '/settings', renderSettings);
 
@@ -89,6 +94,62 @@ async function refreshTools() {
   }
 }
 
+/** Ícone e rótulo dos itens de navegação.
+ *
+ * O ícone é montado aqui, não no HTML: `icons.js` desenha SVG por função, e a
+ * regra da casa é que `innerHTML` nunca recebe marcação — nem a nossa. Com a
+ * barra recolhida o ícone é a única pista visível, então ele precisa existir
+ * antes do primeiro clique, não depois da primeira rota.
+ */
+function decorateNav() {
+  for (const link of document.querySelectorAll('.sidebar__nav .nav-item')) {
+    const nome = link.dataset.icon;
+    if (!nome || link.querySelector('.icon')) continue;
+    link.prepend(icon(nome, { size: 16 }));
+    // Com a barra recolhida o rótulo some da tela; o title é o que sobra para
+    // quem passa o mouse, e o aria-label para quem usa leitor.
+    const rotulo = link.textContent.trim();
+    link.title = rotulo;
+    link.setAttribute('aria-label', rotulo);
+  }
+}
+
+function wireShell() {
+  const sidebarBtn = document.getElementById('sidebar-toggle');
+  const railBtn = document.getElementById('rail-toggle');
+
+  applyShell();
+  decorateNav();
+
+  const desenha = () => {
+    const recolhida = sidebarCollapsed();
+    sidebarBtn.replaceChildren(icon('sidebar', { size: 15 }));
+    sidebarBtn.title = `${recolhida ? 'Expandir' : 'Recolher'} a barra lateral (Ctrl+B)`;
+    sidebarBtn.setAttribute('aria-expanded', recolhida ? 'false' : 'true');
+    sidebarBtn.setAttribute(
+      'aria-label',
+      recolhida ? 'Expandir a barra lateral' : 'Recolher a barra lateral'
+    );
+
+    railBtn.replaceChildren(icon('layers', { size: 15 }));
+    railBtn.title = 'Mostrar ou ocultar os projetos ativos';
+  };
+
+  sidebarBtn.addEventListener('click', toggleSidebar);
+  railBtn.addEventListener('click', toggleRail);
+  window.addEventListener('devcockpit:shell-changed', desenha);
+  desenha();
+
+  document.addEventListener('keydown', (event) => {
+    // Ctrl+B é o atalho que todo editor usa para esconder a lateral; herdar o
+    // gesto custa menos que ensinar um novo.
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+      event.preventDefault();
+      toggleSidebar();
+    }
+  });
+}
+
 function wireTheme() {
   const button = document.getElementById('theme-toggle');
 
@@ -147,8 +208,10 @@ function wireSearch() {
   });
 }
 
+wireShell();
 wireTheme();
 wireSearch();
+mountRail();
 window.addEventListener('devcockpit:projects-changed', refreshPinned);
 
 await refreshTools();

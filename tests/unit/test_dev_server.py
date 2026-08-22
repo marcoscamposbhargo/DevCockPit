@@ -7,6 +7,7 @@ máquina que roda esta suíte, e encerram o que sobem. Estão marcados como
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -282,3 +283,78 @@ def test_remover_projeto_sem_servidor_nao_tenta_encerrar_nada(  # type: ignore[n
     ProjectService(session=session, allowed_roots=[workspace]).delete("simples")
 
     assert session.get(Project, "simples") is None
+
+
+# --- visão global ---------------------------------------------------------
+
+
+def test_lista_global_traz_o_nome_do_projeto(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """A lista é lida de fora do projeto, então o id sozinho não serve: quem
+    olha "o que deixo ligado antes de fechar o notebook" pensa em nome."""
+    from app.models.project import DevServer as DevServerModel
+    from tests.conftest import WRITE_HEADERS
+
+    diretorio = workspace / "global"
+    diretorio.mkdir(exist_ok=True)
+    criado = client.post(
+        "/api/projects",
+        json={"path": str(diretorio), "name": "Projeto Global", "run_detection": False},
+        headers=WRITE_HEADERS,
+    ).json()
+
+    sessao = client.app.state.session_factory()
+    try:
+        sessao.add(
+            DevServerModel(
+                project_id=criado["id"],
+                # O PID precisa existir para não ser descartado na
+                # reconciliação: o do próprio processo de teste serve.
+                pid=os.getpid(),
+                command="npm run dev",
+                cwd=str(diretorio),
+                log_file="x.log",
+                source="node",
+            )
+        )
+        sessao.commit()
+    finally:
+        sessao.close()
+
+    itens = client.get("/api/servers").json()["items"]
+
+    assert len(itens) == 1
+    assert itens[0]["project_name"] == "Projeto Global"
+    assert itens[0]["command"] == "npm run dev"
+
+
+def test_lista_global_descarta_processo_morto(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """Quem abre a tela depois de um Ctrl+C no console do servidor não pode ver
+    um processo que já não existe."""
+    from app.models.project import DevServer as DevServerModel
+    from tests.conftest import WRITE_HEADERS
+
+    diretorio = workspace / "morto"
+    diretorio.mkdir(exist_ok=True)
+    criado = client.post(
+        "/api/projects",
+        json={"path": str(diretorio), "name": "Morto", "run_detection": False},
+        headers=WRITE_HEADERS,
+    ).json()
+
+    sessao = client.app.state.session_factory()
+    try:
+        sessao.add(
+            DevServerModel(
+                project_id=criado["id"],
+                pid=4_000_000_000,
+                command="npm run dev",
+                cwd=str(diretorio),
+                log_file="x.log",
+                source="node",
+            )
+        )
+        sessao.commit()
+    finally:
+        sessao.close()
+
+    assert client.get("/api/servers").json()["items"] == []

@@ -15,11 +15,47 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_dev_server_service, get_project_service
-from app.schemas.health import DevServerLogs, DevServerOut
+from app.schemas.health import (
+    DevServerLogs,
+    DevServerOut,
+    RunningServerList,
+    RunningServerOut,
+)
 from app.services.dev_server_service import DevServerService, DevServerState
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/api/projects/{project_id}/server", tags=["server"])
+#: Visão de todos os servidores de uma vez. Sem ela, saber o que está rodando
+#: exige abrir projeto por projeto — e no fim do dia, lembrar quais foram.
+global_router = APIRouter(prefix="/api/servers", tags=["server"])
+
+
+@global_router.get("", response_model=RunningServerList)
+def running_servers(
+    servers: DevServerService = Depends(get_dev_server_service),
+    projects: ProjectService = Depends(get_project_service),
+) -> RunningServerList:
+    """Todos os servidores de desenvolvimento no ar agora.
+
+    Uma consulta só, e registro de processo morto é descartado no caminho —
+    quem abre esta tela depois de um `Ctrl+C` no console do servidor não pode
+    ver um processo que já não existe.
+    """
+    cadastrados, _total = projects.list(limit=500)
+    nomes = {project.id: project.name for project in cadastrados}
+
+    return RunningServerList(
+        items=[
+            RunningServerOut(
+                project_id=registro.project_id,
+                project_name=nomes.get(registro.project_id, registro.project_id),
+                pid=registro.pid,
+                command=registro.command,
+                started_at=registro.started_at,
+            )
+            for registro in servers.running_project_ids()
+        ]
+    )
 
 
 def _to_out(estado: DevServerState) -> DevServerOut:

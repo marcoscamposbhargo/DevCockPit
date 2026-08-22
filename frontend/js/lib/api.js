@@ -119,6 +119,9 @@ export const api = {
   // Servidor de desenvolvimento do projeto (sem Docker). Nenhuma destas rotas
   // aceita comando: o cliente manda o id, e o comando sai do devcockpit.yml ou
   // da detecção, no servidor.
+  // Todos os servidores no ar, de uma vez. Sem isto, saber o que está rodando
+  // exige abrir projeto por projeto — e no fim do dia, lembrar quais foram.
+  runningServers: () => request('GET', '/servers'),
   serverStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/server`),
   startServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/start`),
   stopServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/stop`),

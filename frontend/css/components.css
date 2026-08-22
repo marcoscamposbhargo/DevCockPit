@@ -1359,6 +1359,22 @@
   text-underline-offset: 2px;
 }
 
+/* Contagem ao lado do título de seção: o número decide se vale ler o corpo. */
+.section-title__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: var(--sp-2);
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--fg-secondary);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
 /* --- Activity ---
    Era um muro de linhas iguais em ordem cronológica. As três regras abaixo
    existem para o olho achar o que procura: separador de dia, falha em

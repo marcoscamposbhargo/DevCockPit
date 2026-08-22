@@ -1,7 +1,9 @@
 import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
+import { relativeTime } from '../lib/format.js';
+import { icon } from '../lib/icons.js';
 import { getTheme, setTheme, THEME_LABELS, THEME_VALUES } from '../lib/theme.js';
-import { loading, pageHeader } from '../lib/ui.js';
+import { loading, pageHeader, showError, toast } from '../lib/ui.js';
 
 function toolRow(name, available) {
   return el('tr', {}, [
@@ -43,6 +45,77 @@ function themeSection() {
   ]);
 }
 
+/** Tudo o que o painel subiu e ainda está de pé, num lugar só.
+ *
+ * Sem isto, saber o que está rodando exige abrir projeto por projeto — e no
+ * fim do dia, lembrar quais foram. É a tela do "o que eu deixo ligado antes de
+ * fechar o notebook", e o gesto é parar, não investigar.
+ */
+function runningSection(servidores, aoMudar) {
+  if (!servidores.length) {
+    return el('section', { id: 'running-section', style: 'margin-top:var(--sp-6)' }, [
+      el('h2', { class: 'section-title', text: 'Servidores no ar' }),
+      el('p', {
+        class: 'field__hint',
+        text: 'Nenhum servidor de desenvolvimento foi iniciado pelo painel.',
+      }),
+    ]);
+  }
+
+  const parar = async (servidor, botao) => {
+    botao.disabled = true;
+    botao.textContent = 'Parando…';
+    try {
+      await api.stopServer(servidor.project_id);
+      toast(`${servidor.project_name}: servidor parado.`, { kind: 'success' });
+      await aoMudar();
+    } catch (error) {
+      botao.disabled = false;
+      botao.textContent = 'Parar';
+      showError(error);
+    }
+  };
+
+  return el('section', { id: 'running-section', style: 'margin-top:var(--sp-6)' }, [
+    el('h2', { class: 'section-title' }, [
+      'Servidores no ar',
+      el('span', { class: 'section-title__count', text: String(servidores.length) }),
+    ]),
+    el('p', {
+      class: 'field__hint',
+      style: 'margin-bottom:var(--sp-3)',
+      text:
+        'Processos que o painel iniciou e que sobrevivem a um reinício dele. ' +
+        'Parar aqui não mexe nos containers.',
+    }),
+    el('div', { class: 'table-wrap' }, [
+      el('table', { class: 'table' }, [
+        el('tbody', {}, servidores.map((servidor) => {
+          const botao = el('button', { class: 'btn btn--sm', type: 'button', text: 'Parar' });
+          botao.addEventListener('click', () => parar(servidor, botao));
+
+          return el('tr', {}, [
+            el('td', {}, [
+              el('a', {
+                href: `#/projects/${encodeURIComponent(servidor.project_id)}?tab=server`,
+                text: servidor.project_name,
+              }),
+            ]),
+            el('td', { class: 'mono field__hint', text: `pid ${servidor.pid}` }),
+            el('td', {
+              class: 'activity__mensagem mono',
+              text: servidor.command,
+              title: servidor.command,
+            }),
+            el('td', { class: 'field__hint', text: relativeTime(servidor.started_at) }),
+            el('td', { class: 'table__end' }, [botao]),
+          ]);
+        })),
+      ]),
+    ]),
+  ]);
+}
+
 export async function renderSettings(container) {
   mount(container, loading());
 
@@ -53,6 +126,10 @@ export async function renderSettings(container) {
     mount(container, el('p', { class: 'loading', text: error.message }));
     return;
   }
+
+  // Opcional: uma falha aqui não pode derrubar a tela de configuração inteira.
+  const servidores = await api.runningServers().then((r) => r.items).catch(() => []);
+  const recarregar = () => renderSettings(container);
 
   const roots = health.allowed_roots.length
     ? el(
@@ -96,6 +173,7 @@ export async function renderSettings(container) {
       ]),
     ]),
 
+    runningSection(servidores, recarregar),
     themeSection()
   );
 }

@@ -217,3 +217,17 @@ class EnvironmentPlanOut(BaseModel):
 class EnvironmentStopped(BaseModel):
     #: "app" ou "docker" — o que de fato foi parado.
     stopped: str
+
+
+class RunningServerOut(BaseModel):
+    """Um servidor de desenvolvimento no ar, visto de fora do projeto."""
+
+    project_id: str
+    project_name: str
+    pid: int
+    command: str
+    started_at: datetime
+
+
+class RunningServerList(BaseModel):
+    items: list[RunningServerOut] = Field(default_factory=list)

@@ -142,6 +142,7 @@ def create_app(
     app.include_router(dashboard.router)
     app.include_router(activity.router)
     app.include_router(dev_server.router)
+    app.include_router(dev_server.global_router)
     app.include_router(environment.router)
 
     _register_error_handlers(app)

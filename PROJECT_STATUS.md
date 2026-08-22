@@ -33,6 +33,11 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
       dando OFFLINE para serviço IPv4 cadastrado como `localhost`.
 - [x] (2026-08-21) VS Code, Pasta e Terminal agora aparecem no card da lista de
       projetos, não só na aba Overview.
+- [x] (2026-08-21) Bug relatado por você: botão VS Code com o cursor de
+      bloqueado. O cache de `GET /api/health` guardava também a falha, então
+      uma página aberta com o servidor fora do ar deixava as ferramentas
+      desabilitadas pelo resto da sessão. Agora só o sucesso é cacheado e o
+      rodapé revalida a cada 60 s (D-45).
 
 ## 🏁 MVP COMPLETO
 

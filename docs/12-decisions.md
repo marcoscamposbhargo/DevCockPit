@@ -64,6 +64,7 @@ em `docs/adr/`.
 | D-42 | "Rodando" no dashboard vem do health observado, não da coluna `status` | `status` descreve o registro, não o processo, e nunca chega a `RUNNING` sozinho. O painel mostrava "0 rodando" na mesma tela em que listava quatro serviços online |
 | D-43 | Check TCP usa `happy_eyeballs_delay` | no Windows `localhost` resolve `::1` antes de `127.0.0.1`; serviço que só ouve em IPv4 pendurava a tentativa IPv6 até estourar o timeout e aparecia OFFLINE estando no ar |
 | D-44 | Ferramentas (VS Code, Pasta, Terminal) também no card da lista | abrir o editor é o motivo mais comum de procurar um projeto; exigir dois cliques a mais até a aba Overview era atrito puro |
+| D-45 | O cache de disponibilidade das ferramentas guarda **só o sucesso** | guardar a falha deixava todos os botões desabilitados pelo resto da sessão quando a página era aberta com o servidor fora do ar — sem mensagem, só o cursor de bloqueado. O rodapé revalida a cada 60 s, o que também cobre o PATH mudando com a tela aberta |
 
 ## Divergências em relação ao prompt original
 

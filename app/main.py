@@ -30,6 +30,7 @@ from app.api.routes import (
     git,
     health,
     jobs,
+    manifest,
     projects,
     services,
 )
@@ -123,6 +124,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(projects.router)
     app.include_router(git.router)
+    app.include_router(manifest.router)
     app.include_router(docker.router)
     app.include_router(discovery.router)
     app.include_router(jobs.router)

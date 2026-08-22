@@ -28,7 +28,7 @@
 .btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--fg-on-accent);
 }
 
 .btn--primary:hover:not(:disabled) {
@@ -420,4 +420,48 @@
   align-items: center;
   gap: var(--sp-1);
   font-size: var(--fs-xs);
+}
+
+/* --- bloco de código (prévia do manifesto) --- */
+
+.code-block {
+  max-height: 360px;
+  margin: 0;
+  padding: var(--sp-3);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  white-space: pre;
+}
+
+/* --- seletor de tema --- */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--fg-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), color var(--dur-fast);
+}
+
+.theme-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--fg-primary);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

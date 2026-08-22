@@ -224,6 +224,19 @@ Os testes que exigem Docker estão marcados e não rodam por padrão.
   e projetos recentes
 - servido de cache, com a idade do dado à vista: **168 ms** medidos
 
+**Manifesto `devcockpit.yml`**
+- importar, exportar e **comparar campo a campo** — nunca há resolução
+  automática de conflito (FR-112)
+- manifesto de um projeto que você acabou de cadastrar é importado sozinho;
+  arquivo quebrado não impede o cadastro
+- YAML inválido, versão desconhecida e campo estranho viram **aviso**: o
+  projeto continua funcionando pelo banco
+- URL do manifesto restrita a `localhost`, e `compose_file` que escape do
+  diretório do projeto é recusado — um repositório clonado de terceiro não
+  transforma o DevCockpit em cliente HTTP de host arbitrário
+- exportar é a **única** escrita do DevCockpit dentro de pasta de projeto, e
+  exige confirmação explícita
+
 **Fundação**
 - `CommandRunner` com argv, timeout obrigatório, captura e auditoria
 - validação de path com allowlist, resolução de symlink e proteção contra traversal
@@ -231,9 +244,10 @@ Os testes que exigem Docker estão marcados e não rodam por padrão.
 - log de auditoria com `correlation_id`
 
 **Interface**: Dashboard, Projects, descoberta com console de job, página do
-projeto com abas Overview, Git, Docker e Services, Activity e Settings.
+projeto com abas Overview, Git, Docker, Services e Manifest, Activity e
+Settings. Tema claro e escuro, seguindo o sistema por padrão.
 
-285 testes passando, cobertura de 92%.
+301 testes passando, cobertura de 92%.
 
 ## Como contribuir com este código
 

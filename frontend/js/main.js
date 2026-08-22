@@ -1,5 +1,6 @@
 import { api } from './lib/api.js';
 import { el, mount } from './lib/dom.js';
+import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from './lib/theme.js';
 import { emptyState } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
 import { renderDashboard } from './pages/dashboard.js';
@@ -83,6 +84,25 @@ async function refreshTools() {
   }
 }
 
+function wireTheme() {
+  const button = document.getElementById('theme-toggle');
+
+  const desenha = () => {
+    const preferencia = getTheme();
+    button.textContent = `Tema: ${THEME_LABELS[preferencia]}`;
+    button.title = 'Alternar entre sistema, escuro e claro';
+  };
+
+  applyTheme();
+  watchSystemTheme();
+  button.addEventListener('click', () => {
+    cycleTheme();
+    desenha();
+  });
+  window.addEventListener('devcockpit:theme-changed', desenha);
+  desenha();
+}
+
 function wireSearch() {
   const search = document.getElementById('global-search');
 
@@ -109,6 +129,7 @@ function wireSearch() {
   });
 }
 
+wireTheme();
 wireSearch();
 window.addEventListener('devcockpit:projects-changed', refreshPinned);
 

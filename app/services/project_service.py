@@ -19,6 +19,7 @@ from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.activity_service import ActivityService
 from app.services.detection_service import DetectionDiff, DetectionService
+from app.services.manifest_service import ManifestService
 
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
@@ -37,12 +38,14 @@ class ProjectService:
         allowed_roots: list[Path],
         activity: ActivityService | None = None,
         detection: DetectionService | None = None,
+        manifests: ManifestService | None = None,
     ) -> None:
         self.session = session
         self.repo = ProjectRepository(session)
         self.allowed_roots = allowed_roots
         self.activity = activity or ActivityService(session)
         self.detection = detection or DetectionService(session, activity=self.activity)
+        self.manifests = manifests or ManifestService(session, activity=self.activity)
 
     # --- criação ---
 
@@ -69,6 +72,14 @@ class ProjectService:
         if payload.run_detection:
             self.detection.run_for(project, record=False)
             self.session.flush()
+
+        if payload.import_manifest:
+            # Manifesto ausente ou inválido não impede o cadastro: quem acabou
+            # de apontar uma pasta quer o projeto na lista, não uma recusa.
+            read = self.manifests.read(project)
+            if read.valid:
+                self.manifests.import_into(project, read)
+                self.session.flush()
 
         self.activity.record(
             action="project.create",

@@ -24,6 +24,7 @@ from app.services.discovery_service import DiscoveryService
 from app.services.docker_service import DockerService
 from app.services.git_service import GitService
 from app.services.health_service import HealthService
+from app.services.manifest_service import ManifestService
 from app.services.project_service import ProjectService
 from app.services.system_action_service import SystemActionService
 
@@ -84,6 +85,13 @@ def get_project_service(
         activity=activity,
         detection=detection,
     )
+
+
+def get_manifest_service(
+    session: Session = Depends(get_session),
+    activity: ActivityService = Depends(get_activity_service),
+) -> ManifestService:
+    return ManifestService(session=session, activity=activity)
 
 
 def get_git_service(

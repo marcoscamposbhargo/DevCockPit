@@ -1,5 +1,6 @@
 import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
+import { getTheme, setTheme, THEME_LABELS, THEME_VALUES } from '../lib/theme.js';
 import { loading, pageHeader } from '../lib/ui.js';
 
 function toolRow(name, available) {
@@ -9,6 +10,36 @@ function toolRow(name, available) {
       text: available ? 'disponível' : 'não encontrado no PATH',
       style: `color:${available ? 'var(--status-running)' : 'var(--status-warning)'}`,
     }),
+  ]);
+}
+
+function themeSection() {
+  const atual = getTheme();
+
+  const botoes = THEME_VALUES.map((valor) =>
+    el('button', {
+      class: `btn btn--sm${valor === atual ? ' btn--primary' : ''}`,
+      text: THEME_LABELS[valor],
+      'aria-pressed': valor === atual ? 'true' : 'false',
+      onClick: () => {
+        setTheme(valor);
+        // Redesenha só esta seção: trocar de tema não deve recarregar a tela.
+        const secao = document.getElementById('theme-section');
+        if (secao) secao.replaceWith(themeSection());
+      },
+    })
+  );
+
+  return el('section', { id: 'theme-section', style: 'margin-top:var(--sp-6)' }, [
+    el('h2', { class: 'section-title', text: 'Aparência' }),
+    el('p', {
+      class: 'field__hint',
+      style: 'margin-bottom:var(--sp-3)',
+      text:
+        'A preferência fica neste navegador, não no banco: é ajuste de quem olha a tela. ' +
+        '"Sistema" segue a configuração do Windows.',
+    }),
+    el('div', { class: 'card__footer' }, botoes),
   ]);
 }
 
@@ -63,6 +94,8 @@ export async function renderSettings(container) {
           ]),
         ]),
       ]),
-    ])
+    ]),
+
+    themeSection()
   );
 }

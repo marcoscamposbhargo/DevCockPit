@@ -8,6 +8,19 @@
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/layout.css">
+  <script>
+    // Aplica o tema antes do primeiro paint: carregar no módulo faria a tela
+    // piscar em escuro antes de virar clara.
+    try {
+      var pref = window.localStorage.getItem('devcockpit:theme') || 'system';
+      var claro = pref === 'light'
+        || (pref === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches);
+      document.documentElement.dataset.theme = claro ? 'light' : 'dark';
+      document.documentElement.dataset.themePreference = pref;
+    } catch (e) {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  </script>
 </head>
 <body>
   <div class="app-shell">
@@ -43,6 +56,7 @@
           placeholder="Buscar projeto…  (Ctrl+K)"
           aria-label="Buscar projeto">
         <div id="freshness" class="topbar__meta"></div>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Alternar tema"></button>
       </header>
 
       <main id="view" class="view" tabindex="-1"></main>

@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-21 (fim da Fase 4 — **MVP completo**)
+**Última atualização:** 2026-08-21 (pontas soltas fechadas — manifesto e tema claro)
 
 ---
 
@@ -146,10 +146,34 @@ Ajustes de escopo aplicados nesta sessão, a pedido:
 - [x] migração 004 (`health_snapshot`)
 - [x] **Q-02 resolvida**: poller verifica fixados + acessados nos últimos N dias
 
-Fora do escopo entregue: `US-090`/`US-091` (importar e exportar
-`devcockpit.yml`) ficaram para depois. São conveniência, não bloqueiam nenhum
-caso de uso do PRD — o sistema funciona inteiro sem manifesto, como projetado
-em ADR-004.
+---
+
+### Fechamento das pontas soltas (2026-08-21)
+
+- [x] `US-090` importar `devcockpit.yml`: schema da spec 08 validado, versão
+      desconhecida e YAML inválido viram aviso, `compose_file` que escapa do
+      projeto é recusado com `403`
+- [x] `US-091` exportar e comparar: escrita com confirmação explícita,
+      comparação campo a campo sem alterar nada, prévia do YAML antes de gravar
+- [x] importação automática no cadastro de projeto que já tem o arquivo (FR-110)
+- [x] aba **Manifest** na UI, com diff, avisos e prévia
+- [x] tema claro por tokens, com opção "Sistema"; preferência no `localStorage`
+- [x] migração de `@app.on_event` para `lifespan` (385 warnings a menos)
+- [x] `D-37` a `D-41` registradas em `docs/12-decisions.md`
+
+Verificado ao vivo, com projeto descartável no Desktop e servidor em porta
+separada:
+
+- [x] cadastro importou o manifesto sozinho: nome, descrição e serviço `api`
+- [x] divergência apareceu em 4 campos, sem alterar nada
+- [x] exportar sem `confirm` devolveu `422` e **não** tocou no arquivo
+- [x] ida e volta (importar, exportar) deixou o projeto `in_sync`
+- [x] `compose_file: ../../fora/...` recusado com `PATH_NOT_ALLOWED`
+- [x] `health: http://evil.example.com/ping` invalidou o manifesto, com aviso
+- [x] YAML quebrado devolveu `200` com aviso, projeto intacto
+
+Ambiente devolvido ao estado original: projeto descartável, registro e banco de
+teste removidos.
 
 ---
 
@@ -247,10 +271,8 @@ recomendo. O produto existe para reduzir troca de contexto; só o uso real diz
 quais das 44 histórias restantes importam. Provavelmente vai revelar três
 ajustes pequenos que valem mais que qualquer fase nova.
 
-**B — Fechar as pontas soltas** (baixo custo, ~8 pontos)
-- `US-090`/`US-091` importar e exportar `devcockpit.yml`
-- polir a UI com base no uso real
-- tema claro (os tokens já estão prontos)
+**B — ~~Fechar as pontas soltas~~** — feito em 2026-08-21. Sobra apenas polir a
+UI com base no uso real, que depende de usar.
 
 **C — Fase 5: GitHub** (pós-MVP)
 - PRs abertos, issues e Actions por projeto
@@ -352,17 +374,27 @@ Verificado no browser pelo usuário em 2026-08-21:
 [ ] aba Services mostra o estado e o botão "Verificar agora" funciona
 ```
 
+### Pontas soltas — o que falta conferir no browser
+
+```
+[ ] aba Manifest mostra prévia, avisos e diff
+[ ] botão "Exportar" pede confirmação antes de escrever
+[ ] botão "Importar do arquivo" fica desabilitado sem manifesto válido
+[ ] botão Tema no topo alterna Sistema → Escuro → Claro e sobrevive ao reload
+[ ] tela no tema claro continua legível em todas as abas
+```
+
 ---
 
 ## Métricas do projeto
 
 | Métrica | Atual | Meta |
 |---------|-------|------|
-| Fase | **MVP completo** | 4 de 4 |
+| Fase | **MVP completo + pontas fechadas** | 4 de 4 |
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
 | Cobertura de testes | 92% | >= 70% |
-| Testes | 285 passando, 1 pulado | — |
+| Testes | 301 passando, 1 pulado | — |
 
 ---
 
@@ -376,3 +408,4 @@ Verificado no browser pelo usuário em 2026-08-21:
 | 3a — Jobs | 2026-08-21 | 2026-08-21 | 13 pontos, 190 testes, zero órfão em 20 execuções |
 | 3b — Docker | 2026-08-21 | 2026-08-21 | 16 pontos, 242 testes, up/down real verificado |
 | 4 — Serviços e SO | 2026-08-21 | 2026-08-21 | 34 pontos, 285 testes, dashboard em 168 ms |
+| Pontas soltas | 2026-08-21 | 2026-08-21 | manifesto, tema claro, `lifespan`; 301 testes |

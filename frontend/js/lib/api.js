@@ -76,6 +76,16 @@ export const api = {
   gitBranches: (id) => request('GET', `/projects/${encodeURIComponent(id)}/git/branches`),
   gitRemotes: (id) => request('GET', `/projects/${encodeURIComponent(id)}/git/remotes`),
 
+  manifestStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/manifest`),
+  manifestPreview: (id) =>
+    request('GET', `/projects/${encodeURIComponent(id)}/manifest/preview`),
+  importManifest: (id) =>
+    request('POST', `/projects/${encodeURIComponent(id)}/manifest/import`),
+  exportManifest: (id) =>
+    request('POST', `/projects/${encodeURIComponent(id)}/manifest/export`, {
+      body: { confirm: true },
+    }),
+
   dashboard: () => request('GET', '/dashboard'),
 
   listServices: (id) => request('GET', `/projects/${encodeURIComponent(id)}/services`),

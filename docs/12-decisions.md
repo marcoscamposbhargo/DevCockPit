@@ -56,6 +56,11 @@ em `docs/adr/`.
 | D-34 | `STALE` entra após três ciclos do poller | um único ciclo perdido é normal; três indicam que algo parou |
 | D-35 | Abrir URL usa `webbrowser`, não `start` | `start` é comando interno do shell do Windows e exigiria shell — proibido por ADR-003 |
 | D-36 | `explorer.exe` tem código de saída ignorado | devolve 1 mesmo quando abre a pasta corretamente |
+| D-37 | Importar manifesto faz **upsert** por chave de serviço; não apaga o que o arquivo não menciona | apagar seria resolução automática de conflito, que FR-112 proíbe. O usuário que quiser remover um serviço remove na UI |
+| D-38 | Tecnologia vinda do `stack` do manifesto entra como `MANUAL` | é declaração, não detecção. Como `MANUAL`, sobrevive à re-detecção — a precedência da spec 08 põe declaração acima de detecção |
+| D-39 | Ler o manifesto degrada; importar não | leitura acontece em toda carga de tela e precisa de `200` com aviso. Importar é ação explícita: recusar com `422` é mais honesto que aplicar metade |
+| D-40 | O manifesto é importado por padrão no cadastro de um projeto que já tem o arquivo | não há o que sobrescrever num projeto recém-criado, então a confirmação de FR-112 não se aplica. Manifesto quebrado não impede o cadastro |
+| D-41 | Preferência de tema mora no `localStorage`, não no banco | é ajuste de quem olha a tela, não configuração do projeto; guardar no servidor exigiria rota de escrita para mudar cor de fundo |
 
 ## Divergências em relação ao prompt original
 

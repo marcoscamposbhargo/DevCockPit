@@ -6,6 +6,7 @@ import { loading, pageHeader, showError, statusBadge, techChip, toast } from '..
 import { navigate } from '../router.js';
 import { renderDockerPanel } from './docker-panel.js';
 import { renderGitPanel } from './git-panel.js';
+import { renderManifestPanel } from './manifest-panel.js';
 import { renderServicesPanel } from './services-panel.js';
 
 const TABS = [
@@ -13,6 +14,7 @@ const TABS = [
   { key: 'git', label: 'Git' },
   { key: 'docker', label: 'Docker' },
   { key: 'services', label: 'Services' },
+  { key: 'manifest', label: 'Manifest' },
 ];
 
 function overview(project, onDetect) {
@@ -61,7 +63,7 @@ function overview(project, onDetect) {
               ),
               el('p', {
                 class: 'field__hint',
-                text: 'Health check ativo chega na Fase 4.',
+                text: 'O estado de cada serviço fica na aba Services.',
               }),
             ]
           : ['Nenhum serviço detectado.']
@@ -195,6 +197,8 @@ export async function renderProject(container, params, query) {
     await renderDockerPanel(panel);
   } else if (activeTab === 'services') {
     await renderServicesPanel(panel);
+  } else if (activeTab === 'manifest') {
+    await renderManifestPanel(panel);
   } else {
     panel.append(overview(project, runDetection));
     panel.append(

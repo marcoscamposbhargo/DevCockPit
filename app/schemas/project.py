@@ -15,6 +15,26 @@ from app.models.project import HealthKind, ProjectStatus, TechnologySource
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
 
 
+def validate_local_http_url(value: str | None) -> str | None:
+    """Restringe URLs a HTTP local (ver `docs/08-project-configuration-spec.md`).
+
+    Sem isso, um manifesto transformaria o DevCockpit em cliente HTTP para
+    host arbitrário. Vive fora da classe porque o manifesto reusa a mesma
+    regra — duas cópias da regra seriam duas chances de divergir.
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if not text.startswith(("http://", "https://")):
+        raise ValueError("A URL precisa usar http ou https.")
+    remainder = text.split("://", 1)[1]
+    hostport = remainder.split("/", 1)[0]
+    host = hostport.rsplit(":", 1)[0] if hostport.count(":") == 1 else hostport
+    if host.strip("[]") not in {h.strip("[]") for h in _LOCAL_HOSTS}:
+        raise ValueError("A URL precisa apontar para localhost.")
+    return text
+
+
 class TechnologyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -37,22 +57,7 @@ class ServiceIn(BaseModel):
     @field_validator("url", "health_url")
     @classmethod
     def must_be_local_http(cls, value: str | None) -> str | None:
-        """Restringe URLs a HTTP local (ver `docs/08-project-configuration-spec.md`).
-
-        Sem isso, um manifesto transformaria o DevCockpit em cliente HTTP para
-        host arbitrário.
-        """
-        if value is None:
-            return None
-        text = value.strip()
-        if not text.startswith(("http://", "https://")):
-            raise ValueError("A URL precisa usar http ou https.")
-        remainder = text.split("://", 1)[1]
-        hostport = remainder.split("/", 1)[0]
-        host = hostport.rsplit(":", 1)[0] if hostport.count(":") == 1 else hostport
-        if host.strip("[]") not in {h.strip("[]") for h in _LOCAL_HOSTS}:
-            raise ValueError("A URL precisa apontar para localhost.")
-        return text
+        return validate_local_http_url(value)
 
 
 class ServiceOut(ServiceIn):
@@ -64,6 +69,9 @@ class ProjectCreate(BaseModel):
     name: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     run_detection: bool = True
+    #: `devcockpit.yml` presente na raiz é importado no cadastro (FR-110). Não
+    #: há o que sobrescrever num projeto recém-criado, então o padrão é ligado.
+    import_manifest: bool = True
 
 
 class ProjectUpdate(BaseModel):

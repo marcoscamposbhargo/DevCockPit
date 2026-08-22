@@ -25,6 +25,8 @@
 
   --accent: #2f81f7;
   --accent-hover: #4493f8;
+  /* texto sobre o accent: azul em ambos os temas, então o valor não muda */
+  --fg-on-accent: #ffffff;
 
   /* espaçamento — escala de 4 */
   --sp-1: 4px;
@@ -56,4 +58,33 @@
 
   --sidebar-width: 200px;
   --topbar-height: 52px;
+}
+
+/* Tema claro. Só os tokens mudam: nenhum componente conhece cor literal, então
+   trocar o tema é trocar este bloco de valores.
+
+   `data-theme` é escrito por js/lib/theme.js antes do primeiro paint. */
+:root[data-theme='light'] {
+  --bg-base: #f6f8fa;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #eef1f4;
+  --border: #d8dee4;
+  --border-strong: #b9c0c8;
+
+  --fg-primary: #1f2328;
+  --fg-secondary: #59636e;
+  --fg-muted: #818b98;
+
+  --status-running: #1a7f37;
+  --status-stopped: #6e7781;
+  --status-error: #cf222e;
+  --status-warning: #9a6700;
+  --status-starting: #0969da;
+  --status-unknown: #8250df;
+
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+
+  --shadow-md: 0 4px 12px rgba(31, 35, 40, 0.12);
 }

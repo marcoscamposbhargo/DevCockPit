@@ -57,9 +57,7 @@ class GitService:
             return cached
 
         project_dir = self._project_dir(path)
-        branches = (
-            self.adapter.branches(project_dir) if self.adapter.is_repo(project_dir) else []
-        )
+        branches = self.adapter.branches(project_dir) if self.adapter.is_repo(project_dir) else []
         self.cache.set(key, branches)
         return branches
 

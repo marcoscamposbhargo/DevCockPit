@@ -69,6 +69,7 @@ class ObservedPort:
         alguém" pode se contentar com o palpite, porque não está afirmando dono.
         """
         return self.matched_by in ("cwd", "cmdline")
+
     #: Diretório de trabalho do processo, quando foi possível ler. É o que
     #: identifica o processo para um humano — "node.exe" não diz nada, "node.exe
     #: rodando em Projetos/AI Procedures" diz tudo.

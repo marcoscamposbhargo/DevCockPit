@@ -71,6 +71,9 @@ class DevServerState:
     #: Existe um plano de execução, mesmo que nada esteja rodando. É o que
     #: decide se a UI oferece o botão ou explica por que não pode.
     can_start: bool = False
+    #: O comando abre uma porta diferente da que o projeto declara. Texto
+    #: pronto para a tela, ou `None` quando as duas concordam.
+    port_warning: str | None = None
 
 
 class DevServerService:
@@ -144,9 +147,41 @@ class DevServerService:
             # motivo aparece quando a pessoa tenta ligar.
             return None
 
+    def _port_warning(self, project: Project, plano: RunPlan | None) -> str | None:
+        """O comando sobe numa porta e o cadastro verifica outra.
+
+        Só o manifesto pode cair nisso: os planos detectados recebem a porta
+        declarada como argumento, então nascem alinhados. O `run:` escrito à
+        mão é literal e não acompanha uma troca de porta feita pela tela — foi
+        exatamente o que aconteceu com o SmartDash, que subia em 8000 enquanto
+        o painel checava 3001 e o chamava de fora do ar.
+
+        A comparação é contra a porta do serviço que o próprio plano diz
+        fornecer (`run.service`). Sem esse campo não há contra o que comparar,
+        e ficar adivinhando qual dos serviços é o app produziria aviso falso
+        em todo projeto com banco declarado.
+        """
+        if plano is None or plano.port is None or not plano.service:
+            return None
+
+        declarada = next(
+            (s.port for s in project.services if s.key == plano.service and s.port),
+            None,
+        )
+        if declarada is None or declarada == plano.port:
+            return None
+
+        return (
+            f"O comando sobe na porta {plano.port}, mas o serviço "
+            f"'{plano.service}' está cadastrado na {declarada}. O painel vai "
+            f"verificar a {declarada} e dizer que está fora do ar. Corrija o "
+            f"`run.cmd` no devcockpit.yml ou a porta do serviço."
+        )
+
     def status(self, project: Project) -> DevServerState:
         registro = self._reconcile(project)
         plano = self.plan(project)
+        aviso = self._port_warning(project, plano)
 
         if registro is None:
             return DevServerState(
@@ -155,6 +190,7 @@ class DevServerService:
                 source=plano.source if plano else "",
                 evidence=plano.evidence if plano else "",
                 can_start=plano is not None,
+                port_warning=aviso,
             )
 
         return DevServerState(
@@ -166,6 +202,7 @@ class DevServerService:
             started_at=registro.started_at,
             log_file=registro.log_file,
             can_start=plano is not None,
+            port_warning=aviso,
         )
 
     def _reconcile(self, project: Project) -> DevServer | None:

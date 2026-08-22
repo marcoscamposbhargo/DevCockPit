@@ -112,9 +112,7 @@ class ManifestService:
             )
 
         if data is None:
-            return ManifestRead(
-                exists=True, filename=path.name, warnings=["O arquivo está vazio."]
-            )
+            return ManifestRead(exists=True, filename=path.name, warnings=["O arquivo está vazio."])
         if not isinstance(data, dict):
             return ManifestRead(
                 exists=True,
@@ -143,9 +141,7 @@ class ManifestService:
                 "A seção `repository` é informativa: o estado do Git vem sempre do disco."
             )
 
-        return ManifestRead(
-            exists=True, filename=path.name, manifest=manifest, warnings=warnings
-        )
+        return ManifestRead(exists=True, filename=path.name, manifest=manifest, warnings=warnings)
 
     # --- importação ---
 
@@ -163,9 +159,7 @@ class ManifestService:
                 f"O projeto não tem {MANIFEST_FILENAMES[0]} na raiz.",
             )
         if read.manifest is None:
-            raise ValidationError(
-                "O manifesto não pôde ser lido. " + " ".join(read.warnings)
-            )
+            raise ValidationError("O manifesto não pôde ser lido. " + " ".join(read.warnings))
 
         manifest = read.manifest
         applied: list[str] = []
@@ -371,9 +365,7 @@ class ManifestService:
         def compara(campo: str, banco: object, arquivo: object) -> None:
             if _norm(banco) != _norm(arquivo):
                 diffs.append(
-                    ManifestFieldDiff(
-                        field=campo, database=_norm(banco), manifest=_norm(arquivo)
-                    )
+                    ManifestFieldDiff(field=campo, database=_norm(banco), manifest=_norm(arquivo))
                 )
 
         compara("name", no_banco.get("name"), no_arquivo.get("name"))
@@ -383,9 +375,7 @@ class ManifestService:
         docker_banco = no_banco.get("docker") or {}
         docker_arquivo = no_arquivo.get("docker") or {}
         for campo in ("enabled", "compose_file", "project_name"):
-            compara(
-                f"docker.{campo}", docker_banco.get(campo), docker_arquivo.get(campo)
-            )
+            compara(f"docker.{campo}", docker_banco.get(campo), docker_arquivo.get(campo))
 
         servicos_banco: dict[str, dict] = no_banco.get("services", {})
         for key in sorted(set(servicos_banco) | set(manifest.services)):

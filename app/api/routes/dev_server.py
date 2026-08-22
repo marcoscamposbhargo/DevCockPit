@@ -67,6 +67,7 @@ def _to_out(estado: DevServerState) -> DevServerOut:
         evidence=estado.evidence,
         started_at=estado.started_at,
         can_start=estado.can_start,
+        port_warning=estado.port_warning,
     )
 
 

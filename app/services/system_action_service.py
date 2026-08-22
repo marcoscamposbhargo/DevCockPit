@@ -51,8 +51,9 @@ class SystemActionService:
     def open_folder(self, project: Project) -> None:
         # O `explorer` do Windows devolve 1 mesmo quando abre a pasta, então
         # aqui o código de saída não é sinal de falha.
-        self._execute(project, self.adapter.open_folder(self._project_dir(project)),
-                      ignore_exit_code=True)
+        self._execute(
+            project, self.adapter.open_folder(self._project_dir(project)), ignore_exit_code=True
+        )
 
     def open_terminal(self, project: Project) -> None:
         self._execute(project, self.adapter.open_terminal(self._project_dir(project)))

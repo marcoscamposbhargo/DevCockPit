@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,6 +90,22 @@ class RunPlan:
     def display(self) -> str:
         return " ".join(self.argv)
 
+    @property
+    def port(self) -> int | None:
+        """A porta que **este comando** vai abrir, quando dá para ler do argv.
+
+        Existe para uma coisa só: comparar com a porta que o projeto declara.
+        Um manifesto com ``--port 8000`` e um serviço cadastrado em 3001 sobem
+        o servidor num lugar e verificam outro — o painel fica dizendo "fora do
+        ar" para algo que está no ar, e ninguém descobre por quê.
+
+        Lê as três formas que aparecem na prática: ``--port 8000``,
+        ``--port=8000`` e ``127.0.0.1:8000`` (o ``runserver`` do Django).
+        Não achar porta nenhuma é resposta legítima — ``npm run dev`` decide a
+        porta dentro do script, e chutar ali seria pior que calar.
+        """
+        return _port_from_argv(self.argv)
+
 
 def _validate_argv(argv: object, *, origem: str) -> list[str]:
     """Recusa o que não pode virar comando, com a mensagem dizendo o porquê."""
@@ -140,8 +157,7 @@ def _assert_not_destructive(argv: list[str], *, origem: str) -> None:
     for flag in FORBIDDEN_FLAGS:
         if flag in baixo:
             raise ValidationError(
-                f"{origem}: a flag {flag!r} é destrutiva e não pode ser executada "
-                "pelo painel."
+                f"{origem}: a flag {flag!r} é destrutiva e não pode ser executada pelo painel."
             )
 
 
@@ -193,6 +209,32 @@ def plan_from_manifest(project_dir: Path) -> RunPlan | None:
         evidence="devcockpit.yml",
         service=service,
     )
+
+
+#: Bandeiras que carregam número de porta no argumento seguinte ou depois do
+#: ``=``. `-p` fica de fora de propósito: em muitos comandos ele é outra coisa
+#: (``docker -p``, ``mkdir -p``), e errar a leitura aqui gera aviso falso.
+PORT_FLAGS = ("--port", "--server-port")
+
+_HOST_PORT = re.compile(r"^(?:\[[0-9a-fA-F:]+\]|[\w.-]+)?:(\d{2,5})$")
+
+
+def _port_from_argv(argv: list[str]) -> int | None:
+    for indice, argumento in enumerate(argv):
+        for flag in PORT_FLAGS:
+            if argumento == flag and indice + 1 < len(argv):
+                if argv[indice + 1].isdigit():
+                    return int(argv[indice + 1])
+            elif argumento.startswith(f"{flag}="):
+                cauda = argumento.split("=", 1)[1]
+                if cauda.isdigit():
+                    return int(cauda)
+
+        casado = _HOST_PORT.match(argumento)
+        if casado:
+            return int(casado.group(1))
+
+    return None
 
 
 # --- origem 2: o que o projeto já declara --------------------------------
@@ -300,8 +342,11 @@ def plan_from_python(project_dir: Path, port: int | None = None) -> RunPlan | No
     asgi = {"fastapi", "starlette", "uvicorn"} & dependencias
     if asgi:
         alvo = next(
-            (modulo for arquivo, modulo in PY_ENTRYPOINT_CANDIDATES
-             if (project_dir / arquivo).is_file()),
+            (
+                modulo
+                for arquivo, modulo in PY_ENTRYPOINT_CANDIDATES
+                if (project_dir / arquivo).is_file()
+            ),
             None,
         )
         if alvo is None:

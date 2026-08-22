@@ -88,6 +88,83 @@ def test_porta_declarada_entra_no_comando(servico, projeto, session) -> None:  #
     assert "--port 9123" in servico.status(projeto).command
 
 
+# --- porta do comando x porta do cadastro ---------------------------------
+
+
+def _manifesto(projeto, porta: int, service: str = "backend") -> None:
+    (Path(projeto.path) / "devcockpit.yml").write_text(
+        "\n".join(
+            [
+                "run:",
+                f'  cmd: ["python", "-m", "uvicorn", "main:app", "--port", "{porta}"]',
+                f'  service: "{service}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _servico(projeto, session, porta: int, key: str = "backend") -> None:
+    from app.models.project import ProjectService as ProjectServiceModel
+
+    projeto.services.append(ProjectServiceModel(key=key, label=key.title(), port=porta))
+    session.flush()
+
+
+def test_manifesto_em_outra_porta_e_denunciado(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """O caso do SmartDash: subia em 8000 e o painel verificava a 3001.
+
+    O sintoma não aponta para a causa — o servidor sobe, o log não acusa nada,
+    e a tela insiste em "fora do ar". Sem aviso, procura-se defeito no projeto.
+    """
+    _manifesto(projeto, 8000)
+    _servico(projeto, session, 3001)
+
+    aviso = servico.status(projeto).port_warning
+
+    assert aviso is not None
+    assert "8000" in aviso and "3001" in aviso
+
+
+def test_portas_iguais_nao_geram_aviso(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    _manifesto(projeto, 3001)
+    _servico(projeto, session, 3001)
+
+    assert servico.status(projeto).port_warning is None
+
+
+def test_sem_service_no_manifesto_nao_ha_contra_o_que_comparar(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """Adivinhar qual serviço é o app produziria aviso falso em todo projeto
+    que declara banco além do backend."""
+    (Path(projeto.path) / "devcockpit.yml").write_text(
+        'run:\n  cmd: ["python", "-m", "uvicorn", "main:app", "--port", "8000"]\n',
+        encoding="utf-8",
+    )
+    _servico(projeto, session, 3001)
+
+    assert servico.status(projeto).port_warning is None
+
+
+def test_comando_sem_porta_legivel_nao_gera_aviso(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """`npm run dev` decide a porta dentro do script. Chutar ali é pior que calar."""
+    (Path(projeto.path) / "devcockpit.yml").write_text(
+        'run:\n  cmd: ["npm", "run", "dev"]\n  service: "backend"\n',
+        encoding="utf-8",
+    )
+    _servico(projeto, session, 3001)
+
+    assert servico.status(projeto).port_warning is None
+
+
+def test_aviso_compara_com_o_servico_que_o_plano_fornece(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """A porta do banco não tem nada a ver com a porta do app."""
+    _manifesto(projeto, 3001)
+    _servico(projeto, session, 5432, key="db")
+    _servico(projeto, session, 3001)
+
+    assert servico.status(projeto).port_warning is None
+
+
 # --- reconciliação --------------------------------------------------------
 
 
@@ -111,9 +188,7 @@ def test_registro_de_processo_morto_e_descartado(servico, projeto, session) -> N
     estado = servico.status(projeto)
 
     assert estado.running is False
-    assert (
-        session.query(DevServer).filter(DevServer.project_id == projeto.id).count() == 0
-    )
+    assert session.query(DevServer).filter(DevServer.project_id == projeto.id).count() == 0
 
 
 def test_parar_o_que_nao_esta_rodando_nao_e_erro(servico, projeto) -> None:  # type: ignore[no-untyped-def]
@@ -256,9 +331,7 @@ def test_servidor_teimoso_nao_impede_a_remocao(session, workspace, monkeypatch) 
     )
     session.flush()
 
-    monkeypatch.setattr(
-        "app.services.project_service.stop_background", lambda pid: False
-    )
+    monkeypatch.setattr("app.services.project_service.stop_background", lambda pid: False)
 
     ProjectService(session=session, allowed_roots=[workspace]).delete(project.id)
 

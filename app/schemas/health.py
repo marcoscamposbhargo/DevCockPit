@@ -198,6 +198,9 @@ class DevServerOut(BaseModel):
     #: "não sei como" — que na tela são um botão e uma explicação, não o mesmo
     #: botão desabilitado sem motivo.
     can_start: bool = False
+    #: O comando abre porta diferente da cadastrada — o painel subiria o
+    #: servidor num lugar e o verificaria em outro. `None` quando concordam.
+    port_warning: str | None = None
 
 
 class DevServerLogs(BaseModel):

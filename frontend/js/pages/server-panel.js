@@ -43,6 +43,24 @@ function comandoCard(estado) {
   ]);
 }
 
+/** O comando sobe numa porta e o cadastro verifica outra.
+ *
+ * Vale um alerta e não uma nota de rodapé porque o sintoma não aponta para a
+ * causa: o servidor sobe certinho, o log não acusa nada, e a tela insiste em
+ * "fora do ar". Sem este aviso a pessoa vai procurar defeito no projeto dela.
+ */
+function avisoPorta(estado) {
+  if (!estado.port_warning) return null;
+
+  return el('div', { class: 'alert', role: 'status' }, [
+    el('span', { class: 'alert__icon' }, [icon('alert', { size: 16 })]),
+    el('div', { class: 'alert__body' }, [
+      el('strong', { text: 'O comando e o cadastro discordam da porta' }),
+      el('p', { class: 'field__hint', text: estado.port_warning }),
+    ]),
+  ]);
+}
+
 function semComando(projectId) {
   return emptyState({
     iconName: 'terminal',
@@ -163,6 +181,7 @@ export async function renderServerPanel(panel) {
     ]),
 
     estado.command ? comandoCard(estado) : null,
+    avisoPorta(estado),
 
     el('p', {
       class: 'field__hint',

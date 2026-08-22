@@ -125,9 +125,7 @@ class EnvironmentService:
         chave_app = self._app_service_key(project, servers)
 
         dependencias = [
-            service.key
-            for service in project.services
-            if service.port and service.key != chave_app
+            service.key for service in project.services if service.port and service.key != chave_app
         ]
 
         return EnvironmentPlan(
@@ -198,9 +196,7 @@ class EnvironmentService:
                 # job inteiro de vermelho por causa de um resultado que é
                 # exatamente o que se pediu.
                 if servers.status(project).running:
-                    job.append(
-                        "A aplicação já estava no ar; nada a subir.", limit=OUTPUT_LIMIT
-                    )
+                    job.append("A aplicação já estava no ar; nada a subir.", limit=OUTPUT_LIMIT)
                     return f"Ambiente de {project.name} no ar; a aplicação já rodava."
 
                 if plano.dependencies:
@@ -245,10 +241,7 @@ class EnvironmentService:
         porta = _porta_ocupada(saida)
 
         if porta is None:
-            return (
-                f"O Compose falhou ao subir ({resultado.exit_code}). "
-                "A saída acima tem o motivo."
-            )
+            return f"O Compose falhou ao subir ({resultado.exit_code}). A saída acima tem o motivo."
 
         culpado = self._quem_ocupa(porta)
         job.append(f"A porta {porta} já está ocupada por {culpado}.", limit=OUTPUT_LIMIT)

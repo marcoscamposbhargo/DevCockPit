@@ -84,9 +84,7 @@ class DiscoveryService:
             scanned += 1
 
             try:
-                entries = sorted(
-                    entry for entry in current.iterdir() if entry.is_dir()
-                )
+                entries = sorted(entry for entry in current.iterdir() if entry.is_dir())
             except (PermissionError, OSError):
                 # Diretório sem permissão é registrado e ignorado, nunca aborta
                 # a varredura inteira (US-023).

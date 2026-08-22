@@ -85,8 +85,7 @@ class DockerService:
         found = find_compose_file(project_dir)
         if found is None:
             raise NoComposeFile(
-                "Nenhum arquivo Compose encontrado. Procurados: "
-                + ", ".join(COMPOSE_FILENAMES)
+                "Nenhum arquivo Compose encontrado. Procurados: " + ", ".join(COMPOSE_FILENAMES)
             )
         return found.name
 

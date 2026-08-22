@@ -175,3 +175,37 @@ def test_health_informa_ferramentas_e_roots(client: TestClient, workspace: Path)
     assert corpo["status"] == "ok"
     assert set(corpo["tools"]) == {"git", "docker", "code"}
     assert corpo["allowed_roots"] == [workspace.resolve().as_posix()]
+
+
+# --- frontend servido -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "caminho",
+    ["/", "/css/tokens.css", "/js/main.js"],
+    ids=["index", "css", "js"],
+)
+def test_frontend_manda_o_browser_revalidar(client: TestClient, caminho: str) -> None:
+    """Sem `Cache-Control` o navegador guarda CSS e JS por um tempo que ele
+    mesmo estima e não pergunta se mudou.
+
+    Num painel local, cujos arquivos mudam no disco embaixo da aba aberta, isso
+    aparece como "a alteração não surtiu efeito" — com o servidor entregando o
+    arquivo novo o tempo todo. Aconteceu de verdade, e sem `no-cache` volta a
+    acontecer sem deixar rastro em log nenhum.
+    """
+    resposta = client.get(caminho)
+
+    assert resposta.status_code == 200
+    assert resposta.headers.get("cache-control") == "no-cache"
+
+
+def test_revalidacao_do_frontend_nao_baixa_o_arquivo_de_novo(client: TestClient) -> None:
+    """`no-cache` é "confirme antes de usar", não "baixe sempre"."""
+    primeira = client.get("/css/tokens.css")
+    etag = primeira.headers["etag"]
+
+    segunda = client.get("/css/tokens.css", headers={"If-None-Match": etag})
+
+    assert segunda.status_code == 304
+    assert not segunda.content

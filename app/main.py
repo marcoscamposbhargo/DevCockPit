@@ -208,16 +208,41 @@ def _register_error_handlers(app: FastAPI) -> None:
         )
 
 
+class RevalidatingStaticFiles(StaticFiles):
+    """Arquivos estáticos que o browser sempre revalida.
+
+    Sem `Cache-Control` o navegador aplica cache heurístico: guarda o CSS e o
+    JS por um tempo que ele mesmo estima e **não pergunta ao servidor** se
+    mudou. Num painel local, onde os arquivos mudam no disco embaixo da aba
+    aberta, isso aparece como "a alteração não surtiu efeito" — com o servidor
+    servindo o arquivo novo o tempo todo.
+
+    `no-cache` não é "não guarde": é "guarde, mas confirme antes de usar". Com
+    o ETag que o StaticFiles já emite, a confirmação vira um 304 sem corpo, que
+    em loopback custa menos de um milissegundo.
+    """
+
+    def file_response(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def _mount_frontend(app: FastAPI) -> None:
     if not FRONTEND_DIR.exists():
         return
 
-    app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
-    app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
+    app.mount("/css", RevalidatingStaticFiles(directory=FRONTEND_DIR / "css"), name="css")
+    app.mount("/js", RevalidatingStaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
-        return FileResponse(FRONTEND_DIR / "index.html")
+        # O `index.html` é o que amarra tudo: se ele vier do cache, referências
+        # novas a arquivos novos nunca chegam a ser pedidas.
+        return FileResponse(
+            FRONTEND_DIR / "index.html",
+            headers={"Cache-Control": "no-cache"},
+        )
 
 
 app = create_app()

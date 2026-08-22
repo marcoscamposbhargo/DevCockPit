@@ -742,3 +742,175 @@ deixado para trás. Repositório limpo.
 ### Primeira coisa ao voltar
 
 Ctrl+F5 na aba do DevCockpit, se ela ficou aberta desde antes do fix.
+
+---
+
+## Sessão 2026-08-22 — frontend, e três defeitos que não deixavam rastro
+
+Sessão de manhã. Começou pelo que ficou pendente da noite anterior (o item B2,
+"melhorar o frontend") e acabou revelando que três dos quatro problemas do dia
+não estavam no código que eu ia mexer.
+
+### O botão do VS Code (D-46, commit `c75565d`)
+
+**Relato:** "o único botão que não tá funcionando é do VS Code."
+
+A auditoria dizia o contrário. Toda execução, sem exceção:
+
+```json
+{"action": "system.vscode", "exit_code": 0, "duration_ms": 1236, "status": "SUCCESS",
+ "argv": ["...\\bin\\code.CMD", "C:\\Users\\User\\Desktop\\...\\DEVCOCKPIT"]}
+```
+
+E o VS Code estava no ar, com vinte processos. Perguntei o que aparecia na
+tela: **nada**. Nem janela, nem piscar na barra de tarefas.
+
+Era isso mesmo. `code <path>` reaproveita a janela já aberta e devolve 0 sem
+mostrá-la, porque o Windows recusa `SetForegroundWindow` vindo de um processo
+que não tem o foco — e o uvicorn não tem, o browser tem. A pasta era aberta de
+verdade, atrás do navegador.
+
+O backend sempre esteve correto. O que faltava era pedir o foco.
+
+`app/adapters/system/focus.py` acha a janela do editor pelo título e a traz
+para frente anexando a fila de entrada da thread que está em primeiro plano —
+o contorno documentado dessa restrição. Casa **pelo nome da pasta**, nunca a
+primeira janela do editor: com vários projetos abertos, focar o errado é pior
+que não focar. Roda em thread daemon e engole qualquer falha, porque a ação já
+deu certo e o foco é cortesia.
+
+Descoberta desconfortável no caminho: **não havia teste nenhum** cobrindo a
+rota `open/vscode` nem o `SystemActionService`. Foi por aí que o buraco passou.
+Somados cinco, incluindo a ordem executar-depois-focar.
+
+### O upper do frontend (D-47, D-48, commit `1cc9949`)
+
+Pedido: "melhorar o layout, melhorar a experiência do usuário, organizar os
+cards". As quatro frentes do item B2 foram atacadas de uma vez.
+
+**Card do projeto.** Mostrava o caminho em três linhas e cinco botões — nada
+sobre o projeto. Agora responde "o que está de pé?" antes de qualquer clique:
+`2/2 online`, `Docker`, `main · 4`. Os sinais vêm do cache do dashboard, que já
+agrega isso sem tocar disco; listar projetos continua sem disparar `git status`
+nem verificação de rede (NFR-010). O único campo novo no backend é
+`services_total`, que sai do banco — o numerador vem do cache.
+
+O caminho virou uma linha com o resto no tooltip, e as duas fileiras de botões
+viraram uma: "Abrir" era um segundo caminho para onde o título do card já
+levava.
+
+**Busca.** Havia duas caixas na mesma tela, a 100 px uma da outra, e nada dizia
+qual valia. Ficou uma só, a da topbar, filtrando ao vivo. A barra da página
+ficou com o que texto não expressa — fixados, com serviço online, com Docker,
+com alteração — cada recorte com sua contagem.
+
+**Dashboard.** Metade da tela vazia virou o mapa de portas, que responde a
+pergunta de todo dia ("quem está ocupando a 8000?") com o conflito marcado na
+própria linha, e os blocos viraram painéis nomeados com contagem no cabeçalho.
+
+**Camada visual.** Um defeito real apareceu na leitura dos tokens: o
+`--bg-elevated` servia a dois papéis, e no tema claro os dois davam branco —
+badge branco sobre card branco desaparecia. Separado em `--bg-subtle` (recuo
+dentro do painel) e `--bg-elevated` (o que flutua). Além disso: pesos, alturas
+de linha e elevação viraram token; seleção, cursor, barra de rolagem e anel de
+foco deixaram de vir com o padrão do sistema operacional; números em coluna
+ficaram tabulares; os glifos Unicode viraram um conjunto SVG desenhado, de
+traço único.
+
+Dois bugs de CSS encontrados **olhando o resultado renderizado**, não o código:
+a barra colorida do toast e do alerta usava `grid-row: 1 / -1`, que resolve
+contra a grade explícita e por isso prendia o ícone à primeira linha,
+desalinhando o texto; e a barra lateral responsiva ficava cortada porque os
+itens quebravam em duas linhas.
+
+### O servidor que "quebrava" (D-49, D-50)
+
+**Relato:** "por que tá quebrando o processo?"
+
+O log mostrava saída limpa, sem traceback:
+
+```
+INFO:     Shutting down
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1852]
+```
+
+Não estava quebrando: estava sendo desligado. Eu subia o uvicorn como processo
+filho da minha própria chamada de ferramenta, então toda interrupção do meu
+turno o levava junto. Aconteceu três vezes, sempre logo depois de uma
+interrupção.
+
+`scripts/serve.ps1` sobe o servidor solto do terminal, é idempotente, sabe
+dizer status e reinicia. Acha o processo **pela porta**, não pelo arquivo de
+PID, senão um servidor subido à mão por fora do script escapa da checagem e
+duas instâncias brigam pela mesma porta. Distingue "no ar" de "travado":
+processo vivo que não responde é pior que processo morto.
+
+`--reload` ficou desligado por padrão. Ele já deixou de aplicar uma mudança de
+schema nesta mesma sessão — o `WatchFiles` anunciou o recarregamento, e o
+`/openapi.json` continuou servindo o schema antigo. Servidor que mente sobre
+ter recarregado custa mais caro que reiniciar na mão.
+
+O script não rodou de primeira: erro de sintaxe apontando para o fecha-chaves
+de uma função inteira. Sem BOM, o Windows PowerShell 5.1 lê `.ps1` na codepage
+ANSI; o travessão em UTF-8 termina no byte `0x94`, que em cp1252 é aspa curva
+de fechamento, e o parser encerra a string no meio do código. Gravado com BOM,
+passou.
+
+### A alteração que não aparecia (D-51, commit `8b32cea`)
+
+**Relato:** "não vi modificação no layout."
+
+Esse foi o terceiro do dia com o mesmo formato: o servidor estava certo, o
+sintoma estava no cliente, e não havia rastro em log nenhum dos dois lados.
+Verifiquei com `curl` (arquivo novo sendo entregue) e com um Chrome de perfil
+limpo, que renderizou a tela nova.
+
+Nenhuma resposta do frontend trazia `Cache-Control`. Sem esse cabeçalho o
+navegador aplica cache heurístico: estima sozinho por quanto tempo o CSS e o JS
+valem e **não pergunta ao servidor** nesse intervalo. O ETag estava lá desde
+sempre, mas ninguém chegava a usá-lo.
+
+`no-cache` não é "não guarde", é "guarde, mas confirme antes de usar". Medido:
+revalidação devolve 304 com zero byte. O `index.html` levou o mesmo cabeçalho
+por um motivo próprio — se ele vier do cache, referências novas a arquivos
+novos nunca chegam a ser pedidas.
+
+### Como o frontend foi verificado
+
+Sem Playwright na máquina, usei o Chrome instalado em `--headless=new` com
+`--screenshot` e `--virtual-time-budget`, e **li as imagens**. Cada rodada
+achou defeito que a leitura do código não acharia: cards de alturas diferentes
+na mesma linha, o select de stack quebrando para uma linha própria, a barra
+lateral cortada, o alerta desalinhado.
+
+O tema claro exigiu um contorno: a preferência mora no `localStorage` e o
+headless não tem como recebê-la de fora. Forcei o padrão em `theme.js` só para
+os dois screenshots e restaurei com `git checkout` logo depois.
+
+### Números
+
+313 testes passando, 1 pulado. `ruff check` limpo. Detector de design da skill
+`impeccable` sem apontamento. 23 arquivos, +2170/−261.
+
+| Commit | Entrega |
+|--------|---------|
+| `c75565d` | Botão VS Code abria o projeto atrás do browser (D-46) |
+| `1cc9949` | Cards com sinais, dashboard denso, servidor solto (D-47 a D-50) |
+| `8b32cea` | Frontend servido com `no-cache` (D-51) |
+
+### A lição do dia
+
+Três dos quatro problemas relatados tinham o servidor inocente e o log mudo.
+Em todos, o que resolveu foi a mesma pergunta: **o que exatamente aparece na
+sua tela?** "Nada acontece" e "não mudou" descrevem a percepção, não o defeito
+— e o defeito estava, respectivamente, no gerenciador de janelas do Windows e
+no cache do navegador. Nenhum dos dois aparece em `logs/devcockpit.log`.
+
+### Continua com você
+
+- [ ] `Ctrl+Shift+R` na aba aberta e conferir o layout novo
+- [ ] clicar em VS Code e confirmar que a janela agora vem para frente
+- [ ] dizer o que ainda incomoda visualmente — o polimento que sobra é o que
+      só se decide olhando
+- [ ] conferir a aba Docker com o Docker Desktop desligado (pendente desde 21)

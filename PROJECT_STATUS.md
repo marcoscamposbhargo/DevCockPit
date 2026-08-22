@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-21 (pontas soltas fechadas — manifesto e tema claro)
+**Última atualização:** 2026-08-22 (frontend B2 entregue; foco do VS Code, servidor solto e cache do frontend)
 
 ---
 
@@ -38,6 +38,20 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
       uma página aberta com o servidor fora do ar deixava as ferramentas
       desabilitadas pelo resto da sessão. Agora só o sucesso é cacheado e o
       rodapé revalida a cada 60 s (D-45).
+
+- [x] (2026-08-22) Bug relatado por você: "o único botão que não tá
+      funcionando é do VS Code". A auditoria registrava `SUCCESS` em toda
+      execução — e estava certa. `code <path>` reaproveita a janela aberta e
+      devolve 0 sem mostrá-la, porque o Windows recusa `SetForegroundWindow`
+      vindo de processo sem foco. A pasta abria atrás do browser (D-46).
+- [x] (2026-08-22) Item B2 entregue: card com sinais, busca unificada,
+      dashboard com mapa de portas e camada visual retrabalhada (D-47, D-48).
+- [x] (2026-08-22) "Por que tá quebrando o processo?" — não estava. O uvicorn
+      era filho da chamada de ferramenta do agente e caía junto com qualquer
+      interrupção. `scripts/serve.ps1` sobe solto do terminal (D-49, D-50).
+- [x] (2026-08-22) "Não vi modificação no layout" — o servidor entregava o
+      arquivo novo; faltava `Cache-Control` no frontend, então o navegador
+      guardava CSS e JS sem nunca revalidar (D-51).
 
 ## 🏁 MVP COMPLETO
 
@@ -286,20 +300,22 @@ ajustes pequenos que valem mais que qualquer fase nova.
 **B — ~~Fechar as pontas soltas~~** — feito em 2026-08-21. Sobra apenas polir a
 UI com base no uso real, que depende de usar.
 
-**B2 — Melhorar o frontend** (próxima sessão, decidido em 2026-08-21)
+**B2 — ~~Melhorar o frontend~~** — entregue em 2026-08-22.
 
-Levantado a partir das telas reais capturadas na rodada de browser. Quatro
-frentes, em ordem de valor percebido:
+1. ~~Card do projeto mais útil~~ — mostra serviços online sobre o total, Docker
+   e branch com contagem de arquivos sujos, tudo cruzado do cache do dashboard
+   (D-47).
+2. ~~Dashboard com mais densidade~~ — mapa de portas com conflito marcado na
+   linha, e painéis nomeados com contagem no cabeçalho.
+3. ~~Busca e filtros de verdade~~ — busca única na topbar filtrando ao vivo, e
+   recortes por fixado, serviço online, Docker, alteração e diretório ausente,
+   cada um com sua contagem (D-48).
+4. ~~Polimento visual~~ — tokens de peso, altura de linha e elevação; superfícies
+   do browser tematizadas; algarismos tabulares; conjunto de ícones SVG no lugar
+   dos glifos Unicode; responsivo abaixo de 900 px.
 
-1. **Card do projeto mais útil** — hoje mostra o path em três linhas e cinco
-   botões. Falta o que importa: serviços online, Git sujo, containers de pé.
-   Saber o que está rodando sem abrir o projeto.
-2. **Dashboard com mais densidade** — metade da tela fica vazia quando não há
-   alteração pendente. Cabe Docker, Git e portas em uso.
-3. **Busca e filtros de verdade** — por stack, fixados, com Docker, com
-   alteração pendente; e a busca do topo filtrando enquanto digita.
-4. **Polimento visual** — tipografia, espaçamento, hierarquia, foco e
-   transições, nos dois temas.
+O que sobra aqui é o polimento que **só se decide olhando**: falta a sua
+rodada no browser dizendo o que ainda incomoda.
 
 **C — Fase 5: GitHub** (pós-MVP)
 - PRs abertos, issues e Actions por projeto
@@ -419,7 +435,9 @@ Verificado no browser pelo usuário em 2026-08-21:
 Falta, porque depende de você:
 
 ```
-[ ] clicar em VS Code / Pasta / Terminal (abre janela na sua área de trabalho)
+[ ] Ctrl+Shift+R e conferir o layout novo (cards com sinais, filtros, painéis)
+[ ] clicar em VS Code e confirmar que a janela agora vem para frente (D-46)
+[ ] dizer o que ainda incomoda visualmente
 [ ] conferir a aba Docker com o Docker Desktop desligado
 ```
 
@@ -433,7 +451,7 @@ Falta, porque depende de você:
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
 | Cobertura de testes | 92% | >= 70% |
-| Testes | 302 passando, 1 pulado | — |
+| Testes | 313 passando, 1 pulado | — |
 
 ---
 
@@ -449,3 +467,4 @@ Falta, porque depende de você:
 | 4 — Serviços e SO | 2026-08-21 | 2026-08-21 | 34 pontos, 285 testes, dashboard em 168 ms |
 | Pontas soltas | 2026-08-21 | 2026-08-21 | manifesto, tema claro, `lifespan`; 301 testes |
 | Rodada no browser | 2026-08-21 | 2026-08-21 | 4 defeitos corrigidos, ferramentas no card; 302 testes |
+| Frontend (B2) | 2026-08-22 | 2026-08-22 | card com sinais, dashboard denso, busca única; 313 testes |

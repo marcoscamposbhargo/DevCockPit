@@ -955,13 +955,48 @@
 /* No card de projeto a linha de ação vira rodapé de verdade: sangra até a
    borda e ganha fundo recuado. Uma linha de botões flutuando sobre o mesmo
    fundo do conteúdo lê como "mais conteúdo"; com o degrau de superfície, lê
-   como "o que dá para fazer daqui". */
+   como "o que dá para fazer daqui".
+
+   São duas fileiras, e de propósito: o rodapé tinha itens demais para uma só e
+   quebrava sozinho — o carimbo de tempo ficava órfão no meio. Em cima o estado
+   e como chegar no projeto; embaixo as ferramentas da pasta, que valem estando
+   ele no ar ou não. */
 .card--project .card__actions {
+  display: flex;
+  flex-direction: column;
+  /* `stretch`, não o `center` que a regra genérica traz: aqui a direção virou
+     coluna, e ali `center` deixava de alinhar verticalmente os botões para
+     passar a centralizar as fileiras inteiras na horizontal. Os controles
+     flutuavam no meio do card, e o `margin-left: auto` do carimbo de tempo
+     perdia o efeito porque não sobrava espaço para consumir. */
+  align-items: stretch;
+  gap: var(--sp-2);
   margin: var(--sp-4) calc(var(--sp-4) * -1) calc(var(--sp-4) * -1);
   margin-left: calc((var(--sp-4) + 3px) * -1);
   padding: var(--sp-3) var(--sp-4);
   padding-left: calc(var(--sp-4) + 3px);
   background: color-mix(in srgb, var(--bg-subtle) 55%, transparent);
+}
+
+.card__actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* A fileira de ferramentas é secundária: mesma altura, um pouco menos de peso,
+   para o olho descer do estado para elas e não o contrário. */
+.card__actions-row--tools {
+  padding-top: var(--sp-2);
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+/* Linha de estado vazia acontece: projeto sem Docker, sem serviço para abrir e
+   com o motivo no lugar do botão deixa só um item. Sem isto ela colapsaria e as
+   duas fileiras encostariam. */
+.card__actions-row:empty {
+  display: none;
 }
 
 .card__tools {

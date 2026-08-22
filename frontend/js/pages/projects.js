@@ -256,58 +256,68 @@ function projectCard(project, { onDelete, onTogglePin, onPowerChanged, onDetect,
     // dois cliques a mais para chegar na aba Overview era atrito puro. A chave
     // liga/desliga vem antes das ferramentas: ela é a decisão, elas são o que
     // se faz depois de tomá-la.
+    // Duas linhas, e de propósito. Antes era uma só que quebrava sozinha
+    // quando o botão "Abrir" entrou: o rodapé virava duas fileiras tortas, com
+    // o carimbo de tempo órfão no meio. Quebra acidental fica torta; quebra
+    // escolhida separa duas perguntas diferentes.
+    //
+    // Em cima, o estado do projeto e como chegar nele. Embaixo, as ferramentas
+    // da pasta — que não dependem de o projeto estar no ar.
     el('div', { class: 'card__actions' }, [
-      // Projeto que o painel não sabe subir mostrava um botão apagado e o
-      // motivo só no tooltip — quem não passa o mouse conclui que a ferramenta
-      // está quebrada. O motivo agora fica escrito no lugar do controle.
-      project.can_start === false && project.status !== 'MISSING'
-        ? el('span', { class: 'card__no-start' }, [
-            icon('power', { size: 12 }),
-            'sem comando de subida',
-            el('a', {
-              class: 'card__no-start-link',
-              href: `#/projects/${encodeURIComponent(project.id)}?tab=server`,
-              text: 'como configurar',
+      el('div', { class: 'card__actions-row' }, [
+        // Projeto que o painel não sabe subir mostrava um botão apagado e o
+        // motivo só no tooltip — quem não passa o mouse conclui que a
+        // ferramenta está quebrada. O motivo ocupa o lugar do controle.
+        project.can_start === false && project.status !== 'MISSING'
+          ? el('span', { class: 'card__no-start' }, [
+              icon('power', { size: 12 }),
+              'sem comando de subida',
+              el('a', {
+                class: 'card__no-start-link',
+                href: `#/projects/${encodeURIComponent(project.id)}?tab=server`,
+                text: 'como configurar',
+              }),
+            ])
+          : powerToggle(project, {
+              // `app_running` vem do servidor e fala da **aplicação**. Antes
+              // daqui saía "algum serviço responde", e num projeto cujo banco
+              // vive em container o banco continua respondendo com a aplicação
+              // parada: o botão anunciava "Ligado" logo depois de desligar.
+              on: project.app_running ?? (signals.online.get(project.id) ?? 0) > 0,
+              onChanged: onPowerChanged,
             }),
-          ])
-        : powerToggle(project, {
-        // `app_running` vem do servidor e fala da **aplicação**. Antes daqui
-        // saía "algum serviço responde", e num projeto cujo banco vive em
-        // container o banco continua respondendo com a aplicação parada: o
-        // botão anunciava "Ligado" logo depois de desligar.
-            on: project.app_running ?? (signals.online.get(project.id) ?? 0) > 0,
-            onChanged: onPowerChanged,
-          }),
-      // O chip só sabe se **algum** serviço do projeto responde — o dashboard
-      // não separa container de processo nativo. É o suficiente para o chip
-      // cumprir o papel dele: dizer que o ambiente não está parado quando o
-      // botão diz que a aplicação está.
-      dockerChip(project, {
-        running: signals.online.get(project.id) ?? 0,
-        onChanged: onPowerChanged,
-      }),
-      quickTools(project, available),
-      // Depois de ligar, a próxima coisa que se quer é ver. O card sabia ligar
-      // sem saber abrir, e chegar na aplicação exigia passar pela página do
-      // projeto — dois cliques a mais no gesto mais frequente da tela.
-      openServiceButton(project, signals),
-      el('div', { class: 'card__actions-end' }, [
-        el('span', {
-          class: 'field__hint',
-          text: relativeTime(project.last_accessed_at),
-          title: 'Último acesso',
+        // O chip só sabe se **algum** serviço do projeto responde — o dashboard
+        // não separa container de processo nativo. É o suficiente para o papel
+        // dele: dizer que o ambiente não está parado quando o botão diz que a
+        // aplicação está.
+        dockerChip(project, {
+          running: signals.online.get(project.id) ?? 0,
+          onChanged: onPowerChanged,
         }),
-        el(
-          'button',
-          {
-            class: 'btn btn--sm btn--icon btn--danger',
-            type: 'button',
-            title: `Remover ${project.name} do registro`,
-            'aria-label': `Remover ${project.name} do registro`,
-            onClick: () => onDelete(project),
-          },
-          [icon('trash', { size: 13 })]
-        ),
+        // Depois de ligar, a próxima coisa que se quer é ver.
+        openServiceButton(project, signals),
+      ]),
+
+      el('div', { class: 'card__actions-row card__actions-row--tools' }, [
+        quickTools(project, available),
+        el('div', { class: 'card__actions-end' }, [
+          el('span', {
+            class: 'field__hint',
+            text: relativeTime(project.last_accessed_at),
+            title: 'Último acesso',
+          }),
+          el(
+            'button',
+            {
+              class: 'btn btn--sm btn--icon btn--danger',
+              type: 'button',
+              title: `Remover ${project.name} do registro`,
+              'aria-label': `Remover ${project.name} do registro`,
+              onClick: () => onDelete(project),
+            },
+            [icon('trash', { size: 13 })]
+          ),
+        ]),
       ]),
     ]),
     ]

@@ -124,7 +124,22 @@ function Start-Server {
     }
 
     Write-Host 'Aplicando migracoes...' -ForegroundColor Cyan
-    & $python -m alembic upgrade head | Out-Null
+    # O alembic escreve as linhas `INFO` dele em stderr mesmo quando dá tudo
+    # certo. Com `$ErrorActionPreference = 'Stop'`, o PowerShell 5.1 empacota
+    # cada uma dessas linhas num ErrorRecord e o script morre aqui — antes de
+    # chegar no uvicorn. O sintoma era "o servidor não sobe" sem erro nenhum
+    # que apontasse para migração.
+    #
+    # Quem decide se a migração falhou é o código de saída, não o fato de ter
+    # havido escrita em stderr.
+    $saidaAlembic = & {
+        $ErrorActionPreference = 'Continue'
+        & $python -m alembic upgrade head 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+        $saidaAlembic | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        throw "Falha ao aplicar as migracoes (codigo $LASTEXITCODE)."
+    }
 
     $argumentos = @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', "$Port")
     if ($Reload) { $argumentos += '--reload' }

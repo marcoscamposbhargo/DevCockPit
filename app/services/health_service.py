@@ -124,8 +124,23 @@ class HealthService:
                 response = await client.get(url)
         except httpx.ConnectError:
             return self._result(target, HealthState.OFFLINE, started, "Conexão recusada.")
+        except httpx.ConnectTimeout:
+            # Estourou o tempo **antes de conectar**. No Windows, tentar uma
+            # porta sem ninguém escutando costuma pendurar em vez de recusar na
+            # hora, então este é o caminho normal de um serviço que
+            # simplesmente não foi ligado — não é erro, é desligado. Marcar
+            # ERROR aqui pintava a tela de vermelho para o caso mais banal que
+            # existe, e vermelho que aparece sempre para de significar algo.
+            return self._result(
+                target,
+                HealthState.OFFLINE,
+                started,
+                f"Sem resposta em {self.timeout_s:g}s.",
+            )
         except (httpx.TimeoutException, TimeoutError):
-            return self._result(target, HealthState.ERROR, started, "Tempo esgotado.")
+            # Conectou e não respondeu a tempo: aí sim há algo de pé e travado,
+            # que é exatamente o que ERROR deve significar.
+            return self._result(target, HealthState.ERROR, started, "Conectou, mas não respondeu.")
         except httpx.HTTPError as exc:
             return self._result(target, HealthState.ERROR, started, str(exc)[:200])
 

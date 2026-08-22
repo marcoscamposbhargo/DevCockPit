@@ -1375,6 +1375,26 @@
   vertical-align: middle;
 }
 
+/* Número que leva a algum lugar se comporta como link, sem virar um botão:
+   o cartão continua sendo um número grande, só que clicável. */
+.stat-card--link {
+  display: block;
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.stat-card--link:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.stat-card--link:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* --- Activity ---
    Era um muro de linhas iguais em ordem cronológica. As três regras abaixo
    existem para o olho achar o que procura: separador de dia, falha em

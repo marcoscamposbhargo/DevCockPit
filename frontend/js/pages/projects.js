@@ -407,7 +407,12 @@ export async function renderProjects(container, _params, query) {
   mount(container, skeletonGrid(6));
 
   let formVisible = false;
-  const state = { text: (query.q ?? '').toLowerCase(), filter: 'all', stack: '' };
+  // O filtro vem da URL quando alguém chegou por um número do dashboard —
+  // "3 Parados" leva à lista já recortada, em vez de só informar quantos.
+  // Valor desconhecido cai em "all": link velho ou digitado à mão não pode
+  // deixar a tela num estado que nenhum chip representa.
+  const filtroDaUrl = FILTERS.some((f) => f.key === query.filter) ? query.filter : 'all';
+  const state = { text: (query.q ?? '').toLowerCase(), filter: filtroDaUrl, stack: '' };
 
   let data = null;
   let available = null;

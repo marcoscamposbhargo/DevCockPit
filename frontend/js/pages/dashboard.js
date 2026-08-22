@@ -241,12 +241,18 @@ export async function renderDashboard(container) {
     pageHeader({ title: 'Ambiente de desenvolvimento' }),
     freshness(data, () => renderDashboard(container)),
     portConflicts(data.port_conflicts),
+    // Os números levam à lista já filtrada. Antes respondiam "quantos" e não
+    // "quais", e a resposta existia em Projects atrás de um filtro que era
+    // preciso reencontrar na mão.
     el('div', { class: 'grid-stats' }, [
-      statCard(data.totals.projects, 'Projetos'),
-      statCard(data.totals.running, 'Rodando', { tone: 'running' }),
-      statCard(data.totals.stopped, 'Parados'),
-      statCard(data.totals.with_docker, 'Com Docker'),
-      statCard(data.totals.missing, 'Sem diretório'),
+      statCard(data.totals.projects, 'Projetos', { href: '#/projects' }),
+      statCard(data.totals.running, 'Rodando', {
+        tone: 'running',
+        href: '#/projects?filter=online',
+      }),
+      statCard(data.totals.stopped, 'Parados', { href: '#/projects' }),
+      statCard(data.totals.with_docker, 'Com Docker', { href: '#/projects?filter=docker' }),
+      statCard(data.totals.missing, 'Sem diretório', { href: '#/projects?filter=missing' }),
     ]),
     // Duas colunas, duas linhas. Antes era uma linha só, com a coluna da
     // esquerda quase sempre vazia e meia tela sobrando embaixo.
@@ -261,11 +267,17 @@ export async function renderDashboard(container) {
         count: mapaDePortas.length,
         body: portMap(mapaDePortas, portasNoAr),
       }),
-      panel({
-        title: 'Alterações pendentes',
-        count: data.pending_changes.length,
-        body: pendingChanges(data.pending_changes),
-      }),
+      // Só ocupa um quadrante quando tem o que dizer. O cache de Git é
+      // preenchido pelas consultas que já foram feitas, então numa sessão em
+      // que ninguém abriu a aba Git este painel fica permanentemente vazio —
+      // um quarto da tela dizendo "não sei", todo dia.
+      data.pending_changes.length
+        ? panel({
+            title: 'Alterações pendentes',
+            count: data.pending_changes.length,
+            body: pendingChanges(data.pending_changes),
+          })
+        : null,
       panel({
         title: 'Acessados recentemente',
         action: el('a', { class: 'panel__action', href: '#/projects', text: 'Ver todos' }),

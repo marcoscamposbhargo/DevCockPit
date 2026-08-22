@@ -16,12 +16,36 @@ export function techChip(name, source = 'DETECTED') {
 }
 
 /** Número do dashboard. Zero fica apagado: só chama atenção o que exige ação. */
-export function statCard(value, label, { tone = null } = {}) {
+/**
+ * Número grande com rótulo.
+ *
+ * Com `href`, vira link: "3 Parados" respondia quantos e não quais, e a
+ * resposta já existia em Projects atrás de um filtro. Um número que informa
+ * sem levar a lugar nenhum obriga a refazer o caminho na mão.
+ */
+export function statCard(value, label, { tone = null, href = null, title = null } = {}) {
   const vazio = Number(value) === 0;
-  return el('div', { class: 'stat-card', dataset: { tone, empty: String(vazio) } }, [
+  const conteudo = [
     el('div', { class: 'stat-card__value', text: String(value) }),
     el('div', { class: 'stat-card__label', text: label }),
-  ]);
+  ];
+
+  // Zero não leva a lugar nenhum: um link para uma lista vazia é uma promessa
+  // quebrada, e o cartão apagado já diz que não há o que ver.
+  if (!href || vazio) {
+    return el('div', { class: 'stat-card', dataset: { tone, empty: String(vazio) } }, conteudo);
+  }
+
+  return el(
+    'a',
+    {
+      class: 'stat-card stat-card--link',
+      href,
+      title: title ?? `Ver ${label.toLowerCase()}`,
+      dataset: { tone, empty: 'false' },
+    },
+    conteudo
+  );
 }
 
 export function emptyState({ iconName = 'inbox', title, text, actions = [] }) {

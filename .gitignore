@@ -93,3 +93,8 @@ logs/*
 # Artefatos de build do setuptools
 *.egg-info/
 .gstack/
+
+# Capturas de tela feitas durante verificação no browser. Artefato de
+# investigação, não do projeto.
+.qa/
+.design-shots/

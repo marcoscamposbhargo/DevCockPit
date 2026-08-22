@@ -1305,6 +1305,53 @@
   font-size: var(--fs-xs);
 }
 
+/* --- chip do ambiente ---
+   Companheiro do botão de liga/desliga: o botão fala da aplicação, o chip fala
+   dos containers. Discreto de propósito — derrubar o ambiente é operação de
+   fim de expediente, não de cada ciclo de trabalho. */
+
+.docker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.docker-chip[data-on='true'] {
+  border-color: color-mix(in srgb, var(--status-running) var(--tint-border-strength), transparent);
+  background: color-mix(in srgb, var(--status-running) var(--tint-strength), var(--bg-base));
+  color: var(--status-running);
+}
+
+.docker-chip[data-on='true']:hover {
+  border-color: var(--status-error);
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+}
+
+/* Parado, o chip é só informação: nada a derrubar, nada a clicar. */
+.docker-chip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.docker-chip:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* --- topbar: chave do trilho de ativos ---
    Era um ícone sem rótulo. Fechar a barra é óbvio (o X mora dentro dela);
    reabrir dependia de adivinhar que aquele ícone na topbar era o caminho de

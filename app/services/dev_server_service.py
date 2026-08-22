@@ -92,6 +92,28 @@ class DevServerService:
             raise ProjectDirMissing(f"O diretório {project.path} não existe mais.")
         return project_dir
 
+    def running_project_ids(self) -> list[DevServer]:
+        """Todos os servidores registrados, numa consulta só.
+
+        A lista de projetos precisa saber quais aplicações estão no ar, e
+        perguntar projeto por projeto seria uma consulta por card — que é o
+        tipo de trabalho por item que NFR-010 proíbe nessa tela.
+
+        Registro de processo morto é descartado aqui também: quem abre a lista
+        depois de um `Ctrl+C` no console do servidor não pode ver "Ligado".
+        """
+        registros = list(self.session.execute(select(DevServer)).scalars())
+
+        vivos: list[DevServer] = []
+        for registro in registros:
+            if is_alive(registro.pid):
+                vivos.append(registro)
+            else:
+                self.session.delete(registro)
+        if len(vivos) != len(registros):
+            self.session.flush()
+        return vivos
+
     def _record(self, project: Project) -> DevServer | None:
         return self.session.execute(
             select(DevServer).where(DevServer.project_id == project.id)

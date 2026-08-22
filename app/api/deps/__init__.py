@@ -23,6 +23,7 @@ from app.services.detection_service import DetectionService
 from app.services.dev_server_service import DevServerService
 from app.services.discovery_service import DiscoveryService
 from app.services.docker_service import DockerService
+from app.services.environment_service import EnvironmentService
 from app.services.git_service import GitService
 from app.services.health_service import HealthService
 from app.services.manifest_service import ManifestService
@@ -188,4 +189,24 @@ def get_dev_server_service(
         session=session,
         logs_dir=settings.resolve(settings.log_file).parent,
         activity=activity,
+    )
+
+
+def get_environment_service(request: Request) -> EnvironmentService:
+    """Orquestra Docker e aplicação.
+
+    Recebe a **fábrica** de sessão, não uma sessão: a sequência roda dentro de
+    um job, depois que a requisição já acabou e a sessão dela foi fechada.
+    """
+    settings: Settings = request.app.state.settings
+    return EnvironmentService(
+        session_factory=request.app.state.session_factory,
+        adapter=DockerAdapter(
+            runner=request.app.state.command_runner,
+            docker_bin=settings.docker_bin,
+            read_timeout_s=settings.timeout_docker_read,
+        ),
+        health=request.app.state.health_service,
+        logs_dir=settings.resolve(settings.log_file).parent,
+        compose_timeout_s=settings.timeout_compose_up,
     )

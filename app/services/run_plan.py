@@ -78,6 +78,12 @@ class RunPlan:
     source: str = "manifest"
     #: Texto curto do que foi encontrado, para a UI explicar a origem.
     evidence: str = ""
+    #: Qual serviço declarado **este comando fornece**. É o que separa a
+    #: aplicação da infraestrutura: tudo o que o projeto declara e não é este
+    #: serviço é dependência, e é por essas portas que a subida espera antes de
+    #: rodar o app. Sem isso, a espera incluiria a porta do próprio app — que
+    #: por definição ainda não subiu — e estouraria o teto em toda subida.
+    service: str | None = None
 
     @property
     def display(self) -> str:
@@ -150,6 +156,9 @@ def plan_from_manifest(project_dir: Path) -> RunPlan | None:
         run:
           cmd: ["npm", "run", "dev"]
           cwd: "frontend"        # opcional, relativo ao projeto
+          service: "backend"     # opcional, qual serviço declarado este
+                                 # comando fornece; o resto vira dependência
+                                 # a esperar antes de subir o app
     """
     manifesto = project_dir / MANIFEST_NAME
     if not manifesto.is_file():
@@ -175,7 +184,15 @@ def plan_from_manifest(project_dir: Path) -> RunPlan | None:
         # Recusa aqui, não lá na frente onde já seria diretório de execução.
         resolve_within_project(project_dir, cwd)
 
-    return RunPlan(argv=argv, cwd=cwd, source="manifest", evidence="devcockpit.yml")
+    service = str(bloco.get("service") or "").strip() or None
+
+    return RunPlan(
+        argv=argv,
+        cwd=cwd,
+        source="manifest",
+        evidence="devcockpit.yml",
+        service=service,
+    )
 
 
 # --- origem 2: o que o projeto já declara --------------------------------
@@ -218,6 +235,36 @@ def plan_from_node(project_dir: Path) -> RunPlan | None:
     )
 
 
+#: Onde procurar o interpretador do próprio projeto, em ordem. Rodar um projeto
+#: Python com o `python` do PATH é quase sempre errado: as dependências dele
+#: estão no ambiente virtual dele, e o de fora não as tem. O sintoma é um
+#: `ModuleNotFoundError` de uma biblioteca que está instalada — só que em outro
+#: lugar.
+VENV_INTERPRETERS = (
+    ".venv/Scripts/python.exe",
+    ".venv/bin/python",
+    "venv/Scripts/python.exe",
+    "venv/bin/python",
+    ".virtualenv/Scripts/python.exe",
+    ".virtualenv/bin/python",
+)
+
+
+def python_for(project_dir: Path) -> str:
+    """O interpretador do projeto, com o do PATH como último recurso.
+
+    O `python` do PATH tem as dependências de outra pessoa. Um projeto que
+    declara `duckdb` no `requirements.txt` e o instalou no `.venv` dele quebra
+    com `ModuleNotFoundError: No module named 'duckdb'` — de uma biblioteca que
+    está instalada, só que em outro lugar. Foi assim que este código apareceu.
+    """
+    for relativo in VENV_INTERPRETERS:
+        candidato = project_dir / relativo
+        if candidato.is_file():
+            return str(candidato)
+    return "python"
+
+
 #: Framework Python conhecido -> como subir em desenvolvimento. O módulo da
 #: aplicação é procurado no disco, nunca chutado: um `app.main:app` que não
 #: existe falha depois de subir, e o erro aparece longe da causa.
@@ -238,9 +285,10 @@ def plan_from_python(project_dir: Path, port: int | None = None) -> RunPlan | No
     oferecer um que roda a coisa errada.
     """
     dependencias = _python_dependencies(project_dir)
+    interpretador = python_for(project_dir)
 
     if "django" in dependencias and (project_dir / "manage.py").is_file():
-        argv = ["python", "manage.py", "runserver"]
+        argv = [interpretador, "manage.py", "runserver"]
         if port:
             argv.append(f"127.0.0.1:{port}")
         return RunPlan(
@@ -258,7 +306,7 @@ def plan_from_python(project_dir: Path, port: int | None = None) -> RunPlan | No
         )
         if alvo is None:
             return None
-        argv = ["python", "-m", "uvicorn", alvo, "--host", "127.0.0.1"]
+        argv = [interpretador, "-m", "uvicorn", alvo, "--host", "127.0.0.1"]
         if port:
             argv += ["--port", str(port)]
         return RunPlan(
@@ -268,7 +316,7 @@ def plan_from_python(project_dir: Path, port: int | None = None) -> RunPlan | No
         )
 
     if "flask" in dependencias:
-        argv = ["python", "-m", "flask", "run", "--host", "127.0.0.1"]
+        argv = [interpretador, "-m", "flask", "run", "--host", "127.0.0.1"]
         if port:
             argv += ["--port", str(port)]
         return RunPlan(

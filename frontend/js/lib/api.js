@@ -113,6 +113,15 @@ export const api = {
   serverLogs: (id, lines = 200) =>
     request('GET', `/projects/${encodeURIComponent(id)}/server/logs`, { params: { lines } }),
 
+  // Ambiente = Docker + aplicação, na ordem. `up` devolve 202 com job_id
+  // porque a sequência pode levar minutos; `down` é imediato.
+  environmentPlan: (id) => request('GET', `/projects/${encodeURIComponent(id)}/environment`),
+  environmentUp: (id) => request('POST', `/projects/${encodeURIComponent(id)}/environment/up`),
+  environmentDown: (id, includeDocker = false) =>
+    request('POST', `/projects/${encodeURIComponent(id)}/environment/down`, {
+      params: { include_docker: includeDocker ? 'true' : 'false' },
+    }),
+
   dockerStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/docker/status`),
   dockerAction: (id, action, services = []) =>
     request('POST', `/projects/${encodeURIComponent(id)}/docker/${action}`, {

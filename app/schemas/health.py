@@ -187,3 +187,28 @@ class DevServerOut(BaseModel):
 
 class DevServerLogs(BaseModel):
     lines: list[str] = Field(default_factory=list)
+
+
+class EnvironmentPlanOut(BaseModel):
+    """O que "Ligar" faria neste projeto, antes de fazer.
+
+    A tela mostra isto para ninguém descobrir o que o botão faz depois de
+    apertá-lo, e usa `app_command` para decidir se "Desligar" para a aplicação
+    ou o Compose.
+    """
+
+    compose_file: str | None = None
+    app_command: str = ""
+    app_source: str = ""
+    #: Serviços declarados cujas portas a subida espera antes de rodar o app.
+    dependencies: list[str] = Field(default_factory=list)
+    app_running: bool = False
+
+    @property
+    def has_app(self) -> bool:
+        return bool(self.app_command)
+
+
+class EnvironmentStopped(BaseModel):
+    #: "app" ou "docker" — o que de fato foi parado.
+    stopped: str

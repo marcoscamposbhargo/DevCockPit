@@ -46,22 +46,35 @@ class BackgroundStart:
     log_file: str
 
 
-def _resolve_program(program: str) -> str:
+def _resolve_program(program: str, cwd: Path) -> str:
     """Descobre o caminho real do executável antes de chamá-lo.
 
-    No Windows, `npm`, `pnpm`, `yarn` e companhia são arquivos `.cmd`. Sem
-    shell — e aqui nunca há shell — `CreateProcess` recebe "npm", não encontra
-    arquivo com esse nome exato e devolve "O sistema não pode encontrar o
-    arquivo especificado". O programa está instalado; o que falta é a extensão,
-    que só o `PATHEXT` conhece.
+    Dois casos, e os dois já morderam:
 
-    `shutil.which` resolve os dois: consulta o `PATH` e, no Windows, também o
-    `PATHEXT`. É a mesma solução que `WindowsOSAdapter.open_in_editor` já
-    usava para o `code`; aqui ela vale para qualquer programa.
+    **Nome simples** (`npm`, `node`, `python`). No Windows, `npm`, `pnpm`,
+    `yarn` e companhia são arquivos `.cmd`. Sem shell — e aqui nunca há shell —
+    `CreateProcess` recebe "npm", não encontra arquivo com esse nome exato e
+    devolve "O sistema não pode encontrar o arquivo especificado". O programa
+    está instalado; o que falta é a extensão, que só o `PATHEXT` conhece.
+    `shutil.which` resolve.
 
-    Não encontrou, devolve o nome original: quem chama trata o `FileNotFound`
-    com a mensagem certa, e inventar um caminho aqui só esconderia a causa.
+    **Caminho relativo** (`.venv/Scripts/python.exe`). É como um manifesto
+    aponta o interpretador do próprio projeto, e a única leitura que faz
+    sentido é "relativo ao projeto". Mas `CreateProcess` resolve caminho
+    relativo contra o diretório do **processo que chama**, não contra o `cwd`
+    que se passa ao filho — então o painel acabava executando outro Python, ou
+    nenhum. O sintoma foi um `ModuleNotFoundError` de uma biblioteca que estava
+    instalada no `.venv` apontado.
+
+    Não encontrou, devolve o original: quem chama trata o `FileNotFound` com a
+    mensagem certa, e inventar um caminho aqui só esconderia a causa.
     """
+    if "/" in program or "\\" in program:
+        candidato = (cwd / program).resolve()
+        if candidato.is_file():
+            return str(candidato)
+        return program
+
     return shutil.which(program) or program
 
 
@@ -77,7 +90,7 @@ def start_background(
     quem chama traduz isso na mensagem que a tela mostra.
     """
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    argv = [_resolve_program(argv[0]), *argv[1:]]
+    argv = [_resolve_program(argv[0], cwd), *argv[1:]]
 
     env = {**os.environ, **(env_extra or {})}
     # Servidor de desenvolvimento que detecta terminal costuma ligar cores ANSI

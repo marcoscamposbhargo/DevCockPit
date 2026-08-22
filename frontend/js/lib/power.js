@@ -5,14 +5,18 @@
 // está — o botão "Subir" tinha a mesma cara com tudo no ar e com tudo parado.
 // Aqui o controle **mostra o estado** e a ação é a consequência dele.
 //
-// Dois caminhos para ligar, escolhidos pelo que o projeto é:
+// São dois controles, e a divisão é a do uso real:
 //
-// - com Compose, `docker compose up`/`stop`, que roda como job;
-// - sem Compose, o servidor de desenvolvimento do próprio projeto
-//   (`npm run dev`, `uvicorn`, `flask run`), que roda como processo de vida
-//   longa. Este segundo caminho existe porque a maioria dos projetos não tem
-//   Compose, e para eles o painel sabia dizer que estava parado sem saber
-//   fazer nada a respeito — sobrava abrir o terminal e digitar o comando.
+// - **o botão** é a aplicação. Ligar sobe o ambiente e depois a aplicação, na
+//   ordem; desligar para só a aplicação.
+// - **o chip do Docker**, ao lado, é o ambiente. É por ele que se derruba os
+//   containers, que é operação de fim de expediente e não de cada ciclo.
+//
+// A assimetria é deliberada. Banco e fila são caros de subir e não mudam entre
+// uma execução e outra da aplicação: derrubá-los a cada parada do backend
+// trocaria um ciclo de dois segundos por um de trinta. Mas o painel não pode
+// dizer "Desligado" com o Postgres atendendo na porta — foi assim que o caso
+// do ZAPBOT enganou —, então o chip existe para o ambiente ter voz própria.
 //
 // O que não dá para ligar continua desabilitado **com o motivo** na frente,
 // nunca como um clique que falha depois (mesma regra de lib/actions.js).
@@ -79,69 +83,18 @@ async function waitJob(jobId) {
   }
 }
 
-/** Reverifica os serviços do projeto e devolve o estado que a máquina mostra.
- *
- * `stop` do Compose devolve sucesso assim que os containers param, mas parar
- * container não é o mesmo que a porta ficar livre. Perguntar aqui é uma
- * requisição a mais num clique que o usuário acabou de dar — barato, e evita
- * que a tela afirme algo que o próximo ciclo do verificador vai desmentir.
- */
-async function confirmarEstado(projectId, acao) {
-  try {
-    const { items } = await api.checkServices(projectId);
-    return { ligado: items.some((item) => item.state === 'ONLINE'), items };
-  } catch {
-    // Verificação falhou: fica com o resultado otimista da ação, que é melhor
-    // que travar o botão. O poller corrige na próxima volta.
-    return { ligado: acao === 'up', items: [] };
-  }
-}
-
-/** Liga ou desliga o servidor de desenvolvimento do projeto.
- *
- * Sem job: o processo nasce e a requisição acaba. O que demora é o servidor
- * ficar pronto para atender, e quem responde isso é a verificação de porta —
- * por isso o estado exibido sai dela, não do fato de o processo ter nascido.
- */
-async function acionarServidor(project, { ligando, anterior, aplicar }) {
-  try {
-    const estadoServidor = ligando
-      ? await api.startServer(project.id)
-      : await api.stopServer(project.id);
-
-    if (!ligando) {
-      aplicar('off');
-      toast(`${project.name}: servidor parado.`, { kind: 'success' });
-      return;
-    }
-
-    // Um servidor de desenvolvimento leva alguns segundos entre nascer e
-    // atender. Perguntar imediatamente devolveria "desligado" para algo que
-    // acabou de subir, e o botão voltaria sozinho — o mesmo mal-entendido que
-    // o caminho do Docker já tinha.
-    const respondeu = await esperarResposta(project.id);
-    aplicar(respondeu ? 'on' : 'off');
-
-    if (respondeu) {
-      toast(`${project.name}: no ar.`, { kind: 'success' });
-    } else {
-      toast(`${project.name}: processo iniciado, mas a porta ainda não responde.`, {
-        kind: 'warning',
-        meta: `pid ${estadoServidor.pid} · veja o log na aba do projeto.`,
-      });
-    }
-  } catch (error) {
-    aplicar(anterior);
-    showError(error);
-  }
-}
-
-//: Quanto tempo esperar o servidor recém-subido começar a atender, e de quanto
-//: em quanto perguntar. Oito segundos cobre Vite e uvicorn com folga; o que
-//: passar disso o verificador de background resolve sozinho.
+//: Quanto tempo esperar a aplicação recém-subida começar a atender, e de
+//: quanto em quanto perguntar. Oito segundos cobrem Vite e uvicorn com folga;
+//: o que passar disso o verificador de background resolve sozinho.
 const ESPERA_MAX_MS = 8000;
 const ESPERA_PASSO_MS = 800;
 
+/** Espera alguma porta declarada do projeto responder, com teto.
+ *
+ * Perguntar uma vez só devolveria "desligado" para algo que acabou de nascer:
+ * entre o processo existir e o servidor atender há sempre alguns segundos, e o
+ * botão voltaria sozinho para "Desligado" com o serviço subindo.
+ */
 async function esperarResposta(projectId) {
   const limite = Date.now() + ESPERA_MAX_MS;
   for (;;) {
@@ -150,6 +103,74 @@ async function esperarResposta(projectId) {
     if (Date.now() >= limite) return false;
     await new Promise((resolve) => window.setTimeout(resolve, ESPERA_PASSO_MS));
   }
+}
+
+/** Sobe o ambiente inteiro: containers primeiro, aplicação depois.
+ *
+ * A sequência roda como job no servidor, porque `compose up` puxando imagem
+ * leva minutos e uma requisição pendurada esse tempo é a forma errada de
+ * esperar. Aqui só acompanhamos o desfecho.
+ */
+async function subirAmbiente(project) {
+  const aceito = await api.environmentUp(project.id);
+  const job = await waitJob(aceito.job_id);
+
+  if (job.status !== 'SUCCESS') {
+    toast(`${project.name}: a subida terminou em ${job.status.toLowerCase()}.`, {
+      kind: 'error',
+      meta: job.message ?? 'A aba Docker do projeto mostra a saída completa.',
+    });
+    return 'off';
+  }
+
+  // Quem decide o estado exibido é a verificação, nunca o código de saída. O
+  // botão que se declarava ligado por conta própria era desmentido pelo
+  // verificador trinta segundos depois, e voltava sozinho — parecendo que a
+  // ordem não tinha sido obedecida.
+  const respondeu = await esperarResposta(project.id);
+  if (respondeu) {
+    toast(`${project.name}: no ar.`, { kind: 'success' });
+    return 'on';
+  }
+
+  toast(`${project.name}: subiu, mas nenhuma porta declarada respondeu ainda.`, {
+    kind: 'warning',
+    meta: 'Pode estar compilando. O console do job mostra o progresso.',
+  });
+  return 'off';
+}
+
+/** Para a aplicação. Os containers ficam de pé, salvo pedido explícito.
+ *
+ * A assimetria vem do uso real: banco e fila são caros de subir e não mudam
+ * entre uma execução e outra da aplicação. Derrubá-los a cada parada do
+ * backend trocaria um ciclo de dois segundos por um de trinta. Quem quiser o
+ * desligamento completo segura Shift ao clicar — fora do caminho do clique
+ * diário, mas alcançável sem menu.
+ */
+async function pararAplicacao(project, { derrubarDocker = false } = {}) {
+  const { stopped } = await api.environmentDown(project.id, derrubarDocker);
+
+  const real = await api.checkServices(project.id).catch(() => ({ items: [] }));
+  const aindaResponde = real.items.some((item) => item.state === 'ONLINE');
+
+  if (stopped === 'docker') {
+    toast(`${project.name}: containers parados.`, { kind: 'success' });
+  } else if (aindaResponde) {
+    // O caso normal deste fluxo, e por isso a mensagem é informativa e não de
+    // erro: a aplicação parou e o ambiente continua atendendo, que é
+    // exatamente o que se pediu.
+    toast(`${project.name}: aplicação parada. Os containers seguem no ar.`, {
+      kind: 'success',
+      meta: 'Shift+clique para derrubar os containers também.',
+    });
+  } else {
+    toast(`${project.name}: parado.`, { kind: 'success' });
+  }
+
+  // O estado do botão é o da **aplicação**, não o do ambiente: o chip do
+  // Docker ao lado é quem responde pelos containers.
+  return 'off';
 }
 
 const MOTIVOS = {
@@ -169,7 +190,10 @@ const TEXTO = {
 //: A dica diz o que o clique faz *neste* projeto. "Clique para subir o
 //: Compose" num projeto de `npm run dev` estaria simplesmente errado.
 const DICA = {
-  docker: { on: 'Clique para parar os containers.', off: 'Clique para subir o Compose.' },
+  docker: {
+    on: 'Clique para parar a aplicação. Os containers ficam de pé.',
+    off: 'Clique para subir os containers e, em seguida, a aplicação.',
+  },
   server: {
     on: 'Clique para parar o servidor de desenvolvimento.',
     off: 'Clique para subir o servidor de desenvolvimento do projeto.',
@@ -188,11 +212,15 @@ const DICA = {
 export function powerToggle(project, { on = false, compact = false, onChanged } = {}) {
   const missing = project.status === 'MISSING';
   const docker = hasDocker(project);
-  // Compose primeiro: num projeto que tem os dois, subir a stack inteira é o
-  // que a pessoa quer — o servidor solto deixaria o banco de fora.
-  const via = docker ? 'docker' : hasRunnableStack(project) ? 'server' : null;
-  const habilitado = via !== null && !missing;
+  // O botão sobe o ambiente inteiro, na ordem: containers primeiro, aplicação
+  // depois. Quem decide a ordem é o servidor — a tela não tem como saber, sem
+  // uma chamada por card, se o projeto declara `run:`.
+  // `can_start` vem do servidor, que leu o disco; a heurística de stack é a
+  // reserva para quem chamar isto com um projeto que não passou pela lista.
+  const sabeSubir = project.can_start ?? (docker || hasRunnableStack(project));
+  const habilitado = sabeSubir && !missing;
   const motivo = missing ? MOTIVOS.missing : MOTIVOS.semComando;
+  const via = docker ? 'docker' : 'server';
 
   let estado = on ? 'on' : 'off';
   //: Rótulo do estado `busy`: "Subindo…" e "Parando…" dizem o que está
@@ -226,7 +254,7 @@ export function powerToggle(project, { on = false, compact = false, onChanged } 
       : motivo;
   };
 
-  botao.addEventListener('click', async () => {
+  botao.addEventListener('click', async (event) => {
     if (!habilitado || estado === 'busy') return;
 
     const ligando = estado !== 'on';
@@ -235,45 +263,10 @@ export function powerToggle(project, { on = false, compact = false, onChanged } 
     gerundio = ligando ? 'Subindo…' : 'Parando…';
     desenhar();
 
-    if (via === 'server') {
-      await acionarServidor(project, { ligando, anterior, aplicar: (novo) => (estado = novo) });
-      desenhar();
-      onChanged?.(estado === 'on');
-      return;
-    }
-
-    const acao = ligando ? 'up' : 'stop';
-
     try {
-      const aceito = await api.dockerAction(project.id, acao);
-      const job = await waitJob(aceito.job_id);
-
-      if (job.status === 'SUCCESS') {
-        // O comando terminou, mas quem decide o estado exibido é a verificação
-        // — não o código de saída. Antes o botão se declarava desligado por
-        // conta própria e o verificador, 30 s depois, dizia o contrário: o
-        // botão voltava sozinho para "Ligado" e parecia que a ordem não tinha
-        // sido obedecida. Acontece de verdade quando a porta declarada é
-        // servida por algo de fora do Compose (um Postgres nativo na mesma
-        // porta do container, por exemplo).
-        const real = await confirmarEstado(project.id, acao);
-        estado = real.ligado ? 'on' : 'off';
-
-        if (acao === 'stop' && real.ligado) {
-          toast(`${project.name}: containers parados, mas a porta continua respondendo.`, {
-            kind: 'warning',
-            meta: 'Algo fora do Compose está ocupando a porta. Veja em Ports quem é.',
-          });
-        } else {
-          toast(`${project.name}: ${acao === 'up' ? 'no ar' : 'parado'}.`, { kind: 'success' });
-        }
-      } else {
-        estado = anterior;
-        toast(`${project.name}: "${acao}" terminou em ${job.status.toLowerCase()}.`, {
-          kind: 'error',
-          meta: 'A aba Docker do projeto mostra a saída completa.',
-        });
-      }
+      estado = ligando
+        ? await subirAmbiente(project)
+        : await pararAplicacao(project, { derrubarDocker: event.shiftKey });
     } catch (error) {
       estado = anterior;
       showError(error);
@@ -285,4 +278,68 @@ export function powerToggle(project, { on = false, compact = false, onChanged } 
 
   desenhar();
   return botao;
+}
+
+/** Chip do ambiente: quantos containers do projeto estão de pé.
+ *
+ * Existe porque o botão grande passou a falar só da **aplicação**. Sem este
+ * chip, parar a aplicação deixaria o painel dizendo "Desligado" com o Postgres
+ * atendendo na porta — exatamente a confusão que o caso do ZAPBOT expôs, onde
+ * o estado exibido não correspondia ao que a máquina fazia.
+ *
+ * O clique aqui é o desligamento completo, fora do caminho do clique diário.
+ *
+ * @param {object} project
+ * @param {object} options
+ * @param {number|null} options.running  containers no ar; `null` = não sabido
+ * @param {Function} options.onChanged
+ */
+export function dockerChip(project, { running = null, onChanged } = {}) {
+  if (!hasDocker(project)) return null;
+
+  const noAr = typeof running === 'number' && running > 0;
+  const texto =
+    running === null ? 'containers' : noAr ? `${running} no ar` : 'containers parados';
+
+  const chip = el(
+    'button',
+    {
+      class: 'docker-chip',
+      type: 'button',
+      dataset: { on: noAr ? 'true' : 'false' },
+      disabled: !noAr,
+      title: noAr
+        ? 'Derrubar os containers deste projeto.'
+        : 'Nenhum container deste projeto está no ar.',
+      'aria-label': noAr
+        ? `Derrubar os containers de ${project.name}`
+        : `${project.name}: containers parados`,
+    },
+    [icon('container', { size: 12 }), el('span', { text: texto })]
+  );
+
+  chip.addEventListener('click', async () => {
+    if (!noAr) return;
+    // Derrubar o ambiente é o que a pessoa faz no fim do expediente, e o
+    // caminho de volta custa minutos. Vale a confirmação.
+    const segue = window.confirm(
+      `Derrubar os containers de "${project.name}"?
+
+` +
+        'A aplicação para junto. Subir de novo leva o tempo do `compose up`.'
+    );
+    if (!segue) return;
+
+    chip.disabled = true;
+    try {
+      await api.environmentDown(project.id, true);
+      toast(`${project.name}: ambiente derrubado.`, { kind: 'success' });
+      onChanged?.(false);
+    } catch (error) {
+      chip.disabled = false;
+      showError(error);
+    }
+  });
+
+  return chip;
 }

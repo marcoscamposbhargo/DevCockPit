@@ -103,6 +103,20 @@ class ProjectSummary(BaseModel):
     #: A tela cruza este total com o que o dashboard já traz do cache.
     services_total: int = 0
     last_accessed_at: datetime | None = None
+    #: O painel sabe subir a aplicação deste projeto (Compose ou comando de
+    #: execução). Separa "posso ligar" de "não sei como", que na tela são um
+    #: botão e uma explicação — nunca o mesmo botão apagado sem motivo.
+    can_start: bool = False
+    #: A **aplicação** está no ar. Não é o mesmo que "algum serviço responde":
+    #: num projeto cujo banco vive em container, o banco continua respondendo
+    #: com a aplicação parada, e contar os dois juntos fazia o botão anunciar
+    #: "Ligado" logo depois de desligar.
+    #:
+    #: `None` quando o projeto não tem aplicação separada — a stack inteira
+    #: roda em container e o Compose **é** a aplicação. Aí quem responde pelo
+    #: estado é a verificação de saúde, e `false` seria mentira: diria "parado"
+    #: com tudo no ar.
+    app_running: bool | None = None
 
 
 class ProjectDetail(BaseModel):

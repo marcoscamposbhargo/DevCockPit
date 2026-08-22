@@ -50,6 +50,27 @@ def bloqueia_execucao_real_em_job(request, monkeypatch):  # type: ignore[no-unty
         "app.runner.async_runner.AsyncCommandRunner.run", recusa, raising=True
     )
 
+    def recusa_processo(argv, cwd, log_file, env_extra=None):  # type: ignore[no-untyped-def]
+        raise AssertionError(
+            f"Teste tentou subir processo de longa duração: {argv}. "
+            "Dublê `app.services.environment_service.EnvironmentService` ou o "
+            "`start_background` usado, ou marque o teste como `integration`."
+        )
+
+    # O servidor de desenvolvimento não passa pelo `JobManager` — é um processo
+    # de vida longa, e essa é a razão de ele existir fora dali. Sem esta segunda
+    # rede, um teste que exercitasse a orquestração subiria `npm run dev` de
+    # verdade na máquina de quem roda a suíte, e o processo **sobreviveria ao
+    # pytest** de propósito: é o que o `CREATE_NEW_PROCESS_GROUP` garante.
+    #
+    # Aconteceu ao escrever `test_environment.py`: um `node server.js` nasceu
+    # num diretório temporário do pytest. Foi assim que esta guarda apareceu.
+    for alvo in (
+        "app.runner.background.start_background",
+        "app.services.dev_server_service.start_background",
+    ):
+        monkeypatch.setattr(alvo, recusa_processo, raising=True)
+
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:

@@ -357,3 +357,113 @@ def test_porta_declarada_que_confere_nao_vira_divergencia(client, workspace) -> 
     )
 
     assert client.get("/api/services/ports").json()["mismatches"] == []
+
+
+def test_uma_porta_observada_nao_e_sugerida_a_dois_servicos(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """Aceitar as duas sugestões poria os dois serviços na mesma porta.
+
+    Seria um conflito criado pela própria ferramenta que existe para apontar
+    conflitos. Com ambiguidade, o certo é reportar sem sugerir.
+    """
+    from tests.conftest import WRITE_HEADERS
+
+    diretorio = workspace / "app"
+    diretorio.mkdir(exist_ok=True)
+    criado = client.post(
+        "/api/projects",
+        json={"path": str(diretorio), "name": "app", "run_detection": False},
+        headers=WRITE_HEADERS,
+    ).json()
+    client.put(
+        f"/api/projects/{criado['id']}/services",
+        json={
+            "items": [
+                {"key": "backend", "label": "Backend", "port": 3004},
+                {"key": "db", "label": "Database", "port": 3005},
+            ]
+        },
+        headers=WRITE_HEADERS,
+    )
+
+    # Só uma porta do projeto está escutando; os dois serviços divergem dela.
+    client.app.state.port_discovery.scanner = FakePortScanner(
+        [ListeningPort(port=8000, pid=7, process_name="python.exe", cwd=str(diretorio))]
+    )
+    client.app.state.port_discovery.observe(
+        [ProjectRef(id=criado["id"], name="app", path=str(diretorio))]
+    )
+
+    corpo = client.get("/api/services/ports").json()
+
+    assert len(corpo["mismatches"]) == 2
+    # A divergência continua sendo apontada — o número está errado nos dois.
+    assert {m["declared_port"] for m in corpo["mismatches"]} == {3004, 3005}
+    # Mas nenhuma sugestão: não há como saber qual serviço é o da 8000.
+    assert all(m["observed_port"] is None for m in corpo["mismatches"])
+
+
+def test_com_um_so_servico_divergente_a_sugestao_volta(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """Sem ambiguidade a porta que sobra é daquele serviço, e o clique economiza
+    a digitação."""
+    from tests.conftest import WRITE_HEADERS
+
+    diretorio = workspace / "solo"
+    diretorio.mkdir(exist_ok=True)
+    criado = client.post(
+        "/api/projects",
+        json={"path": str(diretorio), "name": "solo", "run_detection": False},
+        headers=WRITE_HEADERS,
+    ).json()
+    client.put(
+        f"/api/projects/{criado['id']}/services",
+        json={"items": [{"key": "backend", "label": "Backend", "port": 3004}]},
+        headers=WRITE_HEADERS,
+    )
+
+    client.app.state.port_discovery.scanner = FakePortScanner(
+        [ListeningPort(port=8000, pid=7, process_name="python.exe", cwd=str(diretorio))]
+    )
+    client.app.state.port_discovery.observe(
+        [ProjectRef(id=criado["id"], name="solo", path=str(diretorio))]
+    )
+
+    divergencias = client.get("/api/services/ports").json()["mismatches"]
+
+    assert len(divergencias) == 1
+    assert divergencias[0]["observed_port"] == 8000
+
+
+def test_porta_de_container_e_atribuida_a_quem_a_declara_sozinho() -> None:
+    """O banco em container é do projeto cujo Compose o publicou.
+
+    Sem esta regra ele aparecia como "sem dono" e o serviço declarado virava
+    divergência — alarme falso justamente na configuração que o painel
+    recomenda: ambiente em container, aplicação nativa.
+    """
+    disco, scanner = servico()
+    app = ProjectRef(id="app", name="App", path=f"{RAIZ}/app", declared_ports=(5432,))
+    scanner.ports = [
+        ListeningPort(
+            port=5432,
+            pid=9,
+            process_name="com.docker.backend.exe",
+            cwd="C:/Docker",
+        )
+    ]
+
+    porta = disco.observe([app]).ports[0]
+
+    assert porta.project_id == "app"
+    assert porta.matched_by == "container"
+
+
+def test_porta_de_container_disputada_por_dois_projetos_nao_e_atribuida() -> None:
+    """Evidência ambígua não vira atribuição: é o conflito que a tela aponta."""
+    disco, scanner = servico()
+    a = ProjectRef(id="a", name="A", path=f"{RAIZ}/a", declared_ports=(5432,))
+    b = ProjectRef(id="b", name="B", path=f"{RAIZ}/b", declared_ports=(5432,))
+    scanner.ports = [
+        ListeningPort(port=5432, pid=9, process_name="com.docker.backend.exe", cwd="C:/Docker")
+    ]
+
+    assert disco.observe([a, b]).ports[0].project_id is None

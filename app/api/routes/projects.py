@@ -29,6 +29,8 @@ def _to_summary(
     *,
     can_start: bool = False,
     app_running: bool | None = None,
+    open_service_key: str | None = None,
+    open_service_label: str | None = None,
 ) -> ProjectSummary:
     return ProjectSummary(
         id=project.id,
@@ -41,6 +43,8 @@ def _to_summary(
         last_accessed_at=project.last_accessed_at,
         can_start=can_start,
         app_running=app_running,
+        open_service_key=open_service_key,
+        open_service_label=open_service_label,
     )
 
 
@@ -82,11 +86,25 @@ def _capacidades(project: Project, servers, rodando: set[str]) -> dict:  # type:
     """
     tem_app = servers.plan(project) is not None
 
+    # Depois de ligar, a próxima coisa que alguém quer é **ver** — e o card
+    # sabia ligar sem saber abrir, o que obrigava a passar pela página do
+    # projeto só para clicar num link.
+    abrivel = next(
+        (
+            service
+            for service in project.services
+            if service.open_in_browser and (service.url or service.port)
+        ),
+        None,
+    )
+
     return {
         "can_start": tem_app or _has_compose(project),
         # `None` de propósito quando não há aplicação separada: ver o comentário
         # do campo em `ProjectSummary`.
         "app_running": (project.id in rodando) if tem_app else None,
+        "open_service_key": abrivel.key if abrivel else None,
+        "open_service_label": abrivel.label if abrivel else None,
     }
 
 

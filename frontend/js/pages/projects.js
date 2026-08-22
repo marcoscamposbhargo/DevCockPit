@@ -164,6 +164,42 @@ function monogram(project) {
   });
 }
 
+/** Abre no navegador o primeiro serviço do projeto que dá para abrir.
+ *
+ * Manda a **chave** do serviço, nunca a URL: quem abre é o backend, e aceitar
+ * URL do cliente reabriria o vetor que a decisão D-13 fecha — a página poderia
+ * fazer o painel abrir qualquer endereço.
+ */
+function openServiceButton(project, signals) {
+  if (!project.open_service_key) return null;
+
+  const online = (signals.online.get(project.id) ?? 0) > 0;
+
+  return el(
+    'button',
+    {
+      class: 'btn btn--sm',
+      type: 'button',
+      disabled: !online,
+      title: online
+        ? `Abrir ${project.open_service_label} no navegador`
+        : `${project.open_service_label} não respondeu na última verificação.`,
+      'aria-label': `Abrir ${project.open_service_label} de ${project.name}`,
+      onClick: async (event) => {
+        const botao = event.currentTarget;
+        botao.disabled = true;
+        try {
+          await api.openBrowser(project.id, project.open_service_key);
+        } catch (error) {
+          showError(error);
+        }
+        botao.disabled = false;
+      },
+    },
+    [icon('external', { size: 13 }), 'Abrir']
+  );
+}
+
 function projectCard(project, { onDelete, onTogglePin, onPowerChanged, onDetect, available, signals }) {
   const isMissing = project.status === 'MISSING';
 
@@ -238,6 +274,10 @@ function projectCard(project, { onDelete, onTogglePin, onPowerChanged, onDetect,
         onChanged: onPowerChanged,
       }),
       quickTools(project, available),
+      // Depois de ligar, a próxima coisa que se quer é ver. O card sabia ligar
+      // sem saber abrir, e chegar na aplicação exigia passar pela página do
+      // projeto — dois cliques a mais no gesto mais frequente da tela.
+      openServiceButton(project, signals),
       el('div', { class: 'card__actions-end' }, [
         el('span', {
           class: 'field__hint',

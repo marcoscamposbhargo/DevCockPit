@@ -117,6 +117,11 @@ class ProjectSummary(BaseModel):
     #: estado é a verificação de saúde, e `false` seria mentira: diria "parado"
     #: com tudo no ar.
     app_running: bool | None = None
+    #: Primeiro serviço que dá para abrir no navegador. O card precisa da
+    #: **chave**, não da URL: quem abre é o backend, e passar URL do cliente
+    #: reabriria o vetor que a decisão D-13 fecha.
+    open_service_key: str | None = None
+    open_service_label: str | None = None
 
 
 class ProjectDetail(BaseModel):

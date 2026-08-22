@@ -7,11 +7,13 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends
 
 from app.api.deps import (
+    get_cache,
     get_health_service,
     get_port_discovery,
     get_project_service,
     get_system_service,
 )
+from app.core.cache import TTLCache
 from app.models.project import ProjectService as ProjectServiceModel
 from app.schemas.health import (
     ObservedPortOut,
@@ -25,6 +27,7 @@ from app.schemas.health import (
     ServicesReplace,
     ServiceStateOut,
 )
+from app.services.dashboard_service import CACHE_KEY as DASHBOARD_CACHE_KEY
 from app.services.health_service import HealthService, targets_from_project
 from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
@@ -115,10 +118,17 @@ async def check_services(
     project_id: str,
     projects: ProjectService = Depends(get_project_service),
     health: HealthService = Depends(get_health_service),
+    cache: TTLCache = Depends(get_cache),
 ) -> ServiceList:
     """Reverificação sob demanda (FR-063). Único caminho que verifica na hora."""
     project = projects.get(project_id)
     await health.check_many(targets_from_project(project))
+
+    # O dashboard é o que alimenta os sinais do card, e tem cache próprio. Sem
+    # descartá-lo aqui, a tela continuava mostrando "1/2 online" logo depois de
+    # uma verificação que encontrou os dois no ar — o número certo só aparecia
+    # no ciclo seguinte, e quem clicou concluía que a ação não pegou.
+    cache.invalidate(DASHBOARD_CACHE_KEY)
 
     return ServiceList(
         items=[
@@ -274,6 +284,16 @@ def _mismatches(projects, observacao) -> list[PortMismatch]:  # type: ignore[no-
 
     O segundo caso só é reportado quando *alguma* porta do projeto foi
     observada, para não transformar todo projeto desligado em alerta.
+
+    **Uma porta observada só pode ser sugerida a um serviço.** A primeira
+    versão sugeria a mesma porta a todos os serviços divergentes do projeto: um
+    projeto com backend e banco desalinhados recebia "usar 8000" nos dois, e
+    aceitar as duas sugestões colocaria os dois serviços na mesma porta — um
+    conflito criado pela própria ferramenta que existe para apontar conflitos.
+
+    Sobrando ambiguidade — mais serviços divergentes que portas candidatas —, a
+    divergência é reportada **sem** sugestão. Dizer "está errado" sem chutar o
+    certo é honesto; chutar errado custa uma porta trocada à toa.
     """
     por_projeto: dict[str, list] = {}
     for porta in observacao.ports:
@@ -290,16 +310,22 @@ def _mismatches(projects, observacao) -> list[PortMismatch]:  # type: ignore[no-
             continue
 
         portas_observadas = {porta.port for porta in observadas}
+        declaradas = {s.port for s in project.services if s.port}
 
-        for service in project.services:
-            if not service.port or service.port in portas_observadas:
-                continue
+        divergentes = [
+            service
+            for service in project.services
+            if service.port and service.port not in portas_observadas
+        ]
+        candidatas = [p for p in observadas if p.port not in declaradas]
 
-            # O projeto está no ar em outra porta. Sugere a primeira observada
-            # que ainda não corresponde a nenhum serviço declarado dele.
-            declaradas = {s.port for s in project.services if s.port}
-            candidatas = [p for p in observadas if p.port not in declaradas]
-            sugestao = candidatas[0] if candidatas else None
+        # Com um só serviço divergente, a porta que sobra é dele. Com vários,
+        # não há como saber qual porta é de qual — e a resposta certa a "não
+        # sei" é não sugerir, não sugerir a mesma para todos.
+        pode_sugerir = len(divergentes) == 1
+
+        for indice, service in enumerate(divergentes):
+            sugestao = candidatas[indice] if pode_sugerir and indice < len(candidatas) else None
 
             divergencias.append(
                 PortMismatch(

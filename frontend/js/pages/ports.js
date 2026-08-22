@@ -85,7 +85,7 @@ function conflictAlert(mapa) {
  * estado. O botão aplica a porta observada de uma vez, porque a correção é
  * sempre a mesma e digitar o número de novo é atrito puro.
  */
-function mismatchAlert(mapa, { onAdotar }) {
+function mismatchAlert(mapa, { onAdotar, onEditarPorta }) {
   if (!mapa.mismatches?.length) return null;
 
   return el('div', { class: 'alert', role: 'status' }, [
@@ -115,7 +115,10 @@ function mismatchAlert(mapa, { onAdotar }) {
                   ? el('span', { class: 'field__hint', text: ` (${divergencia.process_name})` })
                   : null,
               ])
-            : null,
+            : // Sem sugestão o aviso continua valendo — o número está errado —,
+              // mas quem escolhe o certo é quem conhece o projeto. Oferecer um
+              // botão que chuta custaria uma porta trocada à toa.
+              el('span', { class: 'field__hint', text: 'nada do projeto responde nessa porta' }),
           divergencia.observed_port
             ? el('button', {
                 class: 'btn btn--sm btn--primary',
@@ -124,7 +127,13 @@ function mismatchAlert(mapa, { onAdotar }) {
                 title: 'Grava a porta observada no cadastro deste serviço.',
                 onClick: () => onAdotar(divergencia),
               })
-            : null,
+            : el('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                text: 'Corrigir',
+                title: 'Abre a edição da porta deste serviço na tabela abaixo.',
+                onClick: () => onEditarPorta(divergencia),
+              }),
         ])
       ),
     ]),
@@ -384,6 +393,17 @@ export async function renderPorts(container) {
       await onSave(binding, divergencia.observed_port);
     };
 
+    /** Leva direto à edição da porta daquele serviço, na tabela abaixo. */
+    const onEditarPorta = (divergencia) => {
+      const binding = mapa.bindings.find(
+        (b) =>
+          b.project_id === divergencia.project_id &&
+          b.service_key === divergencia.service_key
+      );
+      if (!binding) return;
+      onEdit(binding);
+    };
+
     const emEscuta = new Map(
       (mapa.observed ?? []).map((porta) => [
         porta.port,
@@ -452,7 +472,7 @@ export async function renderPorts(container) {
       // A divergência vem antes do conflito: o conflito é entre dois números
       // que alguém escolheu, a divergência é entre o que se escolheu e o que a
       // máquina está fazendo — e é a que faz o painel parecer quebrado.
-      mismatchAlert(mapa, { onAdotar }),
+      mismatchAlert(mapa, { onAdotar, onEditarPorta }),
       conflictAlert(mapa),
       el('p', {
         class: 'field__hint',

@@ -12,9 +12,12 @@ Regra de atribuição, em ordem. A primeira que casa vence:
    normal: `uvicorn`, `npm run dev`, `flask run`.
 2. **Linha de comando.** O caminho do projeto aparece nos argumentos. Pega o
    caso do processo lançado de outro diretório com o caminho no argumento.
-3. **Runtime de container.** Quem abriu foi o Docker. A porta é real, mas o
-   dono não dá para deduzir daqui, então ela é marcada e não atribuída — o
-   painel de Docker do projeto é quem responde essa pergunta.
+3. **Runtime de container, com a porta declarada por um único projeto.** O
+   `cwd` do Docker aponta para a instalação dele, então as duas regras acima
+   nunca casam com porta publicada por container. Sobra o número: se um único
+   projeto declara aquela porta, foi o Compose dele que a publicou. Declarada
+   por dois, ninguém é atribuído — isso é o conflito que a tela já aponta, e
+   escolher um dos dois seria inventar.
 4. **Sem dono.** Alguém está usando a porta e não é nenhum projeto cadastrado.
    Continua valendo a pena mostrar: é exatamente o que explica um `up` que
    falha com "address already in use".
@@ -78,6 +81,10 @@ class ProjectRef:
     id: str
     name: str
     path: str
+    #: Portas que o projeto declara. Usadas só como última evidência, para
+    #: porta publicada por container — onde o diretório de trabalho aponta para
+    #: a instalação do Docker e não diz nada sobre o dono.
+    declared_ports: tuple[int, ...] = ()
 
 
 class PortDiscoveryService:
@@ -97,8 +104,9 @@ class PortDiscoveryService:
             self.cache.set(CACHE_KEY, observacao)
             return observacao
 
+        dono_por_porta = self._sole_declarers(projects)
         observacao = PortObservation(
-            ports=[self._assign(porta, projects) for porta in escutando]
+            ports=[self._assign(porta, projects, dono_por_porta) for porta in escutando]
         )
         self.cache.set(CACHE_KEY, observacao)
         return observacao
@@ -113,7 +121,12 @@ class PortDiscoveryService:
 
     # --- atribuição ---
 
-    def _assign(self, porta: ListeningPort, projects: list[ProjectRef]) -> ObservedPort:
+    def _assign(
+        self,
+        porta: ListeningPort,
+        projects: list[ProjectRef],
+        dono_por_porta: dict[int, ProjectRef],
+    ) -> ObservedPort:
         dono = self._match_by_cwd(porta, projects)
         if dono is not None:
             return self._observed(porta, dono, "cwd")
@@ -123,9 +136,32 @@ class PortDiscoveryService:
             return self._observed(porta, dono, "cmdline")
 
         if porta.via_container_runtime:
-            return self._observed(porta, None, "container")
+            # O `cwd` do Docker aponta para a instalação dele, então as duas
+            # regras acima nunca casam com uma porta publicada por container.
+            # Sobra o número: se **um único** projeto declara aquela porta, foi
+            # o Compose dele que a publicou.
+            #
+            # Sem isto, o banco em container de um projeto aparecia como "sem
+            # dono" e o serviço declarado virava divergência — um alarme falso
+            # justamente na configuração que o painel recomenda.
+            declarado_por = dono_por_porta.get(porta.port)
+            return self._observed(porta, declarado_por, "container")
 
         return self._observed(porta, None, "unknown")
+
+    @staticmethod
+    def _sole_declarers(projects: list[ProjectRef]) -> dict[int, ProjectRef]:
+        """Porta -> projeto, só quando **um** projeto declara aquela porta.
+
+        Porta disputada por dois projetos não identifica ninguém: é o conflito
+        que a tela de Ports já aponta, e escolher um dos dois aqui seria
+        inventar. Evidência ambígua não vira atribuição.
+        """
+        vistos: dict[int, ProjectRef | None] = {}
+        for project in projects:
+            for porta in project.declared_ports:
+                vistos[porta] = None if porta in vistos else project
+        return {porta: dono for porta, dono in vistos.items() if dono is not None}
 
     @staticmethod
     def _match_by_cwd(porta: ListeningPort, projects: list[ProjectRef]) -> ProjectRef | None:
@@ -173,4 +209,12 @@ class PortDiscoveryService:
 
 
 def refs_from_projects(projects) -> list[ProjectRef]:  # type: ignore[no-untyped-def]
-    return [ProjectRef(id=p.id, name=p.name, path=p.path) for p in projects]
+    return [
+        ProjectRef(
+            id=p.id,
+            name=p.name,
+            path=p.path,
+            declared_ports=tuple(s.port for s in p.services if s.port),
+        )
+        for p in projects
+    ]

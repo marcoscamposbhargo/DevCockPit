@@ -643,3 +643,63 @@ latência real, e as telas legíveis em claro e escuro.
 - [ ] clicar em VS Code / Pasta / Terminal (abre janela na sua área de trabalho,
       então não cliquei)
 - [ ] conferir a aba Docker com o Docker Desktop desligado
+
+---
+
+## Sessão 2026-08-21 (noite, parte 3) — o botão bloqueado
+
+**Relato:** "ainda tá com o bloqueio no link de abertura do VS Code". Perguntado
+o que aparecia na tela, a resposta foi decisiva: "só o sinal de bloqueado".
+Não era erro de API — era o cursor `not-allowed` de um botão desabilitado.
+
+### O bug
+
+`tools()` em `frontend/js/lib/actions.js` memoizava a promessa do
+`GET /api/health` **inclusive quando ela falhava**:
+
+```js
+toolsPromise = api.health().then(h => h.tools).catch(() => ({git:false, docker:false, code:false}));
+```
+
+A página aberta consultou o health no exato momento em que o uvicorn estava
+sendo reiniciado (duas vezes, para carregar o código novo do manifesto). O
+`catch` gravou "nenhuma ferramenta existe" e esse resultado valeu pelo resto da
+sessão: VS Code, Pasta e Terminal desabilitados em todas as telas, sem erro
+visível — o clique nem chegava a acontecer, então não havia o que mostrar.
+
+Por isso a auditoria não tinha rastro: nenhum `FAILED`, nenhum `request denied`
+no log do servidor, e a chamada direta por `curl` devolvia `200`. O defeito
+estava inteiramente no navegador.
+
+### A correção (D-45, commit `ba02014`)
+
+- só o sucesso entra em cache; no `catch` a promessa é descartada e a consulta
+  seguinte pergunta de novo;
+- o indicador do rodapé revalida a cada 60 s e invalida o cache junto, o que
+  também cobre o PATH mudando com a tela aberta (instalar o VS Code, subir o
+  Docker Desktop).
+
+### Como foi provado
+
+No próprio browser, com o módulo recarregado: com o servidor derrubado,
+`code=false`; assim que ele volta, a consulta seguinte devolve `code=true` sem
+F5. Antes do fix ficava `false` para sempre.
+
+Um detalhe do processo: as duas primeiras tentativas de prova deram falso
+negativo porque um stub de `window.fetch` de um teste anterior ficou preso na
+página — `goto` para a mesma URL com hash não recarrega. Só com
+`?limpo=1` na URL o `fetch` voltou a ser nativo e o teste ficou honesto.
+
+### Lição que vale além deste projeto
+
+Cachear resultado de falha em memória é armadilha: o estado transitório vira
+permanente, e o sintoma aparece longe da causa. Cachear só o sucesso custa uma
+linha.
+
+### Continua com você
+
+- [ ] Ctrl+F5 na aba aberta (ela ainda tem o JS antigo, e é o próprio bug que
+      a mantém bloqueada)
+- [ ] clicar em VS Code / Pasta / Terminal, que abrem janela na sua área de
+      trabalho
+- [ ] conferir a aba Docker com o Docker Desktop desligado

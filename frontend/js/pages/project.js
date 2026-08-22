@@ -8,10 +8,14 @@ import { navigate } from '../router.js';
 import { renderDockerPanel } from './docker-panel.js';
 import { renderGitPanel } from './git-panel.js';
 import { renderManifestPanel } from './manifest-panel.js';
+import { renderServerPanel } from './server-panel.js';
 import { renderServicesPanel } from './services-panel.js';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
+  // Server vem antes de Docker porque é a aba do dia a dia: subir o backend e
+  // ler o que ele cuspiu acontece dezenas de vezes; mexer em container, não.
+  { key: 'server', label: 'Server' },
   { key: 'git', label: 'Git' },
   { key: 'docker', label: 'Docker' },
   { key: 'services', label: 'Services' },
@@ -207,7 +211,9 @@ export async function renderProject(container, params, query) {
     panel
   );
 
-  if (activeTab === 'git') {
+  if (activeTab === 'server') {
+    await renderServerPanel(panel);
+  } else if (activeTab === 'git') {
     await renderGitPanel(panel);
   } else if (activeTab === 'docker') {
     await renderDockerPanel(panel);

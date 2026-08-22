@@ -78,6 +78,39 @@ def _resolve_program(program: str, cwd: Path) -> str:
     return shutil.which(program) or program
 
 
+#: A partir daqui o log é rotacionado na próxima subida. Oito megabytes são
+#: dezenas de milhares de linhas — muito além do que alguém lê, e ainda assim
+#: pouco no disco.
+LOG_ROTATE_BYTES = 8 * 1024 * 1024
+
+
+def _rotate_if_large(log_file: Path) -> None:
+    """Guarda o log anterior e começa um novo, quando o atual passou do limite.
+
+    O arquivo é aberto em modo `append` e nunca era truncado: um Vite em modo
+    watch ligado a semana inteira escreve sem parar, e ninguém percebe porque a
+    leitura já lê só o fim. O disco percebe.
+
+    A rotação acontece **na subida**, nunca com o servidor rodando: mexer no
+    arquivo que um processo tem aberto é como se perde log de verdade. Guarda-se
+    uma geração — `.1` —, que é o suficiente para investigar a queda que acabou
+    de acontecer sem virar um arquivo por dia esquecido no disco.
+    """
+    try:
+        if not log_file.is_file() or log_file.stat().st_size < LOG_ROTATE_BYTES:
+            return
+        anterior = log_file.with_suffix(log_file.suffix + ".1")
+        anterior.unlink(missing_ok=True)
+        log_file.rename(anterior)
+    except OSError as exc:
+        # Log é apoio: falhar em rotacionar não pode impedir o servidor de
+        # subir. Segue em append, que no pior caso é o comportamento antigo.
+        logger.warning(
+            "não foi possível rotacionar o log",
+            extra={"extra_fields": {"log_file": str(log_file), "error": str(exc)}},
+        )
+
+
 def start_background(
     argv: list[str],
     cwd: Path,
@@ -119,6 +152,8 @@ def start_background(
         creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         start_new_session = True
+
+    _rotate_if_large(log_file)
 
     # `a` e não `w`: reiniciar o servidor não pode apagar o log do que acabou
     # de quebrar, que é exatamente o momento em que alguém vai lê-lo.

@@ -1305,6 +1305,166 @@
   font-size: var(--fs-xs);
 }
 
+/* Ocupa o lugar do botão de ligar quando não há como ligar.
+   O botão apagado com o motivo só no tooltip fazia quem não passa o mouse
+   concluir que a ferramenta estava quebrada. Aqui o motivo é o próprio
+   controle, e o link leva a como resolver. */
+.card__no-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.card__no-start-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* --- aba Server ---
+   O cabeçalho responde "está no ar?" e os controles vêm ao lado, porque a ação
+   é consequência do estado e não uma decisão separada. */
+
+.server-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.server-head__state {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.server-head__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+
+/* O halo só existe no ar: parado, um ponto cinza basta e não compete. */
+.server-head__state[data-on='true'] .server-head__dot {
+  background: var(--status-running);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-running) 22%, transparent);
+}
+
+.server-head__actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+/* O comando aparece antes do clique: ninguém deve descobrir o que o botão faz
+   depois de apertá-lo. */
+.server-cmd {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+}
+
+.server-cmd__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.server-cmd__origin {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.server-cmd__code {
+  display: block;
+  overflow-x: auto;
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  white-space: pre;
+}
+
+/* --- visor de log --- */
+
+.log-view {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+.log-view__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.log-view__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--status-running);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.log-view__status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* "Sem atualizar" é aviso, não erro: o texto na tela continua sendo a última
+   verdade conhecida, e só parou de ser renovado. */
+.log-view__status[data-erro='true'] {
+  color: var(--status-warning);
+}
+
+.log-view__output {
+  margin: 0;
+  padding: var(--sp-3);
+  max-height: 55vh;
+  min-height: 180px;
+  overflow: auto;
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* O foco existe porque o visor rola: quem navega por teclado precisa poder
+     entrar nele para usar as setas. */
+  scrollbar-gutter: stable;
+}
+
+.log-view__output:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: -2px;
+}
+
+.log-view__output[data-vazio='true'] {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
 /* --- chip do ambiente ---
    Companheiro do botão de liga/desliga: o botão fala da aplicação, o chip fala
    dos containers. Discreto de propósito — derrubar o ambiente é operação de

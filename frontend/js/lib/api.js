@@ -110,6 +110,7 @@ export const api = {
   serverStatus: (id) => request('GET', `/projects/${encodeURIComponent(id)}/server`),
   startServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/start`),
   stopServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/stop`),
+  restartServer: (id) => request('POST', `/projects/${encodeURIComponent(id)}/server/restart`),
   serverLogs: (id, lines = 200) =>
     request('GET', `/projects/${encodeURIComponent(id)}/server/logs`, { params: { lines } }),
 

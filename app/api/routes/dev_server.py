@@ -61,6 +61,23 @@ def server_stop(
     return _to_out(servers.stop(projects.get(project_id)))
 
 
+@router.post("/restart", response_model=DevServerOut)
+def server_restart(
+    project_id: str,
+    projects: ProjectService = Depends(get_project_service),
+    servers: DevServerService = Depends(get_dev_server_service),
+) -> DevServerOut:
+    """Para e sobe de novo, sem passar pelo ambiente.
+
+    Existe porque é o gesto mais repetido de um dia de trabalho em backend, e
+    fazê-lo com dois cliques e uma espera no meio é atrito puro. Não mexe nos
+    containers: quem reinicia o backend quer o banco exatamente onde estava.
+    """
+    project = projects.get(project_id, touch=True)
+    servers.stop(project)
+    return _to_out(servers.start(project))
+
+
 @router.get("/logs", response_model=DevServerLogs)
 def server_logs(
     project_id: str,

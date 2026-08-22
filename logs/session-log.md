@@ -447,6 +447,19 @@ previa que o sistema funciona inteiro sem manifesto.
 - [ ] Checklist manual da Fase 4 no browser: VS Code, Pasta, Terminal e Abrir
       serviço abrem janela na sua área de trabalho, então deixei para você
 - [ ] Conferir a aba Docker com o Docker Desktop desligado
-- [ ] Decidir se a pasta ganha `.git` próprio
-- [ ] Decidir o próximo passo: usar por uma semana (recomendo), fechar pontas
-      soltas, GitHub ou Dev Assistant
+- [ ] Decidir o próximo passo com base no uso real
+
+### Encerramento
+
+Repositório próprio criado e primeiro commit feito (`fc464fe`, 182 arquivos).
+`.env`, `configs/roots.yml`, `data/`, `.venv` e logs de servidor ficam fora do
+versionamento; só `logs/session-log.md` é versionado, pela convenção de manter
+o histórico de sessão junto do projeto.
+
+Detalhe que fecha o ciclo: com `.git` próprio, o DevCockpit agora enxerga a si
+mesmo como repositório — `is_repo: true`, branch `main`, `inside_other_repo:
+false`. Antes do ADR-008 ele teria reportado a branch e os milhares de
+arquivos sujos do repositório de `C:/Users/User`.
+
+`PROJECT_STATUS.md` passou para o modo **EM USO**, com uma seção de anotações
+de uso no topo. A partir daqui o backlog vem do que incomodar no dia a dia.

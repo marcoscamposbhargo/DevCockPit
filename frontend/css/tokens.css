@@ -2,18 +2,26 @@
    Nenhuma cor literal fora deste arquivo. */
 
 :root {
-  /* superfícies */
+  /* --- superfícies ---
+     Quatro camadas, do fundo da tela para a frente:
+       base      o chão da aplicação
+       surface   painéis e cards apoiados no chão
+       subtle    recuo *dentro* de um painel: chip, badge, botão secundário
+       elevated  o que flutua acima de tudo: toast, popover, modal
+     `subtle` e `elevated` existiam como um token só, e no tema claro os dois
+     acabavam brancos: badge branco sobre card branco desaparecia. */
   --bg-base: #0e1116;
   --bg-surface: #161b22;
+  --bg-subtle: #21262d;
   --bg-elevated: #1c2230;
-  --bg-hover: #21262d;
+  --bg-hover: #262c36;
   --border: #2d333b;
-  --border-strong: #404650;
+  --border-strong: #454c56;
 
   /* texto */
   --fg-primary: #e6edf3;
   --fg-secondary: #9198a1;
-  --fg-muted: #656c76;
+  --fg-muted: #6e7681;
 
   /* status */
   --status-running: #3fb950;
@@ -21,14 +29,19 @@
   --status-error: #f85149;
   --status-warning: #d29922;
   --status-starting: #58a6ff;
-  --status-unknown: #8957e5;
+  --status-unknown: #a371f7;
 
   --accent: #2f81f7;
   --accent-hover: #4493f8;
   /* texto sobre o accent: azul em ambos os temas, então o valor não muda */
   --fg-on-accent: #ffffff;
 
-  /* espaçamento — escala de 4 */
+  /* Quanto de uma cor de status entra no fundo de um chip. O tema escuro
+     aguenta mais tinta antes de embaçar o texto do que o claro. */
+  --tint-strength: 16%;
+  --tint-border-strength: 34%;
+
+  /* --- espaçamento — escala de 4 --- */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -40,24 +53,53 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
+  --radius-pill: 999px;
 
-  --font-ui: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-ui: ui-sans-serif, "Segoe UI Variable Text", "Segoe UI", system-ui,
+    -apple-system, sans-serif;
   --font-mono: "Cascadia Code", ui-monospace, Consolas, "SF Mono", monospace;
 
+  /* --- tipografia ---
+     Escala apertada (~1.15) porque uma tela de operação tem muitos níveis de
+     texto: contraste exagerado entre eles vira ruído, não hierarquia. */
   --fs-xs: 11px;
   --fs-sm: 12px;
   --fs-md: 14px;
   --fs-lg: 16px;
+  --fs-xl-sm: 18px;
   --fs-xl: 20px;
-  --fs-2xl: 28px;
+  --fs-2xl: 26px;
 
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  --lh-tight: 1.25;
+  --lh-snug: 1.4;
+  --lh-normal: 1.55;
+
+  /* Título grande com tracking padrão fica frouxo; texto pequeno com tracking
+     negativo fica apertado. Por isso são dois tokens, não um. */
+  --tracking-tight: -0.012em;
+  --tracking-caps: 0.06em;
+
+  /* --- elevação ---
+     Toda sombra tem deslocamento e desfoque: um halo sem deslocamento é
+     decoração, não profundidade. */
+  --shadow-sm: 0 1px 2px rgba(1, 4, 9, 0.4);
+  --shadow-md: 0 4px 12px rgba(1, 4, 9, 0.45);
+  --shadow-lg: 0 12px 32px rgba(1, 4, 9, 0.55);
+
+  --ring: color-mix(in srgb, var(--accent) 70%, transparent);
+  --ring-width: 2px;
 
   --dur-fast: 120ms;
   --dur-med: 200ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
-  --sidebar-width: 200px;
+  --sidebar-width: 216px;
   --topbar-height: 52px;
+  --content-max: 1600px;
 }
 
 /* Tema claro. Só os tokens mudam: nenhum componente conhece cor literal, então
@@ -65,16 +107,17 @@
 
    `data-theme` é escrito por js/lib/theme.js antes do primeiro paint. */
 :root[data-theme='light'] {
-  --bg-base: #f6f8fa;
+  --bg-base: #f4f6f8;
   --bg-surface: #ffffff;
+  --bg-subtle: #eef1f4;
   --bg-elevated: #ffffff;
-  --bg-hover: #eef1f4;
-  --border: #d8dee4;
-  --border-strong: #b9c0c8;
+  --bg-hover: #e6eaee;
+  --border: #d6dce2;
+  --border-strong: #aeb7c0;
 
   --fg-primary: #1f2328;
-  --fg-secondary: #59636e;
-  --fg-muted: #818b98;
+  --fg-secondary: #556069;
+  --fg-muted: #6f7883;
 
   --status-running: #1a7f37;
   --status-stopped: #6e7781;
@@ -86,5 +129,12 @@
   --accent: #0969da;
   --accent-hover: #0550ae;
 
-  --shadow-md: 0 4px 12px rgba(31, 35, 40, 0.12);
+  /* Fundo claro satura mais rápido: a mesma tinta do tema escuro aqui come o
+     contraste do texto do chip. */
+  --tint-strength: 10%;
+  --tint-border-strength: 28%;
+
+  --shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.08);
+  --shadow-md: 0 4px 12px rgba(31, 35, 40, 0.1);
+  --shadow-lg: 0 12px 32px rgba(31, 35, 40, 0.14);
 }

@@ -3,6 +3,7 @@
 import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
+import { icon } from '../lib/icons.js';
 import { emptyState, loading, pageHeader, showError, statCard, statusBadge } from '../lib/ui.js';
 
 function freshness(data, onReload) {
@@ -12,31 +13,59 @@ function freshness(data, onReload) {
       // Nunca apresentar cache como tempo real (decisão D-18).
       text: `atualizado ${relativeTime(data.generated_at)}${data.from_cache ? ' · de cache' : ''}`,
     }),
-    el('button', { class: 'btn btn--sm', text: 'Recarregar', onClick: onReload }),
+    el(
+      'button',
+      { class: 'btn btn--sm', type: 'button', onClick: onReload },
+      [icon('refresh', { size: 13 }), 'Recarregar']
+    ),
   ]);
+}
+
+/**
+ * Painel nomeado.
+ *
+ * A contagem vai no cabeçalho porque é a informação que decide se vale a pena
+ * ler o corpo — e porque um painel vazio precisa dizer isso antes de ocupar
+ * meia tela sem conteúdo.
+ */
+function panel({ title, count = null, action = null, body }) {
+  return el('section', { class: 'panel' }, [
+    el('header', { class: 'panel__header' }, [
+      el('h2', { class: 'panel__title', text: title }),
+      count !== null ? el('span', { class: 'panel__count', text: String(count) }) : null,
+      action,
+    ]),
+    el('div', { class: 'panel__body' }, [body]),
+  ]);
+}
+
+function panelEmpty(text) {
+  return el('p', { class: 'panel__empty', text });
 }
 
 function portConflicts(conflitos) {
   if (!conflitos.length) return null;
 
-  return el('div', { class: 'alert alert--warning' }, [
-    el('strong', { text: 'Conflito de porta' }),
-    el(
-      'div',
-      {},
-      conflitos.map((item) =>
+  return el('div', { class: 'alert', role: 'status' }, [
+    el('span', { class: 'alert__icon' }, [icon('alert', { size: 16 })]),
+    el('div', { class: 'alert__body' }, [
+      el('strong', {
+        text:
+          conflitos.length === 1 ? 'Conflito de porta' : `${conflitos.length} conflitos de porta`,
+      }),
+      ...conflitos.map((item) =>
         el('div', { class: 'field__hint' }, [
           el('span', { class: 'mono', text: String(item.port) }),
           ` usada por ${item.projects.join(', ')}`,
         ])
-      )
-    ),
+      ),
+    ]),
   ]);
 }
 
 function pendingChanges(itens) {
   if (!itens.length) {
-    return el('p', { class: 'field__hint', text: 'Nenhuma alteração pendente conhecida.' });
+    return panelEmpty('Nenhuma alteração pendente conhecida.');
   }
 
   return el('div', { class: 'table-wrap' }, [
@@ -53,7 +82,7 @@ function pendingChanges(itens) {
               }),
             ]),
             el('td', { class: 'mono', text: item.branch ?? '—' }),
-            el('td', { text: `${item.dirty_count} arquivo(s)` }),
+            el('td', { class: 'table__num', text: `${item.dirty_count} arquivo(s)` }),
           ])
         )
       ),
@@ -63,10 +92,9 @@ function pendingChanges(itens) {
 
 function activeServices(itens) {
   if (!itens.length) {
-    return el('p', {
-      class: 'field__hint',
-      text: 'Nenhum serviço online. O verificador roda em background para projetos fixados e recentes.',
-    });
+    return panelEmpty(
+      'Nenhum serviço online. O verificador roda em background para projetos fixados e recentes.'
+    );
   }
 
   return el('div', { class: 'table-wrap' }, [
@@ -90,11 +118,42 @@ function activeServices(itens) {
                     href: item.url,
                     target: '_blank',
                     rel: 'noreferrer',
-                    text: item.url,
+                    text: item.url.replace(/^https?:\/\//, ''),
                   })
                 : el('span', { class: 'mono', text: `:${item.port ?? '—'}` }),
             ]),
-            el('td', {}, [statusBadge('RUNNING')]),
+            el('td', { class: 'table__end' }, [statusBadge('RUNNING')]),
+          ])
+        )
+      ),
+    ]),
+  ]);
+}
+
+/** Mapa de portas — o que a tela não mostrava e é a pergunta de todo dia:
+ *  "quem está ocupando a 8000?". Conflito aparece marcado na própria linha. */
+function portMap(portas) {
+  if (!portas.length) {
+    return panelEmpty('Nenhuma porta declarada pelos projetos cadastrados.');
+  }
+
+  return el('div', { class: 'table-wrap' }, [
+    el('table', { class: 'table' }, [
+      el(
+        'tbody',
+        {},
+        portas.map((item) =>
+          el('tr', { dataset: { conflict: String(item.conflict) } }, [
+            el('td', { class: 'mono', text: String(item.port) }),
+            el('td', { text: item.projects.join(', ') }),
+            el('td', { class: 'table__end' }, [
+              item.conflict
+                ? el('span', { class: 'signal', dataset: { kind: 'dirty' } }, [
+                    el('span', { class: 'signal__dot' }),
+                    'conflito',
+                  ])
+                : null,
+            ]),
           ])
         )
       ),
@@ -103,35 +162,39 @@ function activeServices(itens) {
 }
 
 function recent(itens) {
-  if (!itens.length) return null;
+  if (!itens.length) return panelEmpty('Nenhum projeto acessado ainda.');
 
-  return el('section', { style: 'margin-top:var(--sp-5)' }, [
-    el('h2', { class: 'section-title', text: 'Acessados recentemente' }),
-    el(
-      'div',
-      { class: 'chip-row' },
-      itens.map((item) =>
+  return el(
+    'ul',
+    { class: 'recent-list' },
+    itens.map((item) =>
+      el('li', {}, [
         el('a', {
-          class: 'tech-chip',
+          class: 'recent-list__name',
           href: `#/projects/${encodeURIComponent(item.id)}`,
-          text: `${item.name} · ${relativeTime(item.last_accessed_at)}`,
-        })
-      )
-    ),
-  ]);
+          text: item.name,
+        }),
+        el('span', { class: 'field__hint', text: relativeTime(item.last_accessed_at) }),
+      ])
+    )
+  );
 }
 
 export async function renderDashboard(container) {
   mount(container, loading());
 
-  let data;
-  try {
-    data = await api.dashboard();
-  } catch (error) {
-    showError(error);
-    mount(container, el('p', { class: 'loading', text: error.message }));
+  // O mapa de portas é opcional: ele enriquece a tela, mas uma falha nele não
+  // pode derrubar o dashboard inteiro.
+  const [resultado, portas] = await Promise.allSettled([api.dashboard(), api.ports()]);
+
+  if (resultado.status === 'rejected') {
+    showError(resultado.reason);
+    mount(container, el('p', { class: 'loading', text: resultado.reason.message }));
     return;
   }
+
+  const data = resultado.value;
+  const mapaDePortas = portas.status === 'fulfilled' ? portas.value.items : [];
 
   if (data.totals.projects === 0) {
     mount(
@@ -155,21 +218,34 @@ export async function renderDashboard(container) {
     portConflicts(data.port_conflicts),
     el('div', { class: 'grid-stats' }, [
       statCard(data.totals.projects, 'Projetos'),
-      statCard(data.totals.running, 'Rodando'),
+      statCard(data.totals.running, 'Rodando', { tone: 'running' }),
       statCard(data.totals.stopped, 'Parados'),
       statCard(data.totals.with_docker, 'Com Docker'),
       statCard(data.totals.missing, 'Sem diretório'),
     ]),
-    el('div', { class: 'two-columns' }, [
-      el('section', {}, [
-        el('h2', { class: 'section-title', text: 'Alterações pendentes' }),
-        pendingChanges(data.pending_changes),
-      ]),
-      el('section', {}, [
-        el('h2', { class: 'section-title', text: 'Serviços ativos' }),
-        activeServices(data.active_services),
-      ]),
-    ]),
-    recent(data.recent_projects)
+    // Duas colunas, duas linhas. Antes era uma linha só, com a coluna da
+    // esquerda quase sempre vazia e meia tela sobrando embaixo.
+    el('div', { class: 'panel-grid' }, [
+      panel({
+        title: 'Serviços ativos',
+        count: data.active_services.length,
+        body: activeServices(data.active_services),
+      }),
+      panel({
+        title: 'Portas em uso',
+        count: mapaDePortas.length,
+        body: portMap(mapaDePortas),
+      }),
+      panel({
+        title: 'Alterações pendentes',
+        count: data.pending_changes.length,
+        body: pendingChanges(data.pending_changes),
+      }),
+      panel({
+        title: 'Acessados recentemente',
+        action: el('a', { class: 'panel__action', href: '#/projects', text: 'Ver todos' }),
+        body: recent(data.recent_projects),
+      }),
+    ])
   );
 }

@@ -92,6 +92,10 @@ class ProjectSummary(BaseModel):
     status: ProjectStatus
     is_pinned: bool
     technologies: list[str] = Field(default_factory=list)
+    #: Quantos serviços o projeto declara. O **estado** de cada um não vem
+    #: daqui: listar projetos não pode disparar verificação de rede (NFR-010).
+    #: A tela cruza este total com o que o dashboard já traz do cache.
+    services_total: int = 0
     last_accessed_at: datetime | None = None
 
 

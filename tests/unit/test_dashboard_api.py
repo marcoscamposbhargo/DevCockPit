@@ -269,3 +269,37 @@ def test_dashboard_conta_rodando_pelo_health_observado(
     assert totals["running"] == 1
     assert totals["stopped"] == 0, "projeto com serviço online não pode contar como parado"
     assert totals["projects"] == 1
+
+
+# --- resumo da lista de projetos ------------------------------------------
+
+
+def test_lista_de_projetos_informa_quantos_servicos_cada_um_declara(
+    client: TestClient, projeto: str
+) -> None:
+    """O card da lista cruza este total com o que o dashboard traz de cache.
+
+    Sem ele a tela só saberia quantos serviços estão online, nunca de quantos —
+    e "2 online" sem denominador não responde se falta algo de pé.
+    """
+    itens = client.get("/api/projects").json()["items"]
+    resumo = next(item for item in itens if item["id"] == projeto)
+
+    declarados = client.get(f"/api/projects/{projeto}/services").json()["items"]
+
+    assert resumo["services_total"] == len(declarados)
+    assert resumo["services_total"] > 0, "a detecção deste projeto já cria um serviço"
+
+
+def test_projeto_sem_servico_declara_zero(client: TestClient, workspace: Path) -> None:
+    """Zero é resposta, não ausência: o card mostra "sem serviço declarado"."""
+    path = workspace / "pasta-vazia"
+    path.mkdir()
+    criado = client.post(
+        "/api/projects", json={"path": str(path)}, headers=WRITE_HEADERS
+    ).json()
+
+    itens = client.get("/api/projects").json()["items"]
+    resumo = next(item for item in itens if item["id"] == criado["id"])
+
+    assert resumo["services_total"] == 0

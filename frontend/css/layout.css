@@ -54,9 +54,23 @@
 }
 
 .nav-item[aria-current="page"] {
-  background: var(--bg-elevated);
+  position: relative;
+  background: var(--bg-subtle);
   color: var(--fg-primary);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
+}
+
+/* Marca de posição atual: uma barra fina no recuo do item, não uma borda
+   grossa colorida no card inteiro. */
+.nav-item[aria-current="page"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 
 .sidebar__section {
@@ -71,9 +85,9 @@
   padding: 0 var(--sp-3);
   color: var(--fg-muted);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caps);
 }
 
 .sidebar__pinned {
@@ -108,10 +122,14 @@
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: var(--sp-4);
   height: var(--topbar-height);
+  flex: none;
   padding: 0 var(--sp-5);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
@@ -120,6 +138,7 @@
 .topbar__search {
   flex: 1;
   max-width: 420px;
+  min-height: 32px;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -127,10 +146,22 @@
   color: var(--fg-primary);
   font-family: inherit;
   font-size: var(--fs-md);
+  transition: border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 
 .topbar__search::placeholder {
   color: var(--fg-muted);
+}
+
+.topbar__search:hover:not(:focus) {
+  border-color: var(--border-strong);
+}
+
+.topbar__search:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .topbar__meta {
@@ -141,6 +172,8 @@
 
 .view {
   flex: 1;
+  width: 100%;
+  max-width: var(--content-max);
   padding: var(--sp-5);
   overflow-y: auto;
 }
@@ -155,7 +188,13 @@
 .page-header__text {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1);
+  gap: 2px;
+}
+
+.page-header__subtitle {
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .page-header__actions {
@@ -166,7 +205,7 @@
 
 .grid-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
   gap: var(--sp-4);
 }
 
@@ -177,6 +216,84 @@
   margin-bottom: var(--sp-5);
 }
 
-.table-wrap {
-  overflow-x: auto;
+/* Abaixo de ~900px a barra lateral custa mais do que entrega: vira uma faixa
+   de navegação no topo e a área de trabalho fica com a largura toda. */
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-3);
+    /* Sem `nowrap` os itens quebram em duas linhas e a faixa passa a comer a
+       altura útil da tela — que é justamente o que este breakpoint protege. */
+    flex-wrap: nowrap;
+    padding: var(--sp-2) var(--sp-3);
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .sidebar__brand {
+    flex: none;
+    padding: 0;
+  }
+
+  .sidebar__title {
+    display: none;
+  }
+
+  .sidebar__nav {
+    flex-direction: row;
+    gap: var(--sp-1);
+  }
+
+  .nav-item {
+    white-space: nowrap;
+  }
+
+  /* A marca de item atual vira sublinhado: uma barra vertical não faz sentido
+     quando a navegação é horizontal. */
+  .nav-item[aria-current="page"]::before {
+    left: var(--sp-2);
+    right: var(--sp-2);
+    top: auto;
+    bottom: 2px;
+    width: auto;
+    height: 2px;
+  }
+
+  .sidebar__section,
+  .sidebar__footer {
+    display: none;
+  }
+
+  .main {
+    min-height: 0;
+  }
+
+  .view {
+    padding: var(--sp-4);
+  }
+
+  .page-header {
+    flex-wrap: wrap;
+  }
+
+  .page-header__actions {
+    margin-left: 0;
+  }
+}
+
+/* Duas colunas de painel. Antes era uma linha só de duas seções soltas, com a
+   da esquerda quase sempre vazia e meia tela sobrando embaixo dela. */
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
 }

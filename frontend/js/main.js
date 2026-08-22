@@ -24,7 +24,7 @@ setNotFound((container) => {
   mount(
     container,
     emptyState({
-      icon: '↯',
+      iconName: 'alert',
       title: 'Página não encontrada',
       text: 'O endereço não corresponde a nenhuma tela.',
       actions: [
@@ -110,14 +110,27 @@ function wireTheme() {
 
 function wireSearch() {
   const search = document.getElementById('global-search');
+  const naListaDeProjetos = () =>
+    window.location.hash.split('?')[0].replace(/\/$/, '') === '#/projects';
+
+  // Uma busca só na aplicação inteira. Estando em Projects ela filtra enquanto
+  // se digita; de qualquer outra tela, Enter leva para lá com o termo aplicado.
+  search.addEventListener('input', () => {
+    if (naListaDeProjetos()) {
+      window.dispatchEvent(new CustomEvent('devcockpit:search', { detail: search.value }));
+    }
+  });
 
   search.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' && !naListaDeProjetos()) {
       const term = search.value.trim();
       navigate(term ? `/projects?q=${encodeURIComponent(term)}` : '/projects');
     }
     if (event.key === 'Escape') {
       search.value = '';
+      if (naListaDeProjetos()) {
+        window.dispatchEvent(new CustomEvent('devcockpit:search', { detail: '' }));
+      }
       search.blur();
     }
   });

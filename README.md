@@ -120,7 +120,22 @@ powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```
 
 O script cria o ambiente virtual, instala as dependências, copia o `.env`,
-aplica as migrações e sobe o servidor em `http://127.0.0.1:8765`.
+aplica as migrações e sobe o servidor em `http://127.0.0.1:8765`. Ele prende o
+servidor ao terminal: fechar a janela derruba a aplicação. Use este modo quando
+quiser acompanhar o log ao vivo.
+
+Para deixar o DevCockpit de pé enquanto você trabalha, use o modo solto:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\serve.ps1            # sobe
+powershell -ExecutionPolicy Bypass -File scripts\serve.ps1 -Status    # so informa
+powershell -ExecutionPolicy Bypass -File scripts\serve.ps1 -Restart   # recarrega o codigo
+powershell -ExecutionPolicy Bypass -File scripts\serve.ps1 -Stop      # para
+```
+
+O servidor sobe em segundo plano e sobrevive ao terminal que o iniciou. O log
+fica em `logs\server.err`. Subir duas vezes não cria dois servidores: o script
+avisa que já está no ar e não faz nada.
 
 Passo obrigatório antes do primeiro cadastro — defina os diretórios permitidos:
 
@@ -144,7 +159,8 @@ copy .env.example .env
 
 ### No dia a dia
 
-Deixe rodando numa janela e acesse `http://127.0.0.1:8765`.
+Suba com `serve.ps1` e acesse `http://127.0.0.1:8765`. Depois de mexer no
+código Python, `serve.ps1 -Restart` recarrega.
 
 Primeira vez:
 

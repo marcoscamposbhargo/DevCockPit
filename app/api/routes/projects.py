@@ -31,6 +31,7 @@ def _to_summary(project: Project) -> ProjectSummary:
         status=project.status,  # type: ignore[arg-type]
         is_pinned=project.is_pinned,
         technologies=[tech.name for tech in project.technologies],
+        services_total=len(project.services),
         last_accessed_at=project.last_accessed_at,
     )
 

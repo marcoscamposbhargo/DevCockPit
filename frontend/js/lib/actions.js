@@ -6,6 +6,7 @@
 
 import { api } from './api.js';
 import { el } from './dom.js';
+import { icon } from './icons.js';
 import { showError, toast } from './ui.js';
 
 const INDISPONIVEL = { git: false, docker: false, code: false };
@@ -54,18 +55,21 @@ function toolActions(project, available) {
   return [
     {
       label: 'VS Code',
+      icon: 'code',
       enabled: available.code && !missing,
       reason: available.code ? MOTIVO_DIR : "'code' não está no PATH.",
       onClick: () => run('VS Code', () => api.openVsCode(project.id)),
     },
     {
       label: 'Pasta',
+      icon: 'folder',
       enabled: !missing,
       reason: MOTIVO_DIR,
       onClick: () => run('Pasta', () => api.openFolder(project.id)),
     },
     {
       label: 'Terminal',
+      icon: 'terminal',
       enabled: !missing,
       reason: MOTIVO_DIR,
       onClick: () => run('Terminal', () => api.openTerminal(project.id)),
@@ -74,13 +78,17 @@ function toolActions(project, available) {
 }
 
 function toButton(botao, { size = '' } = {}) {
-  return el('button', {
-    class: `btn${size}`,
-    text: botao.label,
-    disabled: !botao.enabled,
-    title: botao.enabled ? '' : botao.reason,
-    onClick: botao.enabled ? botao.onClick : null,
-  });
+  return el(
+    'button',
+    {
+      class: `btn${size}`,
+      type: 'button',
+      disabled: !botao.enabled,
+      title: botao.enabled ? '' : botao.reason,
+      onClick: botao.enabled ? botao.onClick : null,
+    },
+    [botao.icon ? icon(botao.icon, { size: size ? 13 : 15 }) : null, botao.label]
+  );
 }
 
 /** Ferramentas direto no card da lista, sem entrar no projeto. */
@@ -102,6 +110,7 @@ export async function actionBar(project) {
   for (const service of abriveis.slice(0, 3)) {
     botoes.push({
       label: `Abrir ${service.label}`,
+      icon: 'external',
       enabled: !missing,
       reason: MOTIVO_DIR,
       onClick: () => run(service.label, () => api.openBrowser(project.id, service.key)),

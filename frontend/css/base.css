@@ -15,15 +15,18 @@ body {
   color: var(--fg-primary);
   font-family: var(--font-ui);
   font-size: var(--fs-md);
-  line-height: 1.5;
+  line-height: var(--lh-normal);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 h1,
 h2,
 h3 {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
 }
 
 h1 {
@@ -50,6 +53,8 @@ a {
 a:hover {
   color: var(--accent-hover);
   text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
 }
 
 code,
@@ -58,9 +63,75 @@ code,
   font-size: var(--fs-sm);
 }
 
+/* Números que o olho compara em coluna — porta, contagem, duração, latência —
+   não podem dançar de largura entre um valor e outro. */
+.mono,
+code,
+table,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- superfícies que o browser desenha ---
+
+   Seleção, cursor de texto, barra de rolagem e anel de foco vêm com o padrão
+   do sistema operacional, que não pertence a design system nenhum. Deixá-los
+   crus é o detalhe que denuncia uma tela montada em vez de desenhada. */
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--fg-primary);
+}
+
+:root {
+  color-scheme: dark;
+  accent-color: var(--accent);
+  caret-color: var(--accent);
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+/* WebKit e Chromium ignoram `scrollbar-width` fino o suficiente; aqui a barra
+   é desenhada de fato, e some contra o fundo até o ponteiro se aproximar. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-muted);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--ring-width) solid var(--ring);
   outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Quem navega por teclado precisa do anel; quem clica com o mouse não precisa
+   ver o botão continuar destacado depois do clique. */
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .visually-hidden {
@@ -72,4 +143,17 @@ code,
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* Movimento aqui existe para explicar mudança de estado. Quem pediu ao sistema
+   para reduzir animação não perde informação nenhuma ao desligá-lo. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

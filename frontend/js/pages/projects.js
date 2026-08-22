@@ -2,44 +2,470 @@ import { quickTools, tools } from '../lib/actions.js';
 import { api, ApiError } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
-import { emptyState, loading, pageHeader, showError, statusBadge, techChip, toast } from '../lib/ui.js';
+import { icon } from '../lib/icons.js';
+import {
+  emptyState,
+  pageHeader,
+  showError,
+  skeletonGrid,
+  statusBadge,
+  techChip,
+  toast,
+} from '../lib/ui.js';
 import { navigate } from '../router.js';
 
-function projectCard(project, { onDelete, available }) {
+const DOCKER_TECHS = new Set(['docker', 'docker-compose']);
+
+/** Sinais por projeto, cruzados do dashboard — que já vem de cache.
+ *
+ * O dashboard é a única fonte que sabe o estado observado sem tocar disco,
+ * Git ou Docker. Listar projetos não pode disparar verificação de rede
+ * (NFR-010), então o que não estiver no cache simplesmente não aparece —
+ * melhor um card sem o sinal do que uma tela que trava para montá-lo.
+ */
+function buildSignals(dashboard) {
+  const online = new Map();
+  const git = new Map();
+
+  for (const service of dashboard?.active_services ?? []) {
+    online.set(service.project_id, (online.get(service.project_id) ?? 0) + 1);
+  }
+  for (const change of dashboard?.pending_changes ?? []) {
+    git.set(change.project_id, change);
+  }
+
+  return { online, git };
+}
+
+function hasDocker(project) {
+  return project.technologies.some((tech) => DOCKER_TECHS.has(tech));
+}
+
+const SIGNAL_ICON = { docker: 'container', dirty: 'branch', clean: 'branch' };
+
+function signal(kind, text, title) {
+  const marca = SIGNAL_ICON[kind]
+    ? icon(SIGNAL_ICON[kind], { size: 12 })
+    : el('span', { class: 'signal__dot' });
+
+  return el('span', { class: 'signal', dataset: { kind }, title: title ?? '' }, [marca, text]);
+}
+
+/** A linha que faltava no card: o que está de pé, sem abrir o projeto. */
+function signalRow(project, signals) {
+  const chips = [];
+
+  const total = project.services_total ?? 0;
+  const online = signals.online.get(project.id) ?? 0;
+
+  if (total > 0) {
+    const kind = online === 0 ? 'off' : online >= total ? 'on' : 'partial';
+    chips.push(
+      signal(
+        kind,
+        `${online}/${total} online`,
+        online === 0
+          ? 'Nenhum serviço respondeu na última verificação.'
+          : `${online} de ${total} serviço(s) responderam na última verificação.`
+      )
+    );
+  }
+
+  if (hasDocker(project)) {
+    chips.push(signal('docker', 'Docker', 'Este projeto tem Compose ou Dockerfile.'));
+  }
+
+  const change = signals.git.get(project.id);
+  if (change) {
+    const sujo = change.dirty_count > 0;
+    chips.push(
+      signal(
+        sujo ? 'dirty' : 'clean',
+        sujo ? `${change.branch ?? 'HEAD'} · ${change.dirty_count}` : (change.branch ?? 'HEAD'),
+        sujo
+          ? `${change.dirty_count} arquivo(s) com alteração pendente.`
+          : 'Sem alteração pendente.'
+      )
+    );
+  }
+
+  if (!chips.length) {
+    chips.push(
+      signal('off', 'sem serviço declarado', 'Nenhum serviço cadastrado neste projeto.')
+    );
+  }
+
+  return el('div', { class: 'signal-row' }, chips);
+}
+
+/** Caminho legível: a pasta e o pai, com o path inteiro no tooltip.
+ *
+ * O path completo ocupava três linhas do card e empurrava para baixo tudo que
+ * importa. Quem precisa do caminho inteiro passa o mouse ou abre o projeto.
+ */
+function compactPath(path) {
+  const parts = String(path).split(/[\\/]/).filter(Boolean);
+  const tail = parts.slice(-2).join('/');
+  return el('div', {
+    class: 'card__path card__path--compact',
+    text: parts.length > 2 ? `…/${tail}` : tail,
+    title: path,
+  });
+}
+
+function pinButton(project, onToggle) {
+  return el('button', {
+    class: `pin${project.is_pinned ? ' pin--on' : ''}`,
+    type: 'button',
+    title: project.is_pinned ? 'Desafixar' : 'Fixar no topo',
+    'aria-pressed': project.is_pinned ? 'true' : 'false',
+    'aria-label': project.is_pinned ? `Desafixar ${project.name}` : `Fixar ${project.name}`,
+    onClick: () => onToggle(project),
+  }, [icon('pin', { size: 14 })]);
+}
+
+function projectCard(project, { onDelete, onTogglePin, available, signals }) {
   const isMissing = project.status === 'MISSING';
 
-  return el('article', { class: `card${isMissing ? ' card--missing' : ''}` }, [
+  return el('article', { class: `card card--project${isMissing ? ' card--missing' : ''}` }, [
     el('div', { class: 'card__header' }, [
-      el('div', {}, [
-        el('a', { class: 'card__title', href: `#/projects/${encodeURIComponent(project.id)}`, text: project.name }),
-        el('div', { class: 'card__path', text: project.path }),
+      pinButton(project, onTogglePin),
+      el('div', { class: 'card__ident' }, [
+        el('a', {
+          class: 'card__title',
+          href: `#/projects/${encodeURIComponent(project.id)}`,
+          text: project.name,
+        }),
+        compactPath(project.path),
       ]),
-      el('div', { style: 'margin-left:auto' }, [statusBadge(project.status)]),
+      el('div', { class: 'card__status' }, [statusBadge(project.status)]),
     ]),
 
-    project.technologies.length
-      ? el('div', { class: 'chip-row' }, project.technologies.map((tech) => techChip(tech)))
-      : el('span', { class: 'field__hint', text: 'Stack ainda não detectada' }),
+    signalRow(project, signals),
 
-    el('div', { class: 'field__hint', text: `Último acesso: ${relativeTime(project.last_accessed_at)}` }),
+    // Sem stack a linha continua existindo: some o conteúdo, não o degrau do
+    // ritmo vertical, senão o card encolhe e desalinha do vizinho.
+    el('div', { class: 'chip-row' }, [
+      ...project.technologies.slice(0, 6).map((tech) => techChip(tech)),
+      project.technologies.length > 6
+        ? el('span', {
+            class: 'tech-chip',
+            title: project.technologies.slice(6).join(', '),
+            text: `+${project.technologies.length - 6}`,
+          })
+        : null,
+      project.technologies.length
+        ? null
+        : el('span', { class: 'field__hint', text: 'Stack ainda não detectada' }),
+    ]),
 
     // Abrir o editor é o motivo mais comum de procurar um projeto aqui; exigir
     // dois cliques a mais para chegar na aba Overview era atrito puro.
-    quickTools(project, available),
-
-    el('div', { class: 'card__footer' }, [
-      el('button', {
-        class: 'btn btn--sm',
-        onClick: () => navigate(`/projects/${encodeURIComponent(project.id)}`),
-        text: 'Abrir',
-      }),
-      el('button', {
-        class: 'btn btn--sm btn--danger',
-        onClick: () => onDelete(project),
-        text: 'Remover',
-      }),
+    el('div', { class: 'card__actions' }, [
+      quickTools(project, available),
+      el('div', { class: 'card__actions-end' }, [
+        el('span', {
+          class: 'field__hint',
+          text: relativeTime(project.last_accessed_at),
+          title: 'Último acesso',
+        }),
+        el(
+          'button',
+          {
+            class: 'btn btn--sm btn--icon btn--danger',
+            type: 'button',
+            title: `Remover ${project.name} do registro`,
+            'aria-label': `Remover ${project.name} do registro`,
+            onClick: () => onDelete(project),
+          },
+          [icon('trash', { size: 13 })]
+        ),
+      ]),
     ]),
   ]);
+}
+
+// --- busca e filtros ---
+
+const FILTERS = [
+  { key: 'all', label: 'Todos', match: () => true },
+  { key: 'pinned', label: 'Fixados', match: (p) => p.is_pinned },
+  { key: 'online', label: 'Com serviço online', match: (p, s) => (s.online.get(p.id) ?? 0) > 0 },
+  { key: 'docker', label: 'Com Docker', match: (p) => hasDocker(p) },
+  {
+    key: 'dirty',
+    label: 'Com alteração',
+    match: (p, s) => (s.git.get(p.id)?.dirty_count ?? 0) > 0,
+  },
+  { key: 'missing', label: 'Sem diretório', match: (p) => p.status === 'MISSING' },
+];
+
+function matchesText(project, termo) {
+  if (!termo) return true;
+  const alvo = `${project.name} ${project.path} ${project.technologies.join(' ')}`.toLowerCase();
+  return alvo.includes(termo);
+}
+
+/** Fixados primeiro, depois o mais recente. É a ordem que a busca preserva. */
+function sortProjects(items) {
+  return [...items].sort((a, b) => {
+    if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+    const ta = a.last_accessed_at ? Date.parse(a.last_accessed_at) : 0;
+    const tb = b.last_accessed_at ? Date.parse(b.last_accessed_at) : 0;
+    return tb - ta;
+  });
+}
+
+function filterBar({ state, counts, stacks, onChange }) {
+  const chips = FILTERS.map((filtro) =>
+    el('button', {
+      class: `filter-chip${state.filter === filtro.key ? ' filter-chip--on' : ''}`,
+      type: 'button',
+      'aria-pressed': state.filter === filtro.key ? 'true' : 'false',
+      disabled: counts[filtro.key] === 0 && filtro.key !== 'all' && state.filter !== filtro.key,
+      onClick: () => onChange({ filter: filtro.key }),
+    }, [filtro.label, el('span', { class: 'filter-chip__count', text: String(counts[filtro.key]) })])
+  );
+
+  const seletorStack = el(
+    'select',
+    {
+      class: 'input filter-bar__stack',
+      'aria-label': 'Filtrar por stack',
+      onChange: (event) => onChange({ stack: event.target.value }),
+    },
+    [
+      el('option', { value: '', text: 'Qualquer stack' }),
+      ...stacks.map((tech) =>
+        el('option', { value: tech, text: tech, selected: state.stack === tech })
+      ),
+    ]
+  );
+
+  return el('div', { class: 'filter-bar' }, [
+    el('div', { class: 'filter-bar__chips' }, chips),
+    seletorStack,
+    state.text
+      ? el(
+          'button',
+          {
+            class: 'filter-bar__clear',
+            type: 'button',
+            onClick: () => onChange({ text: '' }),
+          },
+          [icon('close', { size: 12 }), `busca: "${state.text}"`]
+        )
+      : null,
+  ]);
+}
+
+function clearGlobalSearch() {
+  const campo = document.getElementById('global-search');
+  if (campo) campo.value = '';
+}
+
+export async function renderProjects(container, _params, query) {
+  mount(container, skeletonGrid(6));
+
+  let formVisible = false;
+  const state = { text: (query.q ?? '').toLowerCase(), filter: 'all', stack: '' };
+
+  let data = null;
+  let available = null;
+  let signals = { online: new Map(), git: new Map() };
+
+  const carregar = async () => {
+    // O dashboard é opcional: ele enriquece o card, mas a lista precisa
+    // aparecer mesmo se a agregação falhar.
+    const [lista, ferramentas, dashboard] = await Promise.all([
+      api.listProjects({ limit: 200 }),
+      tools(),
+      api.dashboard().catch(() => null),
+    ]);
+    data = lista;
+    available = ferramentas;
+    signals = buildSignals(dashboard);
+  };
+
+  const draw = () => {
+    const onDelete = async (project) => {
+      const confirmed = window.confirm(
+        `Remover "${project.name}" do DevCockpit?\n\n` +
+          'Isso apaga apenas o registro. Nenhum arquivo do disco é tocado.'
+      );
+      if (!confirmed) return;
+
+      try {
+        await api.deleteProject(project.id);
+        toast(`"${project.name}" removido do registro.`, { kind: 'success' });
+        await carregar();
+        draw();
+      } catch (error) {
+        showError(error);
+      }
+    };
+
+    const onTogglePin = async (project) => {
+      try {
+        await api.updateProject(project.id, { is_pinned: !project.is_pinned });
+        project.is_pinned = !project.is_pinned;
+        window.dispatchEvent(new CustomEvent('devcockpit:projects-changed'));
+        draw();
+      } catch (error) {
+        showError(error);
+      }
+    };
+
+    const todos = sortProjects(data.items);
+    const counts = Object.fromEntries(
+      FILTERS.map((filtro) => [filtro.key, todos.filter((p) => filtro.match(p, signals)).length])
+    );
+    const stacks = [...new Set(todos.flatMap((p) => p.technologies))].sort();
+
+    const ativo = FILTERS.find((f) => f.key === state.filter) ?? FILTERS[0];
+    const visiveis = todos.filter(
+      (p) =>
+        ativo.match(p, signals) &&
+        matchesText(p, state.text) &&
+        (!state.stack || p.technologies.includes(state.stack))
+    );
+
+    const header = pageHeader({
+      title: 'Projects',
+      subtitle:
+        visiveis.length === todos.length
+          ? `${todos.length} projeto(s) cadastrado(s)`
+          : `${visiveis.length} de ${todos.length} projeto(s)`,
+      actions: [
+        el(
+          'button',
+          { class: 'btn', type: 'button', onClick: () => navigate('/discovery') },
+          [icon('scan', { size: 15 }), 'Varrer diretório']
+        ),
+        el(
+          'button',
+          {
+            class: 'btn btn--primary',
+            type: 'button',
+            onClick: () => {
+              formVisible = !formVisible;
+              draw();
+            },
+          },
+          [icon(formVisible ? 'close' : 'plus', { size: 15 }),
+           formVisible ? 'Fechar formulário' : 'Adicionar projeto']
+        ),
+      ],
+    });
+
+    const form = formVisible
+      ? createForm({
+          onCreated: async () => {
+            formVisible = false;
+            await carregar();
+            draw();
+          },
+        })
+      : null;
+
+    const barra = todos.length
+      ? filterBar({
+          state,
+          counts,
+          stacks,
+          onChange: (patch) => {
+            Object.assign(state, patch);
+            if (patch.text === '') clearGlobalSearch();
+            draw();
+          },
+        })
+      : null;
+
+    let body;
+    if (!todos.length) {
+      body = emptyState({
+        iconName: 'inbox',
+        title: 'Nenhum projeto ainda',
+        text:
+          'Cadastre a pasta de um projeto, ou aponte um diretório raiz e deixe ' +
+          'o DevCockpit encontrar tudo de uma vez.',
+        actions: [
+          el('button', {
+            class: 'btn btn--primary',
+            text: 'Varrer diretório',
+            onClick: () => navigate('/discovery'),
+          }),
+          el('button', {
+            class: 'btn',
+            text: 'Adicionar pasta',
+            onClick: () => {
+              formVisible = true;
+              draw();
+            },
+          }),
+        ],
+      });
+    } else if (!visiveis.length) {
+      body = emptyState({
+        iconName: 'search',
+        title: 'Nenhum projeto com esse filtro',
+        text: 'Ajuste a busca ou volte para "Todos".',
+        actions: [
+          el('button', {
+            class: 'btn',
+            text: 'Limpar filtros',
+            onClick: () => {
+              Object.assign(state, { text: '', filter: 'all', stack: '' });
+              clearGlobalSearch();
+              draw();
+            },
+          }),
+        ],
+      });
+    } else {
+      body = el(
+        'div',
+        { class: 'grid-cards' },
+        visiveis.map((project) =>
+          projectCard(project, { onDelete, onTogglePin, available, signals })
+        )
+      );
+    }
+
+    mount(container, header, form, barra, body);
+  };
+
+  // A busca é uma só, a da topbar (Ctrl+K). O ouvinte precisa morrer quando a
+  // tela sai de cena: sem isso cada visita a Projects empilha mais um, e todos
+  // continuam desenhando dentro de containers já descartados.
+  const vida = new AbortController();
+  window.addEventListener(
+    'hashchange',
+    () => {
+      // `#/projects/<id>` é a tela de detalhe, não esta: comparar por prefixo
+      // deixaria o ouvinte vivo desenhando num container já trocado.
+      const rota = window.location.hash.split('?')[0].replace(/\/$/, '');
+      if (rota !== '#/projects') vida.abort();
+    },
+    { signal: vida.signal }
+  );
+
+  window.addEventListener(
+    'devcockpit:search',
+    (event) => {
+      state.text = String(event.detail ?? '').trim().toLowerCase();
+      draw();
+    },
+    { signal: vida.signal }
+  );
+
+  try {
+    await carregar();
+  } catch (error) {
+    mount(container, el('p', { class: 'loading', text: error.message }));
+    return;
+  }
+  draw();
 }
 
 function createForm({ onCreated }) {
@@ -94,101 +520,4 @@ function createForm({ onCreated }) {
     ]),
     el('button', { class: 'btn btn--primary', type: 'submit', text: 'Cadastrar' }),
   ]);
-}
-
-export async function renderProjects(container, _params, query) {
-  mount(container, loading());
-
-  let formVisible = false;
-
-  const draw = async () => {
-    let data;
-    let available;
-    try {
-      [data, available] = await Promise.all([
-        api.listProjects({ q: query.q, limit: 200 }),
-        tools(),
-      ]);
-    } catch (error) {
-      mount(container, el('p', { class: 'loading', text: error.message }));
-      return;
-    }
-
-    const onDelete = async (project) => {
-      const confirmed = window.confirm(
-        `Remover "${project.name}" do DevCockpit?\n\n` +
-          'Isso apaga apenas o registro. Nenhum arquivo do disco é tocado.'
-      );
-      if (!confirmed) return;
-
-      try {
-        await api.deleteProject(project.id);
-        toast(`"${project.name}" removido do registro.`, { kind: 'success' });
-        draw();
-      } catch (error) {
-        showError(error);
-      }
-    };
-
-    const header = pageHeader({
-      title: 'Projects',
-      subtitle: `${data.total} projeto(s) cadastrado(s)`,
-      actions: [
-        el('button', {
-          class: 'btn',
-          text: 'Varrer diretório',
-          onClick: () => navigate('/discovery'),
-        }),
-        el('button', {
-          class: 'btn btn--primary',
-          text: formVisible ? 'Fechar formulário' : 'Adicionar projeto',
-          onClick: () => {
-            formVisible = !formVisible;
-            draw();
-          },
-        }),
-      ],
-    });
-
-    const form = formVisible
-      ? createForm({
-          onCreated: () => {
-            formVisible = false;
-            draw();
-          },
-        })
-      : null;
-
-    const body = data.items.length
-      ? el(
-          'div',
-          { class: 'grid-cards' },
-          data.items.map((project) => projectCard(project, { onDelete, available }))
-        )
-      : emptyState({
-          title: 'Nenhum projeto ainda',
-          text:
-            'Cadastre a pasta de um projeto, ou aponte um diretório raiz e deixe ' +
-            'o DevCockpit encontrar tudo de uma vez.',
-          actions: [
-            el('button', {
-              class: 'btn btn--primary',
-              text: 'Varrer diretório',
-              onClick: () => navigate('/discovery'),
-            }),
-            el('button', {
-              class: 'btn',
-              text: 'Adicionar pasta',
-              onClick: () => {
-                formVisible = true;
-                draw();
-              },
-            }),
-          ],
-        });
-
-    mount(container, header, form, body);
-  };
-
-  await draw();
 }

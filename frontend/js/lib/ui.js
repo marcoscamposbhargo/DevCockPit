@@ -56,9 +56,12 @@ export function pageHeader({ title, subtitle, actions = [] }) {
   ]);
 }
 
-const TOAST_ICON = { success: 'check', error: 'alert', info: 'pulse' };
+const TOAST_ICON = { success: 'check', error: 'alert', warning: 'alert', info: 'pulse' };
 
-let toastTimer = 0;
+//: Quanto tempo cada tom fica na tela. Erro e aviso duram mais porque pedem
+//: uma decisão; confirmação de sucesso já cumpriu o papel ao aparecer.
+const TOAST_DURACAO = { error: 8000, warning: 8000 };
+const TOAST_DURACAO_PADRAO = 4000;
 
 export function toast(message, { kind = 'info', meta } = {}) {
   const container = document.getElementById('toasts');
@@ -71,9 +74,16 @@ export function toast(message, { kind = 'info', meta } = {}) {
   ]);
   container.append(node);
 
-  toastTimer = window.setTimeout(() => node.remove(), kind === 'error' ? 8000 : 4000);
+  // O temporizador é por aviso, não um só para todos. Com uma variável de
+  // módulo, dois avisos seguidos faziam o segundo sobrescrever o identificador
+  // do primeiro: o primeiro ficava na tela para sempre, e a função de fechar
+  // devolvida por ele passava a cancelar o tempo do vizinho.
+  const temporizador = window.setTimeout(
+    () => node.remove(),
+    TOAST_DURACAO[kind] ?? TOAST_DURACAO_PADRAO
+  );
   return () => {
-    window.clearTimeout(toastTimer);
+    window.clearTimeout(temporizador);
     node.remove();
   };
 }

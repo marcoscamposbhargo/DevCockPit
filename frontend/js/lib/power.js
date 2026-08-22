@@ -41,6 +41,24 @@ async function waitJob(jobId) {
   }
 }
 
+/** Reverifica os serviços do projeto e devolve o estado que a máquina mostra.
+ *
+ * `stop` do Compose devolve sucesso assim que os containers param, mas parar
+ * container não é o mesmo que a porta ficar livre. Perguntar aqui é uma
+ * requisição a mais num clique que o usuário acabou de dar — barato, e evita
+ * que a tela afirme algo que o próximo ciclo do verificador vai desmentir.
+ */
+async function confirmarEstado(projectId, acao) {
+  try {
+    const { items } = await api.checkServices(projectId);
+    return { ligado: items.some((item) => item.state === 'ONLINE'), items };
+  } catch {
+    // Verificação falhou: fica com o resultado otimista da ação, que é melhor
+    // que travar o botão. O poller corrige na próxima volta.
+    return { ligado: acao === 'up', items: [] };
+  }
+}
+
 const MOTIVOS = {
   missing: 'O diretório deste projeto não existe mais.',
   semCompose:
@@ -113,8 +131,24 @@ export function powerToggle(project, { on = false, compact = false, onChanged } 
       const job = await waitJob(aceito.job_id);
 
       if (job.status === 'SUCCESS') {
-        estado = acao === 'up' ? 'on' : 'off';
-        toast(`${project.name}: ${acao === 'up' ? 'no ar' : 'parado'}.`, { kind: 'success' });
+        // O comando terminou, mas quem decide o estado exibido é a verificação
+        // — não o código de saída. Antes o botão se declarava desligado por
+        // conta própria e o verificador, 30 s depois, dizia o contrário: o
+        // botão voltava sozinho para "Ligado" e parecia que a ordem não tinha
+        // sido obedecida. Acontece de verdade quando a porta declarada é
+        // servida por algo de fora do Compose (um Postgres nativo na mesma
+        // porta do container, por exemplo).
+        const real = await confirmarEstado(project.id, acao);
+        estado = real.ligado ? 'on' : 'off';
+
+        if (acao === 'stop' && real.ligado) {
+          toast(`${project.name}: containers parados, mas a porta continua respondendo.`, {
+            kind: 'warning',
+            meta: 'Algo fora do Compose está ocupando a porta. Veja em Ports quem é.',
+          });
+        } else {
+          toast(`${project.name}: ${acao === 'up' ? 'no ar' : 'parado'}.`, { kind: 'success' });
+        }
       } else {
         estado = anterior;
         toast(`${project.name}: "${acao}" terminou em ${job.status.toLowerCase()}.`, {

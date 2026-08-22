@@ -3,7 +3,7 @@ import { el, mount } from './lib/dom.js';
 import { invalidateTools } from './lib/actions.js';
 import { icon } from './lib/icons.js';
 import { mountRail } from './lib/rail.js';
-import { applyShell, sidebarCollapsed, toggleRail, toggleSidebar } from './lib/shell.js';
+import { applyShell, railHidden, sidebarCollapsed, toggleRail, toggleSidebar } from './lib/shell.js';
 import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from './lib/theme.js';
 import { emptyState } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
@@ -117,6 +117,8 @@ function decorateNav() {
 function wireShell() {
   const sidebarBtn = document.getElementById('sidebar-toggle');
   const railBtn = document.getElementById('rail-toggle');
+  //: `null` até a primeira carga do trilho: "—" é honesto, "0" seria mentira.
+  let ativosNoAr = null;
 
   applyShell();
   decorateNav();
@@ -131,22 +133,43 @@ function wireShell() {
       recolhida ? 'Expandir a barra lateral' : 'Recolher a barra lateral'
     );
 
-    railBtn.replaceChildren(icon('layers', { size: 15 }));
-    railBtn.title = 'Mostrar ou ocultar os projetos ativos';
+    // O botão do trilho é rotulado, e não um ícone mudo. Fechado, um ícone
+    // sozinho na topbar não conta a ninguém que é ele quem traz a barra de
+    // volta: fechar era óbvio (o X está dentro da barra) e reabrir virava
+    // caça ao tesouro. Com o rótulo e a contagem ele também vira o resumo de
+    // "quantos estão no ar" — que é o que a barra responderia se estivesse
+    // aberta.
+    const aberta = !railHidden();
+    railBtn.replaceChildren(
+      icon('layers', { size: 14 }),
+      el('span', { class: 'rail-switch__label', text: 'Ativos' }),
+      el('span', { class: 'rail-switch__count', text: ativosNoAr === null ? '—' : String(ativosNoAr) })
+    );
+    railBtn.dataset.open = aberta ? 'true' : 'false';
+    railBtn.setAttribute('aria-pressed', aberta ? 'true' : 'false');
+    railBtn.setAttribute('aria-label', aberta ? 'Ocultar os projetos ativos' : 'Mostrar os projetos ativos');
+    railBtn.title = `${aberta ? 'Ocultar' : 'Mostrar'} os projetos ativos (Ctrl+Alt+B)`;
   };
 
   sidebarBtn.addEventListener('click', toggleSidebar);
   railBtn.addEventListener('click', toggleRail);
   window.addEventListener('devcockpit:shell-changed', desenha);
+  // O trilho anuncia quantos estão no ar a cada recarga. O botão mostra esse
+  // número mesmo com a barra fechada — senão fechar a barra também apagaria a
+  // informação, e aí ela só serviria aberta.
+  window.addEventListener('devcockpit:rail-count', (event) => {
+    ativosNoAr = event.detail;
+    desenha();
+  });
   desenha();
 
   document.addEventListener('keydown', (event) => {
-    // Ctrl+B é o atalho que todo editor usa para esconder a lateral; herdar o
-    // gesto custa menos que ensinar um novo.
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
-      event.preventDefault();
-      toggleSidebar();
-    }
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'b') return;
+    event.preventDefault();
+    // Ctrl+B esconde a lateral em todo editor, e Ctrl+Alt+B o painel
+    // secundário. Herdar os dois gestos custa menos que ensinar dois novos.
+    if (event.altKey) toggleRail();
+    else toggleSidebar();
   });
 }
 

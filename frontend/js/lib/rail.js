@@ -156,6 +156,7 @@ export async function refreshRail() {
   } catch {
     mount(corpo, el('p', { class: 'rail__empty', text: 'Servidor fora do ar.' }));
     contador.textContent = '—';
+    window.dispatchEvent(new CustomEvent('devcockpit:rail-count', { detail: null }));
     return;
   }
 
@@ -175,6 +176,8 @@ export async function refreshRail() {
   );
 
   contador.textContent = String(ativos.length);
+  // O botão da topbar mostra este número mesmo com o trilho fechado.
+  window.dispatchEvent(new CustomEvent('devcockpit:rail-count', { detail: ativos.length }));
 
   mount(
     corpo,

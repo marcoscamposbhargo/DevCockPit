@@ -228,8 +228,12 @@ class EnvironmentPlanOut(BaseModel):
 
 
 class EnvironmentStopped(BaseModel):
-    #: "app" ou "docker" — o que de fato foi parado.
+    #: O que de fato foi parado: `"app"`, `"docker"` ou `"nothing"` — este
+    #: último quando não havia nem aplicação de pé nem Compose para derrubar.
     stopped: str
+    #: Presente quando a parada dos containers virou job: `compose down` demora
+    #: e a resposta não pode esperar por ele. O cliente acompanha pelo console.
+    job_id: str | None = None
 
 
 class RunningServerOut(BaseModel):

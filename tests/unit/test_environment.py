@@ -9,6 +9,7 @@ existe.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -299,6 +300,26 @@ async def test_dependencia_que_nunca_responde_nao_trava_para_sempre(
 # --- a descida ------------------------------------------------------------
 
 
+class ServidorNoAr(DevServerService):
+    """Aplicação de pé, sem processo de verdade.
+
+    Subir um processo só para depois matá-lo tornaria este teste dependente do
+    sistema operacional, e `stop` mataria o interpretador se o pid registrado
+    fosse o do próprio pytest.
+    """
+
+    def __init__(self, session, logs_dir) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(session=session, logs_dir=logs_dir)
+        self.parou = False
+
+    def status(self, project):  # type: ignore[no-untyped-def]
+        return replace(super().status(project), running=True)
+
+    def stop(self, project):  # type: ignore[no-untyped-def]
+        self.parou = True
+        return super().status(project)
+
+
 def test_desligar_para_so_a_aplicacao_por_padrao(
     session, session_factory, projeto, tmp_path
 ) -> None:  # type: ignore[no-untyped-def]
@@ -307,11 +328,42 @@ def test_desligar_para_so_a_aplicacao_por_padrao(
     segundos por um de trinta."""
     com_compose(projeto)
     com_run(projeto)
-    servers = DevServerService(session=session, logs_dir=tmp_path)
+    servers = ServidorNoAr(session, tmp_path)
 
     alvo = servico(session_factory, tmp_path).down(projeto, servers, include_docker=False)
 
     assert alvo == "app"
+    assert servers.parou is True
+
+
+def test_desligar_com_a_aplicacao_ja_parada_derruba_o_compose(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """O caso do Dashdate: plano de `uvicorn` declarado, `uvicorn` parado, e o
+    container atendendo na porta. Decidir pelo plano em vez do estado fazia o
+    "Desligar" parar uma aplicação que já estava parada e responder sucesso —
+    com o projeto seguindo no ar. Três cliques assim e a conclusão razoável é
+    que o botão não funciona."""
+    com_compose(projeto)
+    com_run(projeto)
+    servers = DevServerService(session=session, logs_dir=tmp_path)
+
+    alvo = servico(session_factory, tmp_path).down(projeto, servers, include_docker=False)
+
+    assert alvo == "docker"
+
+
+def test_desligar_sem_nada_no_ar_e_sem_compose_diz_que_nao_havia_nada(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """Não há o que parar. Dizer isso é melhor que responder "app" e não fazer
+    nada — que era o comportamento antigo."""
+    com_run(projeto)
+    servers = DevServerService(session=session, logs_dir=tmp_path)
+
+    alvo = servico(session_factory, tmp_path).down(projeto, servers, include_docker=False)
+
+    assert alvo == "nothing"
 
 
 def test_desligar_sem_aplicacao_separada_para_o_compose(

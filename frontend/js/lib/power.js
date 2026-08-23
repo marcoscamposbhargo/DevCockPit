@@ -149,7 +149,29 @@ async function subirAmbiente(project) {
  * diário, mas alcançável sem menu.
  */
 async function pararAplicacao(project, { derrubarDocker = false } = {}) {
-  const { stopped } = await api.environmentDown(project.id, derrubarDocker);
+  const { stopped, job_id: jobId } = await api.environmentDown(project.id, derrubarDocker);
+
+  if (stopped === 'nothing') {
+    // Nem aplicação de pé nem Compose. Dizer isso é o único jeito de distinguir
+    // "não havia nada ligado" de "o botão não funcionou" — e essa distinção era
+    // justamente a que faltava.
+    toast(`${project.name}: não havia nada no ar para desligar.`, { kind: 'warning' });
+    return 'off';
+  }
+
+  // `compose down` demora, e a resposta veio antes de ele terminar. Anunciar
+  // sucesso aqui era o que fazia o painel dizer "ambiente derrubado" com os
+  // containers ainda de pé.
+  if (jobId) {
+    const job = await waitJob(jobId);
+    if (job?.status !== 'SUCCESS') {
+      toast(`${project.name}: não foi possível derrubar os containers.`, {
+        kind: 'error',
+        meta: job?.message ?? 'A aba Docker do projeto mostra a saída completa.',
+      });
+      return 'on';
+    }
+  }
 
   const real = await api.checkServices(project.id).catch(() => ({ items: [] }));
   const aindaResponde = real.items.some((item) => item.state === 'ONLINE');
@@ -323,20 +345,36 @@ export function dockerChip(project, { running = null, onChanged } = {}) {
     // Derrubar o ambiente é o que a pessoa faz no fim do expediente, e o
     // caminho de volta custa minutos. Vale a confirmação.
     const segue = window.confirm(
-      `Derrubar os containers de "${project.name}"?
-
-` +
+      `Derrubar os containers de "${project.name}"?\n\n` +
         'A aplicação para junto. Subir de novo leva o tempo do `compose up`.'
     );
     if (!segue) return;
 
     chip.disabled = true;
+    const original = chip.querySelector('span').textContent;
+    chip.querySelector('span').textContent = 'derrubando…';
     try {
-      await api.environmentDown(project.id, true);
+      const { job_id: jobId } = await api.environmentDown(project.id, true);
+      // Esperar o job antes de anunciar. Sem isto o chip dizia "ambiente
+      // derrubado" no instante da resposta, enquanto o `compose down` mal tinha
+      // começado — e o container voltava a aparecer no ciclo seguinte.
+      const job = jobId ? await waitJob(jobId) : null;
+
+      if (jobId && job?.status !== 'SUCCESS') {
+        chip.disabled = false;
+        chip.querySelector('span').textContent = original;
+        toast(`${project.name}: os containers não foram derrubados.`, {
+          kind: 'error',
+          meta: job?.message ?? 'A aba Docker do projeto mostra a saída completa.',
+        });
+        return;
+      }
+
       toast(`${project.name}: ambiente derrubado.`, { kind: 'success' });
       onChanged?.(false);
     } catch (error) {
       chip.disabled = false;
+      chip.querySelector('span').textContent = original;
       showError(error);
     }
   });

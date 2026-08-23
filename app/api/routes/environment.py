@@ -5,7 +5,9 @@ levar minutos — `compose up` puxando imagem, banco abrindo — e uma requisiç
 HTTP pendurada por dois minutos é a forma errada de esperar. O job já traz
 console ao vivo, cancelamento e exclusão mútua por projeto.
 
-`POST /down` é síncrono porque encerrar processo é imediato.
+`POST /down` responde na hora quando o alvo é a aplicação — encerrar processo é
+imediato. Quando o alvo são os containers, devolve `job_id`: `compose down`
+demora, e é o mesmo motivo do `/up`.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import (
     get_dev_server_service,
+    get_docker_service,
     get_environment_service,
     get_job_manager,
     get_project_service,
@@ -23,6 +26,7 @@ from app.jobs.job_manager import JobManager
 from app.schemas.health import EnvironmentPlanOut, EnvironmentStopped
 from app.schemas.job import JobAccepted
 from app.services.dev_server_service import DevServerService
+from app.services.docker_service import DockerService
 from app.services.environment_service import EnvironmentService
 from app.services.project_service import ProjectService
 
@@ -84,7 +88,7 @@ async def environment_up(
 
 
 @router.post("/down", response_model=EnvironmentStopped)
-def environment_down(
+async def environment_down(
     project_id: str,
     include_docker: bool = Query(
         default=False,
@@ -93,13 +97,25 @@ def environment_down(
     projects: ProjectService = Depends(get_project_service),
     servers: DevServerService = Depends(get_dev_server_service),
     environment: EnvironmentService = Depends(get_environment_service),
+    docker: DockerService = Depends(get_docker_service),
 ) -> EnvironmentStopped:
     """Para a aplicação. O ambiente só cai se for pedido.
 
     Banco e fila são caros de subir e não mudam entre uma execução e outra da
     aplicação; derrubá-los a cada parada do backend trocaria um ciclo de dois
     segundos por um de trinta.
+
+    A rota **executa** o que decide. Antes ela devolvia `stopped: "docker"` sem
+    tocar em container nenhum: o serviço decidia o alvo, ninguém rodava o
+    `compose down`, e o cliente anunciava "ambiente derrubado" com os containers
+    de pé. Uma resposta de sucesso descrevendo algo que não aconteceu é pior que
+    um erro — o erro pelo menos manda olhar.
     """
     project = projects.get(project_id)
     alvo = environment.down(project, servers, include_docker=include_docker)
+
+    if alvo == "docker":
+        job = docker.run_action(project, "down", [])
+        return EnvironmentStopped(stopped=alvo, job_id=job.id)
+
     return EnvironmentStopped(stopped=alvo)

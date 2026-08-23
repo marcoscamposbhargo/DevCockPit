@@ -340,18 +340,29 @@ class EnvironmentService:
         aplicação. Derrubá-los a cada parada do backend transformaria um ciclo
         de dois segundos num de trinta.
 
-        Quando o projeto **não tem** aplicação separada, a aplicação é o próprio
-        Compose e é ele que para — senão "Desligar" não faria nada, que é a pior
-        resposta possível a um clique.
-        """
-        plano_app = servers.plan(project)
+        **A decisão é pelo estado, não pelo plano.** A primeira versão perguntava
+        se o projeto *tem* aplicação separada, e parava a aplicação sempre que a
+        resposta fosse sim — inclusive quando ela não estava rodando. O Dashdate
+        caía exatamente nesse buraco: tem plano de `uvicorn`, o `uvicorn` estava
+        parado, e o que atendia na porta era o container. Clicar "Desligar"
+        parava uma aplicação que já estava parada, respondia sucesso, e o projeto
+        seguia no ar. Três cliques depois a conclusão razoável é que o botão não
+        funciona.
 
-        if plano_app is None and not include_docker:
-            # Sem aplicação separada, o Compose é a aplicação.
-            return "docker"
+        Então: se a aplicação está de pé, é ela que para — o ciclo rápido
+        continua rápido. Se não está, o que está no ar é o Compose, e é ele que
+        para. Um clique em "Desligar" sempre desliga alguma coisa, ou diz que não
+        havia nada ligado.
+        """
+        rodando = servers.status(project).running
+
+        if include_docker or not rodando:
+            # Sem aplicação de pé, quem atende é o Compose — e é ele que a
+            # pessoa está mandando desligar.
+            return "docker" if self._compose_file(project) else "nothing"
 
         servers.stop(project)
-        return "docker" if include_docker else "app"
+        return "app"
 
 
 #: As duas formas com que o Docker relata porta ocupada, conforme a versão e a

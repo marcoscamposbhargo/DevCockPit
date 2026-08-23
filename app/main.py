@@ -262,4 +262,25 @@ def _mount_frontend(app: FastAPI) -> None:
         )
 
 
-app = create_app()
+#: `app` construído só quando alguém pede, e não no import (PEP 562).
+#:
+#: `app = create_app()` no corpo do módulo fazia **importar** `app.main` ter o
+#: efeito colateral de subir a aplicação inteira com as configurações de
+#: produção: `configure_logging` apontando para `logs/devcockpit.log`, os roots
+#: reais de `configs/roots.yml`, e o engine do banco de produção aberto.
+#:
+#: O sintoma era a suíte de testes escrevendo no log de produção — inclusive os
+#: tracebacks que ela provoca de propósito, como o `RuntimeError("banco caiu")`
+#: do teste do poller. Quem fosse investigar um problema de verdade nesse
+#: arquivo encontraria erros encenados misturados aos reais, com o mesmo
+#: formato e sem nada dizendo quais eram quais.
+#:
+#: `uvicorn app.main:app` continua funcionando sem alteração: o uvicorn faz
+#: `getattr` no módulo, e é esse `getattr` que constrói. Quem importa
+#: `create_app` — a suíte inteira — não toca em `app` e não constrói nada.
+def __getattr__(name: str) -> object:
+    if name == "app":
+        aplicacao = create_app()
+        globals()["app"] = aplicacao
+        return aplicacao
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

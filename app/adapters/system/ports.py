@@ -180,3 +180,56 @@ def normalized(path: str | None) -> tuple[str, ...] | None:
     if os.name == "nt":
         return tuple(part.lower() for part in parts)
     return parts
+
+
+def self_process_tree() -> set[int]:
+    """O processo do próprio painel, seus ancestrais e seus descendentes.
+
+    Existe para uma coisa só: impedir que o painel se ofereça para ser
+    encerrado. Ele roda dentro de um root permitido, na porta que ele mesmo
+    declara, e não foi ele quem se subiu — o `serve.ps1` foi. Pelos critérios,
+    é um processo "não gerenciado" perfeito, e a tela ganhava um botão
+    "Encerrar" que mataria o painel no clique.
+
+    Os ancestrais entram porque quem o subiu foi o script, e o `--reload` do
+    uvicorn coloca um processo pai entre os dois.
+    """
+    try:
+        eu = psutil.Process()
+    except (psutil.Error, OSError):
+        return set()
+
+    arvore = {eu.pid}
+    try:
+        arvore.update(pai.pid for pai in eu.parents())
+        arvore.update(filho.pid for filho in eu.children(recursive=True))
+    except (psutil.Error, OSError):
+        pass
+    return arvore
+
+
+def with_descendants(pids: set[int]) -> set[int]:
+    """Os pids dados, mais toda a descendência viva de cada um.
+
+    Mora aqui, e não no serviço, porque ler a árvore de processos é leitura de
+    sistema operacional — a mesma razão de o scanner de portas estar neste
+    módulo.
+
+    Existe por causa do `manage.py runserver`: o autoreloader do Django
+    reexecuta a si mesmo, e quem termina com a porta é um neto do processo que
+    o painel registrou. Sem descer a árvore, o próprio servidor do painel
+    apareceria como "não gerenciado" e ganharia um botão de matar ao lado —
+    dizendo que o Desligar não dá conta dele, quando dá.
+    """
+    if not pids:
+        return set()
+
+    completo = set(pids)
+    for pid in pids:
+        try:
+            completo.update(filho.pid for filho in psutil.Process(pid).children(recursive=True))
+        except (psutil.Error, OSError):
+            # Morreu entre a leitura do banco e agora, ou não é inspecionável.
+            # Nenhum dos dois é erro: sobra o próprio pid no conjunto.
+            continue
+    return completo

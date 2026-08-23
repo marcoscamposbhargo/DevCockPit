@@ -177,6 +177,59 @@ function caminhoCurto(cwd) {
   return partes.length > 2 ? `…/${partes.slice(-2).join('/')}` : cwd;
 }
 
+/** Processos de projeto que o painel não subiu — e por isso não sabe parar.
+ *
+ * Veio do Dashdate: um `uvicorn` deixado num terminal, na porta que o projeto
+ * declara. "Desligar" no card encerra o que o painel iniciou, e esse não foi;
+ * o clique respondia sucesso e o projeto seguia no ar. Nenhuma tela oferecia
+ * outro caminho, então a conclusão razoável era que o botão não funcionava.
+ *
+ * Separado dos órfãos de propósito: são situações diferentes para quem lê. O
+ * órfão perdeu o projeto; este tem dono, só não passou pelo painel.
+ */
+function unmanagedSection(mapa, { onEncerrar }) {
+  const soltos = (mapa.observed ?? []).filter((porta) => porta.unmanaged);
+  if (!soltos.length) return null;
+
+  return el('div', { class: 'alert', role: 'status' }, [
+    el('span', { class: 'alert__icon' }, [icon('alert', { size: 16 })]),
+    el('div', { class: 'alert__body' }, [
+      el('strong', {
+        text:
+          soltos.length === 1
+            ? '1 processo de projeto que o painel não subiu'
+            : `${soltos.length} processos de projeto que o painel não subiu`,
+      }),
+      el('p', {
+        class: 'field__hint',
+        text:
+          'Está na porta que o projeto declara, mas foi iniciado por fora — ' +
+          'num terminal, ou numa sessão anterior. "Desligar" no card não ' +
+          'alcança esses: ele encerra o que o painel iniciou.',
+      }),
+      ...soltos.map((porta) => {
+        const botao = el('button', {
+          class: 'btn btn--sm btn--danger',
+          type: 'button',
+          text: 'Encerrar',
+        });
+        botao.addEventListener('click', () => onEncerrar(porta, botao));
+
+        return el('div', { class: 'mismatch-row' }, [
+          el('span', { class: 'mono', text: `porta ${porta.port}` }),
+          el('span', { text: porta.project_name ?? 'projeto desconhecido' }),
+          el('span', {
+            class: 'field__hint mono',
+            text: `${porta.process_name ?? 'processo'} · ${caminhoCurto(porta.cwd)}`,
+            title: porta.cwd ?? '',
+          }),
+          botao,
+        ]);
+      }),
+    ]),
+  ]);
+}
+
 function orphanSection(mapa, { onEncerrar }) {
   const orfaos = (mapa.observed ?? []).filter((porta) => porta.orphan);
   if (!orfaos.length) return null;
@@ -562,9 +615,10 @@ export async function renderPorts(container) {
 
     /** Encerra um servidor largado. Confirma antes: não se desfaz. */
     const onEncerrar = async (porta, botao) => {
+      const dono = porta.project_name ? ` do ${porta.project_name}` : '';
       const segue = window.confirm(
         `Encerrar o processo ${porta.process_name ?? ''} (pid ${porta.pid}) ` +
-          `que está na porta ${porta.port}?\n\n` +
+          `que está na porta ${porta.port}${dono}?\n\n` +
           `Ele roda em ${porta.cwd ?? 'origem desconhecida'}.\n` +
           'A ação não pode ser desfeita — o processo é encerrado junto com os filhos dele.'
       );
@@ -664,6 +718,7 @@ export async function renderPorts(container) {
       // Antes do resto: é a única coisa nesta tela que está custando uma porta
       // agora, e a única com um processo de pé do outro lado.
       orphanSection(mapa, { onEncerrar }),
+      unmanagedSection(mapa, { onEncerrar }),
       mismatchAlert(mapa, { onAdotar, onEditarPorta }),
       conflictAlert(mapa),
       el('p', {

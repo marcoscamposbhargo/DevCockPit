@@ -644,7 +644,7 @@ def test_encerrar_processo_nao_orfao_e_recusado() -> None:
     )
     disco.observe([])
 
-    with pytest.raises(ActionNotAllowed, match="não é um servidor de desenvolvimento"):
+    with pytest.raises(ActionNotAllowed, match="não é encerrável pelo painel"):
         disco.stop_orphan(4)
 
 
@@ -666,3 +666,139 @@ def test_encerrar_orfao_que_ja_morreu_conta_como_sucesso() -> None:
     disco.observe([])
 
     assert disco.stop_orphan(4_000_000_000).port == 3000
+
+
+# --- processo de projeto que o painel não subiu ----------------------------
+
+
+def test_processo_em_porta_de_projeto_que_o_painel_nao_subiu_e_encerravel() -> None:
+    """O caso relatado no Dashdate: um `uvicorn` deixado num terminal, na porta
+    que o projeto declara. O botão Desligar não o alcança — desligar é encerrar
+    o que o painel iniciou —, e nenhuma tela oferecia outro caminho. O projeto
+    "não desligava" e não havia o que clicar."""
+    raiz = raiz_permitida()
+    projeto = ProjectRef(
+        id="dashdate", name="Dashdate", path=f"{raiz}/Dashdate", declared_ports=(8137,)
+    )
+    scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=8137, pid=1980, process_name="python.exe", cwd=f"{raiz}/Dashdate"
+            )
+        ]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz]
+    )
+
+    observacao = disco.observe([projeto], managed_pids=set())
+    porta = observacao.ports[0]
+
+    # Tem dono declarado: não é órfão. Mas o painel não o subiu.
+    assert porta.orphan is False
+    assert porta.unmanaged is True
+    assert porta.stoppable is True
+    assert porta.project_name == "Dashdate"
+
+
+def test_servidor_que_o_painel_subiu_nao_ganha_botao_de_matar() -> None:
+    """Para esse existe o Desligar, que é o caminho certo e o único que atualiza
+    o registro. Oferecer os dois sugeriria que o Desligar não dá conta."""
+    raiz = raiz_permitida()
+    projeto = ProjectRef(
+        id="dashdate", name="Dashdate", path=f"{raiz}/Dashdate", declared_ports=(8137,)
+    )
+    scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=8137, pid=1980, process_name="python.exe", cwd=f"{raiz}/Dashdate"
+            )
+        ]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz]
+    )
+
+    porta = disco.observe([projeto], managed_pids={1980}).ports[0]
+
+    assert porta.unmanaged is False
+    assert porta.stoppable is False
+
+
+def test_processo_fora_dos_roots_nunca_e_encerravel_mesmo_em_porta_de_projeto() -> None:
+    """A defesa D4 vale igual aqui. Um container atendendo por uma porta de
+    projeto tem `cwd` na instalação do Docker — quem para container é a aba
+    Docker, não um botão de matar processo."""
+    raiz = raiz_permitida()
+    projeto = ProjectRef(id="p", name="P", path=f"{raiz}/P", declared_ports=(8137,))
+    scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=8137,
+                pid=999,
+                process_name="com.docker.backend.exe",
+                cwd="C:/Users/User/AppData/Local/Docker",
+            )
+        ]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz]
+    )
+
+    porta = disco.observe([projeto], managed_pids=set()).ports[0]
+
+    assert porta.stoppable is False
+
+
+def test_o_painel_nunca_se_oferece_para_ser_encerrado() -> None:
+    """Ele roda dentro de um root permitido, na porta que declara, e não foi ele
+    quem se subiu — o script foi. Pelos critérios é um "não gerenciado"
+    perfeito, e a tela ganhava um botão que mataria o painel no clique."""
+    import os
+    from pathlib import Path
+
+    raiz = str(Path.cwd().parent)
+    projeto = ProjectRef(
+        id="devcockpit", name="DevCockpit", path=str(Path.cwd()), declared_ports=(8765,)
+    )
+    scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=8765, pid=os.getpid(), process_name="python.exe", cwd=str(Path.cwd())
+            )
+        ]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz]
+    )
+
+    porta = disco.observe([projeto], managed_pids=set()).ports[0]
+
+    assert porta.stoppable is False
+
+
+def test_porta_efemera_dentro_da_pasta_do_projeto_nao_vira_candidata() -> None:
+    """Na primeira execução real, a tela ofereceu encerrar um `node.exe` na
+    18663 e um `bun.exe` na 58176 — ferramentas de desenvolvimento rodando
+    dentro da pasta do projeto, em portas efêmeras que não são serviço de
+    ninguém. Só a porta declarada identifica o servidor do projeto."""
+    raiz = raiz_permitida()
+    projeto = ProjectRef(
+        id="devcockpit", name="DevCockpit", path=f"{raiz}/DevCockpit", declared_ports=(8765,)
+    )
+    scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=18663, pid=4242, process_name="node.exe", cwd=f"{raiz}/DevCockpit"
+            )
+        ]
+    )
+    disco = PortDiscoveryService(
+        scanner=scanner, cache=TTLCache(ttl_seconds=300), allowed_roots=[raiz]
+    )
+
+    porta = disco.observe([projeto], managed_pids=set()).ports[0]
+
+    # Continua atribuída ao projeto — é ali que roda. Só não é encerrável.
+    assert porta.project_name == "DevCockpit"
+    assert porta.stoppable is False

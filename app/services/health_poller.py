@@ -16,6 +16,7 @@ import logging
 
 from sqlalchemy.orm import sessionmaker
 
+from app.models.project import DevServer
 from app.repositories.project_repository import ProjectRepository
 from app.services.health_service import (
     HealthService,
@@ -78,13 +79,13 @@ class HealthPoller:
 
     async def run_once(self) -> int:
         """Verifica os projetos elegíveis. Devolve quantos serviços checou."""
-        targets, refs = await asyncio.to_thread(self._collect)
+        targets, refs, gerenciados = await asyncio.to_thread(self._collect)
 
         if self.ports is not None:
             # Numa thread porque `psutil` é síncrono. Custa ~5 ms nesta
             # máquina, mas bloquear o event loop por qualquer tempo num
             # servidor que também serve SSE não se justifica.
-            await asyncio.to_thread(self.ports.observe, refs)
+            await asyncio.to_thread(self.ports.observe, refs, gerenciados)
 
         if not targets:
             return 0
@@ -92,13 +93,17 @@ class HealthPoller:
         await self.health.check_many(targets)
         return len(targets)
 
-    def _collect(self) -> tuple[list, list]:
+    def _collect(self) -> tuple[list, list, set[int]]:
         """Lê o banco numa thread: sessão do SQLAlchemy é síncrona.
 
-        Devolve os alvos de health (só os projetos elegíveis, política Q-02) e
-        as referências para atribuição de porta (**todos** os projetos: uma
-        porta escutando dentro de um projeto que ninguém abre há meses continua
-        sendo daquele projeto).
+        Devolve três coisas: os alvos de health (só os projetos elegíveis,
+        política Q-02), as referências para atribuição de porta (**todos** os
+        projetos: uma porta escutando dentro de um projeto que ninguém abre há
+        meses continua sendo daquele projeto), e os pids que o painel subiu.
+
+        Os pids separam "este servidor é meu, e o Desligar dá conta dele" de
+        "este eu não subi, e ninguém aqui sabe pará-lo" — a diferença entre um
+        projeto que desliga e um que a pessoa jura que não desliga.
         """
         session = self.session_factory()
         try:
@@ -107,6 +112,12 @@ class HealthPoller:
             for project in projects:
                 if should_poll(project, self.recent_days):
                     targets.extend(targets_from_project(project))
-            return targets, refs_from_projects(projects)
+
+            gerenciados = {
+                registro.pid
+                for registro in session.query(DevServer).all()
+                if registro.pid
+            }
+            return targets, refs_from_projects(projects), gerenciados
         finally:
             session.close()

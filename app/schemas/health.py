@@ -78,6 +78,9 @@ class ObservedPortOut(BaseModel):
     #: Servidor de desenvolvimento largado — dentro de um root permitido e sem
     #: projeto que o reivindique. Só estes a tela oferece encerrar.
     orphan: bool = False
+    #: Processo numa porta de projeto que o painel não subiu. O botão Desligar
+    #: do projeto não o alcança, e sem isto não havia caminho nenhum.
+    unmanaged: bool = False
     #: A atribuição é prova (`cwd`/`cmdline`) e não palpite (`container`, que
     #: infere pelo número declarado). Só com prova a tela afirma "no ar"; com
     #: palpite ela diz "ocupada por", que é verdade sem afirmar dono.

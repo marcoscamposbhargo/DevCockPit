@@ -32,7 +32,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from app.adapters.system.ports import ListeningPort, PortScanner, normalized
+from app.adapters.system.ports import (
+    ListeningPort,
+    PortScanner,
+    normalized,
+    self_process_tree,
+    with_descendants,
+)
 from app.core.cache import TTLCache
 from app.core.errors import ActionNotAllowed, ValidationError
 from app.runner.background import is_alive, stop_background
@@ -83,10 +89,33 @@ class ObservedPort:
     #: nunca é tocado, o que mantém `svchost`, Docker Desktop e o resto da
     #: máquina fora de alcance por construção.
     orphan: bool = False
+    #: Processo dentro de um root permitido, **numa porta que um projeto
+    #: declara**, mas que o painel não subiu — não há registro dele em
+    #: `dev_server`.
+    #:
+    #: Não é órfão: tem dono declarado. Mas o painel não sabe pará-lo, porque
+    #: parar é encerrar o processo que ele mesmo iniciou, e este não é. O
+    #: resultado era um projeto que "não desliga": o botão parava a aplicação
+    #: registrada (nenhuma), respondia sucesso, e o processo de fora seguia
+    #: atendendo na porta.
+    #:
+    #: Vale a mesma defesa D4 do órfão: fora dos roots permitidos, nada é
+    #: oferecido para encerrar.
+    unmanaged: bool = False
 
     @property
     def claimed(self) -> bool:
         return self.project_id is not None
+
+    @property
+    def stoppable(self) -> bool:
+        """O painel se dispõe a encerrar este processo.
+
+        Órfão e não gerenciado são situações diferentes para quem lê a tela —
+        um perdeu o projeto, o outro nunca passou pelo painel — e a mesma para
+        quem decide se pode matar: os dois rodam dentro de um root permitido.
+        """
+        return self.orphan or self.unmanaged
 
 
 @dataclass
@@ -133,8 +162,17 @@ class PortDiscoveryService:
 
     # --- varredura ---
 
-    def observe(self, projects: list[ProjectRef]) -> PortObservation:
-        """Varre e atribui. Chamado pelo poller, nunca no caminho da requisição."""
+    def observe(
+        self, projects: list[ProjectRef], managed_pids: set[int] | None = None
+    ) -> PortObservation:
+        """Varre e atribui. Chamado pelo poller, nunca no caminho da requisição.
+
+        `managed_pids` são os processos que o painel subiu (a tabela
+        `dev_server`). Servem para separar "este servidor é meu, e o botão
+        Desligar dá conta dele" de "este eu não subi, e ninguém aqui sabe
+        pará-lo" — que é a diferença entre um projeto que desliga e um que a
+        pessoa jura que não desliga.
+        """
         try:
             escutando = self.scanner.scan()
         except Exception:  # noqa: BLE001 - descoberta nunca derruba o poller
@@ -144,8 +182,16 @@ class PortDiscoveryService:
             return observacao
 
         dono_por_porta = self._sole_declarers(projects)
+        # O próprio painel entra sempre: ele roda dentro de um root permitido,
+        # na porta que declara, e não foi ele quem se subiu. Sem esta linha a
+        # tela oferecia "Encerrar" ao lado do DevCockpit — um botão que mata o
+        # painel no clique.
+        gerenciados = with_descendants(managed_pids or set()) | self_process_tree()
         observacao = PortObservation(
-            ports=[self._assign(porta, projects, dono_por_porta) for porta in escutando]
+            ports=[
+                self._assign(porta, projects, dono_por_porta, gerenciados)
+                for porta in escutando
+            ]
         )
         self.cache.set(CACHE_KEY, observacao)
         return observacao
@@ -193,11 +239,12 @@ class PortDiscoveryService:
                 "Recarregue a tela e tente de novo."
             )
 
-        if not observada.orphan:
+        if not observada.stoppable:
             raise ActionNotAllowed(
-                f"O processo {pid} não é um servidor de desenvolvimento largado. "
-                "O painel só encerra processos que rodam dentro de um root "
-                "permitido e que nenhum projeto cadastrado reivindica."
+                f"O processo {pid} não é encerrável pelo painel. "
+                "Só são oferecidos processos que rodam dentro de um root "
+                "permitido: os que nenhum projeto reivindica, e os que estão "
+                "numa porta de projeto sem terem sido iniciados daqui."
             )
 
         # Morreu entre a varredura e o clique: é o resultado desejado.
@@ -219,14 +266,21 @@ class PortDiscoveryService:
         porta: ListeningPort,
         projects: list[ProjectRef],
         dono_por_porta: dict[int, ProjectRef],
+        gerenciados: set[int] | None = None,
     ) -> ObservedPort:
+        gerenciados = gerenciados or set()
+
         dono = self._match_by_cwd(porta, projects)
         if dono is not None:
-            return self._observed(porta, dono, "cwd")
+            return self._observed(
+                porta, dono, "cwd", unmanaged=self._is_unmanaged(porta, dono, gerenciados)
+            )
 
         dono = self._match_by_cmdline(porta, projects)
         if dono is not None:
-            return self._observed(porta, dono, "cmdline")
+            return self._observed(
+                porta, dono, "cmdline", unmanaged=self._is_unmanaged(porta, dono, gerenciados)
+            )
 
         if porta.via_container_runtime:  # noqa: SIM102 - a ordem das regras é o contrato
             # O `cwd` do Docker aponta para a instalação dele, então as duas
@@ -241,6 +295,38 @@ class PortDiscoveryService:
             return self._observed(porta, declarado_por, "container")
 
         return self._observed(porta, None, "unknown", orphan=self._is_orphan(porta))
+
+    def _is_unmanaged(
+        self, porta: ListeningPort, dono: ProjectRef, gerenciados: set[int]
+    ) -> bool:
+        """Processo de projeto que o painel não subiu, e por isso não sabe parar.
+
+        A porta tem dono declarado — não é órfã. Mas o processo veio de fora: um
+        `uvicorn` deixado num terminal, um `runserver` de ontem. O botão
+        Desligar do projeto não o alcança, porque desligar é encerrar o que o
+        painel iniciou.
+
+        Três condições, e a terceira só apareceu quando isto rodou na máquina de
+        verdade:
+
+        1. o painel não subiu este processo;
+        2. ele roda dentro de um root permitido (defesa D4) — um container
+           atendendo por porta de projeto tem `cwd` na instalação do Docker e
+           fica de fora, porque quem para container é a aba Docker;
+        3. **a porta é uma das que o projeto declara.**
+
+        Sem a terceira, qualquer processo aberto dentro da pasta do projeto
+        virava candidato a ser morto. Na primeira execução real a tela ofereceu
+        encerrar um `node.exe` na 18663 e um `bun.exe` na 58176 — portas
+        efêmeras de ferramentas de desenvolvimento rodando ali dentro, que não
+        são serviço de ninguém. Só a porta declarada identifica o servidor do
+        projeto; o resto é ruído do diretório.
+        """
+        if porta.pid is None or porta.pid in gerenciados:
+            return False
+        if porta.port not in dono.declared_ports:
+            return False
+        return self._within_allowed_root(porta)
 
     def _is_orphan(self, porta: ListeningPort) -> bool:
         """Processo de desenvolvimento largado, dentro de um root permitido.
@@ -259,6 +345,16 @@ class PortDiscoveryService:
         O caso que isto pega: subir o servidor de um projeto, remover o projeto
         do painel, e o processo continuar de pé segurando a porta sem nenhum
         caminho de volta pela interface.
+        """
+        return self._within_allowed_root(porta)
+
+    def _within_allowed_root(self, porta: ListeningPort) -> bool:
+        """O processo roda dentro de um diretório que o painel pode tocar.
+
+        A defesa D4 — a allowlist de `configs/roots.yml`, que o cliente não
+        edita — reusada para limitar o que pode ser encerrado. Fora dela,
+        `svchost`, Docker Desktop e o navegador ficam inalcançáveis por
+        construção, e não por uma lista de exceções que alguém manteria à mão.
         """
         if not self.allowed_roots or porta.cwd is None:
             return False
@@ -327,6 +423,7 @@ class PortDiscoveryService:
         matched_by: str,
         *,
         orphan: bool = False,
+        unmanaged: bool = False,
     ) -> ObservedPort:
         return ObservedPort(
             port=porta.port,
@@ -337,6 +434,7 @@ class PortDiscoveryService:
             matched_by=matched_by,
             cwd=porta.cwd,
             orphan=orphan,
+            unmanaged=unmanaged,
         )
 
 

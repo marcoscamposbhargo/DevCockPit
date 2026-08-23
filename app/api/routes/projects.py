@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.deps import get_dev_server_service, get_project_service
 from app.models.project import Project
-from app.schemas.git import DetectionResult
+from app.schemas.git import DetectionResult, PortDriftOut
 from app.schemas.project import (
     ProjectCreate,
     ProjectDetail,
@@ -69,10 +69,7 @@ def list_projects(
     rodando = {registro.project_id for registro in servers.running_project_ids()}
 
     return ProjectList(
-        items=[
-            _to_summary(p, **_capacidades(p, servers, rodando))
-            for p in projects
-        ],
+        items=[_to_summary(p, **_capacidades(p, servers, rodando)) for p in projects],
         total=total,
     )
 
@@ -166,4 +163,8 @@ def detect_project(
         services_added=diff.services_added,
         compose_file=diff.compose_file,
         warnings=diff.warnings,
+        port_drift=[
+            PortDriftOut(key=d.key, label=d.label, declared=d.declared, detected=d.detected)
+            for d in diff.port_drift
+        ],
     )

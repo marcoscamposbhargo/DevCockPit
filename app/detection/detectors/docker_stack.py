@@ -6,6 +6,7 @@ declarativo, versionado e reflete o que de fato sobe.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -55,15 +56,66 @@ def find_compose_file(project_dir: Path) -> Path | None:
     return None
 
 
-def parse_published_port(entry: object) -> int | None:
+#: `${POSTGRES_PORT:-5434}`, `${WEB_PORT}`, `$WEB_PORT`.
+_VARIAVEL = re.compile(r"\$\{(\w+)(?::?-([^}]*))?\}|\$(\w+)")
+
+
+def read_env_file(project_dir: Path) -> dict[str, str]:
+    """As variáveis do `.env` ao lado do Compose, que é de onde ele as lê.
+
+    Formato mínimo de propósito: `CHAVE=valor`, sem `export`, sem aspas
+    inteligentes, sem continuação de linha. Só se precisa daqui o suficiente
+    para resolver um número de porta, e um parser generoso demais acerta menos.
+    """
+    arquivo = project_dir / ".env"
+    if not arquivo.is_file():
+        return {}
+
+    valores: dict[str, str] = {}
+    try:
+        linhas = arquivo.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {}
+
+    for linha in linhas:
+        limpa = linha.strip()
+        if not limpa or limpa.startswith("#") or "=" not in limpa:
+            continue
+        chave, _, valor = limpa.partition("=")
+        valores[chave.strip()] = valor.strip().strip("\"'")
+
+    return valores
+
+
+def _interpolar(texto: str, env: dict[str, str]) -> str:
+    """Resolve `${VAR:-default}` como o Compose resolve: `.env` primeiro,
+    depois o valor de reserva escrito na própria expressão."""
+
+    def troca(casado: re.Match[str]) -> str:
+        nome = casado.group(1) or casado.group(3)
+        reserva = casado.group(2) or ""
+        return env.get(nome, reserva)
+
+    return _VARIAVEL.sub(troca, texto)
+
+
+def parse_published_port(entry: object, env: dict[str, str] | None = None) -> int | None:
     """Extrai a porta publicada no host de uma entrada de `ports`.
 
     Formatos aceitos: `"8000:8000"`, `"127.0.0.1:8000:8000"`, `8000`,
     `{"published": 8000}`. Faixas (`"8000-8010:8000-8010"`) são ignoradas —
     sugerir a primeira porta de uma faixa seria adivinhação.
+
+    Entrada com variável — `"${POSTGRES_PORT:-5434}:5432"` — é resolvida com o
+    `.env` do projeto e, na falta dele, com o valor de reserva da própria
+    expressão. Antes disso, um Compose inteiro escrito assim não rendia porta
+    nenhuma: a PLATAFORMA publica `${POSTGRES_PORT:-5434}` e
+    `${WEB_PORT:-8000}`, e a detecção devolvia zero serviços sem dizer por quê.
     """
     if isinstance(entry, dict):
         published = entry.get("published")
+        if isinstance(published, str):
+            published = _interpolar(published, env or {})
         try:
             return int(published) if published is not None else None
         except (TypeError, ValueError):
@@ -75,7 +127,7 @@ def parse_published_port(entry: object) -> int | None:
     if not isinstance(entry, str):
         return None
 
-    text = entry.strip().split("/")[0]
+    text = _interpolar(entry.strip(), env or {}).split("/")[0]
     parts = text.split(":")
 
     host_part = parts[0] if len(parts) == 1 else parts[-2] if len(parts) >= 2 else None
@@ -96,9 +148,7 @@ class DockerfileDetector:
     def detect(self, project_dir: Path) -> Detection | None:
         if not (project_dir / "Dockerfile").is_file():
             return None
-        return Detection(
-            technologies=[DetectedTech("docker", Category.TOOLING, "Dockerfile")]
-        )
+        return Detection(technologies=[DetectedTech("docker", Category.TOOLING, "Dockerfile")])
 
 
 class ComposeDetector:
@@ -116,6 +166,10 @@ class ComposeDetector:
             ],
             compose_file=compose.name,
         )
+
+        # Lido uma vez para o arquivo inteiro: é o mesmo `.env` para todos os
+        # serviços, e reler por porta seria I/O repetido à toa.
+        env = read_env_file(project_dir)
 
         try:
             data = yaml.safe_load(compose.read_text(encoding="utf-8", errors="replace")) or {}
@@ -147,7 +201,7 @@ class ComposeDetector:
                 continue
 
             for entry in ports:
-                port = parse_published_port(entry)
+                port = parse_published_port(entry, env)
                 if port is None:
                     continue
 
@@ -163,6 +217,8 @@ class ComposeDetector:
                         port=port,
                         url=f"http://localhost:{port}" if is_http else None,
                         health_kind="HTTP" if is_http else "TCP",
+                        # O Compose publica o número; não há convenção aqui.
+                        port_source="file",
                     )
                 )
                 break

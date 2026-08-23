@@ -166,6 +166,20 @@ export async function renderProject(container, params, query) {
       } else {
         toast('Detecção executada. Nada mudou.');
       }
+
+      // Divergência de porta vem em toast próprio, e não misturada na contagem
+      // acima: "nada mudou" era literalmente verdade — a detecção não
+      // sobrescreve o cadastro — e ao mesmo tempo escondia que o painel está
+      // verificando um número que o arquivo do projeto abandonou.
+      for (const drift of diff.port_drift ?? []) {
+        toast(`${drift.label}: o projeto usa a porta ${drift.detected}.`, {
+          kind: 'warning',
+          meta:
+            `O cadastro diz ${drift.declared}, então é essa que o painel verifica. ` +
+            'Troque em Ports para os dois baterem.',
+        });
+      }
+
       for (const warning of diff.warnings ?? []) toast(warning, { kind: 'error' });
       renderProject(container, params, query);
     } catch (error) {

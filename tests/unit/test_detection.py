@@ -243,3 +243,160 @@ def test_diretorio_inexistente_avisa_em_vez_de_falhar(registry, workspace: Path)
 
     assert detection.technologies == []
     assert detection.warnings
+
+
+# --- divergência entre o cadastro e o arquivo ------------------------------
+#
+# A detecção nunca sobrescreve o que o usuário cadastrou, e isso está certo. O
+# que faltava era o outro lado: não sobrescrever não é motivo para não contar.
+
+
+def _projeto_com_compose(session, workspace: Path, porta_no_arquivo: int):  # type: ignore[no-untyped-def]
+    from app.models.project import Project
+
+    diretorio = workspace / "stack"
+    diretorio.mkdir()
+    (diretorio / "docker-compose.yml").write_text(
+        "services:\n"
+        "  db:\n"
+        "    image: postgres:16\n"
+        "    ports:\n"
+        f'      - "{porta_no_arquivo}:5432"\n',
+        encoding="utf-8",
+    )
+    project = Project(id="stack", name="Stack", path=str(diretorio))
+    session.add(project)
+    session.flush()
+    return project
+
+
+def test_porta_que_mudou_no_arquivo_e_relatada_sem_ser_aplicada(session, workspace: Path) -> None:  # type: ignore[no-untyped-def]
+    """O caso real: o `.env` do projeto passou a publicar outra porta e o
+    cadastro ficou onde estava. A detecção respondia "nada mudou" enquanto o
+    painel verificava um número que o projeto já tinha abandonado."""
+    from app.models.project import ProjectService as ProjectServiceModel
+    from app.services.detection_service import DetectionService
+
+    project = _projeto_com_compose(session, workspace, porta_no_arquivo=5434)
+    project.services.append(ProjectServiceModel(key="db", label="Database", port=5433))
+    session.flush()
+
+    diff = DetectionService(session=session).run_for(project, record=False)
+
+    assert [(d.key, d.declared, d.detected) for d in diff.port_drift] == [("db", 5433, 5434)]
+    # Relatado, não aplicado: o cadastro é do usuário.
+    assert next(s.port for s in project.services if s.key == "db") == 5433
+
+
+def test_porta_igual_no_arquivo_e_no_cadastro_nao_gera_divergencia(
+    session, workspace: Path
+) -> None:  # type: ignore[no-untyped-def]
+    from app.models.project import ProjectService as ProjectServiceModel
+    from app.services.detection_service import DetectionService
+
+    project = _projeto_com_compose(session, workspace, porta_no_arquivo=5433)
+    project.services.append(ProjectServiceModel(key="db", label="Database", port=5433))
+    session.flush()
+
+    assert DetectionService(session=session).run_for(project, record=False).port_drift == []
+
+
+def test_divergencia_entra_no_registro_de_atividade(session, workspace: Path) -> None:  # type: ignore[no-untyped-def]
+    """Quem for entender depois por que o serviço vivia offline procura no
+    histórico, não no toast que passou há três dias."""
+    from app.models.project import ActivityLog
+    from app.models.project import ProjectService as ProjectServiceModel
+    from app.services.detection_service import DetectionService
+
+    project = _projeto_com_compose(session, workspace, porta_no_arquivo=5434)
+    project.services.append(ProjectServiceModel(key="db", label="Database", port=5433))
+    session.flush()
+
+    DetectionService(session=session).run_for(project)
+    session.flush()
+
+    registro = session.query(ActivityLog).filter(ActivityLog.action == "project.detect").one()
+    assert "5433->5434" in registro.message
+
+
+def test_porta_convencional_do_framework_nao_acusa_o_cadastro(session, workspace: Path) -> None:  # type: ignore[no-untyped-def]
+    """A primeira versão desta checagem acusou os três projetos da máquina de
+    uma vez, todos com o mesmo "detected: 8000" — que é o padrão do uvicorn, e
+    não uma leitura de arquivo nenhum. Quem cadastrou 3001 passa `--port 3001`;
+    o padrão do framework não contradiz isso, e tratar como contradição faz de
+    toda porta escolhida a mão um alerta permanente."""
+    from app.models.project import Project
+    from app.models.project import ProjectService as ProjectServiceModel
+    from app.services.detection_service import DetectionService
+
+    diretorio = workspace / "api"
+    diretorio.mkdir()
+    (diretorio / "requirements.txt").write_text("fastapi\nuvicorn\n", encoding="utf-8")
+    project = Project(id="api", name="Api", path=str(diretorio))
+    session.add(project)
+    session.flush()
+    project.services.append(ProjectServiceModel(key="backend", label="Backend", port=3001))
+    session.flush()
+
+    diff = DetectionService(session=session).run_for(project, record=False)
+
+    assert diff.port_drift == []
+
+
+# --- porta escrita como variável no Compose --------------------------------
+
+
+def test_porta_com_variavel_usa_o_valor_do_env(registry, workspace: Path) -> None:
+    """O Compose da PLATAFORMA publica `${POSTGRES_PORT:-5434}`. Sem resolver a
+    variável, um arquivo inteiro escrito assim rendia zero portas — e a
+    detecção respondia "nada encontrado" sem dizer que não soube ler."""
+    project = workspace / "ingressos"
+    project.mkdir()
+    (project / ".env").write_text("POSTGRES_PORT=5440\n", encoding="utf-8")
+    (project / "docker-compose.yml").write_text(
+        "services:\n"
+        "  db:\n"
+        "    image: postgres:16\n"
+        "    ports:\n"
+        '      - "${POSTGRES_PORT:-5434}:5432"\n',
+        encoding="utf-8",
+    )
+
+    detection = registry.run(project)
+
+    assert [(s.key, s.port) for s in detection.services] == [("db", 5440)]
+
+
+def test_sem_env_a_variavel_cai_no_valor_de_reserva(registry, workspace: Path) -> None:
+    project = workspace / "reserva"
+    project.mkdir()
+    (project / "docker-compose.yml").write_text(
+        'services:\n  web:\n    image: nginx\n    ports:\n      - "${WEB_PORT:-8000}:8000"\n',
+        encoding="utf-8",
+    )
+
+    assert [s.port for s in registry.run(project).services] == [8000]
+
+
+def test_variavel_sem_reserva_e_sem_env_nao_vira_porta(registry, workspace: Path) -> None:
+    """Não dá para saber o número. Inventar um seria pior que não sugerir."""
+    project = workspace / "vazia"
+    project.mkdir()
+    (project / "docker-compose.yml").write_text(
+        'services:\n  web:\n    image: nginx\n    ports:\n      - "${WEB_PORT}:8000"\n',
+        encoding="utf-8",
+    )
+
+    assert [s.port for s in registry.run(project).services] == []
+
+
+def test_env_com_comentario_e_aspas(workspace: Path) -> None:
+    from app.detection.detectors.docker_stack import read_env_file
+
+    project = workspace / "envfile"
+    project.mkdir()
+    (project / ".env").write_text(
+        '# porta do banco\nPOSTGRES_PORT="5440"\n\nVAZIO=\n', encoding="utf-8"
+    )
+
+    assert read_env_file(project) == {"POSTGRES_PORT": "5440", "VAZIO": ""}

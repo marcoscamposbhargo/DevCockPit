@@ -34,9 +34,7 @@ _REQUIREMENT = re.compile(r"^\s*([A-Za-z0-9._-]+)")
 
 
 def _classify(packages: set[str], evidence: str) -> Detection:
-    detection = Detection(
-        technologies=[DetectedTech("python", Category.LANGUAGE, evidence)]
-    )
+    detection = Detection(technologies=[DetectedTech("python", Category.LANGUAGE, evidence)])
 
     for package in sorted(packages):
         key = package.lower()

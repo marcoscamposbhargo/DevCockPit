@@ -55,6 +55,15 @@ class RemoteList(BaseModel):
     items: list[RemoteOut]
 
 
+class PortDriftOut(BaseModel):
+    """Serviço cadastrado cuja porta não bate com a do arquivo do projeto."""
+
+    key: str
+    label: str
+    declared: int
+    detected: int
+
+
 class DetectionResult(BaseModel):
     skipped: bool = False
     added: list[str] = Field(default_factory=list)
@@ -63,6 +72,9 @@ class DetectionResult(BaseModel):
     services_added: list[str] = Field(default_factory=list)
     compose_file: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    #: Divergências entre o cadastro e o arquivo do projeto. A detecção não
+    #: sobrescreve o que o usuário cadastrou — mas também não cala sobre isso.
+    port_drift: list[PortDriftOut] = Field(default_factory=list)
 
 
 class ScanRequest(BaseModel):

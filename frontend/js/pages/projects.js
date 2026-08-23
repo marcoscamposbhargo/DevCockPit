@@ -486,6 +486,16 @@ export async function renderProjects(container, _params, query) {
             meta: diff.warnings[0] ?? 'Sem package.json, pyproject, Compose ou equivalente.',
           });
         }
+
+        // A detecção não sobrescreve o cadastro, mas precisa contar quando ele
+        // e o arquivo do projeto discordam — senão "nada mudou" esconde a razão
+        // de o serviço viver offline.
+        for (const drift of diff.port_drift ?? []) {
+          toast(`${project.name} · ${drift.label}: o projeto usa a porta ${drift.detected}.`, {
+            kind: 'warning',
+            meta: `O cadastro diz ${drift.declared} — é essa que o painel verifica.`,
+          });
+        }
         await carregar();
         draw();
       } catch (error) {

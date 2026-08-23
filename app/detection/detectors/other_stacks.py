@@ -19,8 +19,7 @@ class _MarkerDetector:
             return None
         return Detection(
             technologies=[
-                DetectedTech(name, category, self.marker)
-                for name, category in self.technologies
+                DetectedTech(name, category, self.marker) for name, category in self.technologies
             ]
         )
 
@@ -70,6 +69,4 @@ class StaticHtmlDetector:
     def detect(self, project_dir: Path) -> Detection | None:
         if not (project_dir / "index.html").is_file():
             return None
-        return Detection(
-            technologies=[DetectedTech("html", Category.LANGUAGE, "index.html")]
-        )
+        return Detection(technologies=[DetectedTech("html", Category.LANGUAGE, "index.html")])

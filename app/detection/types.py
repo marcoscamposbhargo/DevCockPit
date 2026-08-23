@@ -37,6 +37,15 @@ class SuggestedService:
     port: int | None = None
     url: str | None = None
     health_kind: str = "TCP"
+    #: De onde saiu o número: `"file"` quando foi lido de um arquivo do projeto
+    #: (Compose, `vite.config`), `"convention"` quando é o padrão do framework.
+    #:
+    #: A diferença importa na hora de acusar divergência com o cadastro. "O
+    #: Compose publica 5434 e você cadastrou 5433" é fato, e vale interromper
+    #: alguém. "O padrão do uvicorn é 8000 e você cadastrou 3001" não é nada —
+    #: quem cadastrou 3001 provavelmente passa `--port 3001`, e acusar isso
+    #: transforma todo projeto com porta escolhida num alerta permanente.
+    port_source: str = "convention"
 
 
 @dataclass

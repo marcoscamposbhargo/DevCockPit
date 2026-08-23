@@ -30,13 +30,16 @@ NODE_FRAMEWORKS: dict[str, tuple[str, str, int | None]] = {
 _VITE_PORT = re.compile(r"port\s*:\s*(\d{2,5})")
 
 
-def _service_for(port: int, key: str, label: str) -> SuggestedService:
+def _service_for(
+    port: int, key: str, label: str, *, port_source: str = "convention"
+) -> SuggestedService:
     return SuggestedService(
         key=key,
         label=label,
         port=port,
         url=f"http://localhost:{port}",
         health_kind="HTTP",
+        port_source=port_source,
     )
 
 
@@ -48,9 +51,7 @@ class PackageJsonDetector:
         if not target.is_file():
             return None
 
-        detection = Detection(
-            technologies=[DetectedTech("node", Category.RUNTIME, "package.json")]
-        )
+        detection = Detection(technologies=[DetectedTech("node", Category.RUNTIME, "package.json")])
 
         try:
             data = json.loads(target.read_text(encoding="utf-8", errors="replace"))
@@ -88,9 +89,7 @@ class ViteConfigDetector:
             return None
 
         config = matches[0]
-        detection = Detection(
-            technologies=[DetectedTech("vite", Category.TOOLING, config.name)]
-        )
+        detection = Detection(technologies=[DetectedTech("vite", Category.TOOLING, config.name)])
 
         # Extração best-effort: se o `port` estiver em variável ou vier de env,
         # a porta simplesmente não é sugerida. Nunca executamos o config.
@@ -101,7 +100,16 @@ class ViteConfigDetector:
 
         port = int(found.group(1)) if found else 5173
         if 1 <= port <= 65535:
-            detection.services.append(_service_for(port, "frontend", "Frontend"))
+            # Achou no `vite.config` é leitura de arquivo; o 5173 de reserva é
+            # o padrão do Vite, e padrão não contradiz escolha de ninguém.
+            detection.services.append(
+                _service_for(
+                    port,
+                    "frontend",
+                    "Frontend",
+                    port_source="file" if found else "convention",
+                )
+            )
 
         return detection
 

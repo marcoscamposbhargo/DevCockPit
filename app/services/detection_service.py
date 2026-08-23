@@ -7,7 +7,7 @@ como `MANUAL` nunca é desfeito.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -26,6 +26,22 @@ from app.services.activity_service import ActivityService
 
 
 @dataclass
+class PortDrift:
+    """O arquivo do projeto diz uma porta; o cadastro diz outra.
+
+    Não é erro de ninguém: o `.env` muda, o Compose muda, e o cadastro fica
+    onde estava. Vira problema quando o painel passa a verificar um número que
+    o projeto abandonou — o serviço aparece offline para sempre, e o motivo não
+    está em lugar nenhum da tela.
+    """
+
+    key: str
+    label: str
+    declared: int
+    detected: int
+
+
+@dataclass
 class DetectionDiff:
     added: list[str]
     removed: list[str]
@@ -34,6 +50,9 @@ class DetectionDiff:
     compose_file: str | None
     warnings: list[str]
     skipped: bool = False
+    #: Serviços já cadastrados cuja porta não bate com a do arquivo. Só
+    #: relatados — a decisão de adotar é de quem conhece o projeto.
+    port_drift: list[PortDrift] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -96,7 +115,7 @@ class DetectionService:
             )
             added.append(name)
 
-        services_added = self._apply_services(project, detection.services)
+        services_added, port_drift = self._apply_services(project, detection.services)
 
         diff = DetectionDiff(
             added=sorted(added),
@@ -105,6 +124,7 @@ class DetectionService:
             services_added=sorted(services_added),
             compose_file=detection.compose_file,
             warnings=detection.warnings,
+            port_drift=port_drift,
         )
 
         if record:
@@ -116,13 +136,50 @@ class DetectionService:
             )
         return diff
 
-    def _apply_services(self, project: Project, suggestions: list) -> list[str]:
-        """Só adiciona serviço que ainda não existe. Nunca sobrescreve o do usuário."""
-        existing = {service.key for service in project.services}
+    def _apply_services(
+        self, project: Project, suggestions: list
+    ) -> tuple[list[str], list[PortDrift]]:
+        """Só adiciona serviço que ainda não existe. Nunca sobrescreve o do usuário.
+
+        Nunca sobrescrever é a regra certa e continua valendo. O que faltava era
+        o outro lado dela: **não sobrescrever não é motivo para não contar**.
+
+        Um serviço já cadastrado cuja porta mudou no arquivo do projeto era
+        ignorado em silêncio. A detecção respondia "nada mudou" e o painel
+        seguia verificando um número que o projeto já tinha abandonado — o
+        serviço aparecia offline indefinidamente, sem que tela nenhuma tivesse
+        como dizer por quê. Foi o caso da PLATAFORMA: o `.env` diz
+        `POSTGRES_PORT=5434`, o cadastro dizia 5433, e rodar a detecção não
+        adiantava nada.
+        """
+        por_chave = {service.key: service for service in project.services}
+        existing = set(por_chave)
         added: list[str] = []
+        drift: list[PortDrift] = []
 
         for suggestion in suggestions:
             if suggestion.key in existing:
+                atual = por_chave[suggestion.key]
+                # Só porta lida de arquivo contradiz o cadastro. A porta
+                # convencional do framework não sabe nada sobre este projeto:
+                # acusar "o padrão do uvicorn é 8000" contra um serviço
+                # cadastrado em 3001 transformaria toda porta escolhida a mão
+                # num alerta permanente — foi o que aconteceu na primeira
+                # versão desta checagem, que acusou os três projetos de uma vez.
+                if (
+                    suggestion.port_source == "file"
+                    and suggestion.port
+                    and atual.port
+                    and suggestion.port != atual.port
+                ):
+                    drift.append(
+                        PortDrift(
+                            key=atual.key,
+                            label=atual.label,
+                            declared=atual.port,
+                            detected=suggestion.port,
+                        )
+                    )
                 continue
             project.services.append(
                 ProjectServiceModel(
@@ -137,13 +194,20 @@ class DetectionService:
             existing.add(suggestion.key)
             added.append(suggestion.key)
 
-        return added
+        return added, drift
 
 
 def _summary(diff: DetectionDiff) -> str:
-    if not diff.changed:
+    if not diff.changed and not diff.port_drift:
         return "Detecção executada; nada mudou."
     parts = []
+    if diff.port_drift:
+        # No registro de atividade, e não só na resposta: quem for entender
+        # depois por que o serviço vivia offline precisa achar isso no histórico.
+        parts.append(
+            f"{len(diff.port_drift)} porta(s) divergindo do arquivo: "
+            + ", ".join(f"{d.key} {d.declared}->{d.detected}" for d in diff.port_drift)
+        )
     if diff.added:
         parts.append(f"+{len(diff.added)} tecnologia(s): {', '.join(diff.added)}")
     if diff.removed:

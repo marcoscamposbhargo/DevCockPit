@@ -110,8 +110,7 @@ class DetectionRegistry:
                 },
             )
             result.warnings.append(
-                f"O detector {detector.name} não conseguiu ler este projeto: "
-                f"{str(exc)[:120]}"
+                f"O detector {detector.name} não conseguiu ler este projeto: {str(exc)[:120]}"
             )
             return None
 

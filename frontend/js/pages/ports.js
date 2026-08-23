@@ -19,6 +19,12 @@ import { navigate } from '../router.js';
 
 const PORTA_MIN = 1;
 const PORTA_MAX = 65535;
+//: De quanto em quanto tempo a tela relê o mapa. Metade do que esta tela
+//: mostra é estado vivo — quem está escutando agora, qual servidor caiu —, e
+//: uma tela de estado vivo que só muda quando se aperta um botão é uma tela
+//: que mente entre um aperto e outro. O poller do servidor já mantém a
+//: observação fresca; aqui só se busca o que ele já apurou.
+const RECARGA_MS = 6000;
 //: De onde a sugestão de porta livre começa a procurar. Abaixo de 1024 é
 //: território de porta privilegiada; entre 1024 e 3000 mora meio mundo
 //: (MySQL, Postgres, Redis) que não declara nada no DevCockpit.
@@ -42,9 +48,17 @@ function comPorta(url, porta) {
   }
 }
 
-function proximaLivre(ocupadas, apartir = SUGESTAO_INICIO) {
+/** A menor porta que ninguém declarou **e** ninguém está escutando.
+ *
+ * As duas condições, não uma. Considerar só o que os projetos declaram fazia a
+ * sugestão cair em cima de um Postgres nativo ou de um container de outro
+ * projeto — números que o DevCockpit não conhece e a máquina conhece muito
+ * bem. Quem clica em "Sugerir livre" espera uma porta livre; entregar uma
+ * ocupada troca um conflito conhecido por um conflito que só aparece no
+ * próximo `up`. */
+function proximaLivre(ocupadas, escutando, apartir = SUGESTAO_INICIO) {
   let porta = apartir;
-  while (porta < PORTA_MAX && ocupadas.has(porta)) porta += 1;
+  while (porta < PORTA_MAX && (ocupadas.has(porta) || escutando.has(porta))) porta += 1;
   return porta;
 }
 
@@ -153,17 +167,19 @@ function mismatchAlert(mapa, { onAdotar, onEditarPorta }) {
  * pode ser encerrado: o resto da máquina fica fora de alcance por construção, e
  * não por uma lista de exceções que alguém precisaria manter.
  */
+/** `C:/Users/.../Projetos/AI Procedures` -> `…/Projetos/AI Procedures`.
+ *
+ * As duas barras na classe: o caminho chega do Windows com `\`, e o corte
+ * precisa funcionar dos dois lados. */
+function caminhoCurto(cwd) {
+  if (!cwd) return 'origem desconhecida';
+  const partes = String(cwd).split(/[\\/]/).filter(Boolean);
+  return partes.length > 2 ? `…/${partes.slice(-2).join('/')}` : cwd;
+}
+
 function orphanSection(mapa, { onEncerrar }) {
   const orfaos = (mapa.observed ?? []).filter((porta) => porta.orphan);
   if (!orfaos.length) return null;
-
-  const caminhoCurto = (cwd) => {
-    if (!cwd) return 'origem desconhecida';
-    // As duas barras: o caminho chega do Windows com `\`, e a classe precisa
-    // aceitar as duas para o corte funcionar dos dois lados.
-    const partes = String(cwd).split(/[\\/]/).filter(Boolean);
-    return partes.length > 2 ? `…/${partes.slice(-2).join('/')}` : cwd;
-  };
 
   return el('div', { class: 'alert alert--orfaos', role: 'status' }, [
     el('span', { class: 'alert__icon' }, [icon('alert', { size: 16 })]),
@@ -221,7 +237,7 @@ function orphanSection(mapa, { onEncerrar }) {
  * Recolhida de propósito: aqui mora o ruído da máquina — `svchost`, Discord,
  * AnyDesk. O que tem ação vai para a seção de órfãos, em destaque.
  */
-function unclaimedSection(mapa) {
+function unclaimedSection(mapa, { aberto = false, onToggle = () => {} } = {}) {
   if (!mapa.observation_available) {
     return el('p', { class: 'field__hint', style: 'margin-top:var(--sp-4)' }, [
       'Não foi possível ler as portas em escuta nesta máquina. ',
@@ -243,7 +259,12 @@ function unclaimedSection(mapa) {
     return porta.process_name ?? 'processo desconhecido';
   };
 
-  return el('details', { class: 'ports-unclaimed' }, [
+  // Ordenado por número. A ordem de chegada do scanner é a do sistema
+  // operacional, que não é ordem nenhuma — e quem abre esta lista veio
+  // procurar um número específico.
+  const ordenadas = [...sobrando].sort((a, b) => a.port - b.port);
+
+  const bloco = el('details', { class: 'ports-unclaimed' }, [
     el('summary', {
       text: `${sobrando.length} porta(s) em escuta que nenhum serviço declara`,
     }),
@@ -254,15 +275,32 @@ function unclaimedSection(mapa) {
     el(
       'ul',
       { class: 'ports-unclaimed__list' },
-      sobrando.map((porta) =>
+      ordenadas.map((porta) =>
         el('li', {}, [
           el('span', { class: 'mono', text: String(porta.port) }),
           ' · ',
           rotulo(porta),
+          // O que faltava para a lista responder à pergunta que ela existe
+          // para responder. "processo desconhecido" não diz de quem é a porta;
+          // o pid e o diretório dizem, e são o que se leva para o gerenciador
+          // de tarefas quando a resposta é matar.
+          porta.pid ? el('span', { class: 'field__hint mono', text: `pid ${porta.pid}` }) : null,
+          porta.cwd
+            ? el('span', {
+                class: 'field__hint mono',
+                text: caminhoCurto(porta.cwd),
+                title: porta.cwd,
+              })
+            : null,
         ])
       )
     ),
   ]);
+
+  bloco.open = aberto;
+  bloco.addEventListener('toggle', () => onToggle(bloco.open));
+
+  return bloco;
 }
 
 /** Linha em modo leitura. */
@@ -329,7 +367,7 @@ function bindingRow(binding, { onEdit, noAr }) {
 }
 
 /** Linha em modo edição: o input entra no lugar da porta, na mesma linha. */
-function editRow(binding, { ocupadas, onCancel, onSave }) {
+function editRow(binding, { ocupadas, escutando, onCancel, onSave }) {
   const input = el('input', {
     class: 'input input--mono port-input',
     type: 'number',
@@ -339,7 +377,9 @@ function editRow(binding, { ocupadas, onCancel, onSave }) {
     'aria-label': `Nova porta para ${binding.service_label}`,
   });
 
-  const aviso = el('span', { class: 'field__hint' });
+  // `aria-live`: o aviso aparece enquanto se digita, longe do foco. Sem isso
+  // quem usa leitor de tela recebe "porta já declarada" só depois de salvar.
+  const aviso = el('span', { class: 'field__hint', role: 'status', 'aria-live': 'polite' });
 
   const validar = () => {
     const valor = Number(input.value);
@@ -350,6 +390,15 @@ function editRow(binding, { ocupadas, onCancel, onSave }) {
     }
     if (valor !== binding.port && ocupadas.has(valor)) {
       aviso.textContent = 'Essa porta já está declarada por outro serviço.';
+      aviso.style.color = 'var(--status-warning)';
+      return valor;
+    }
+    // Escutando sem estar declarada: o painel não sabe de quem é, mas sabe que
+    // está ocupada. Vale dizer antes do salvamento, não depois da falha do
+    // `up`.
+    if (valor !== binding.port && escutando.has(valor)) {
+      const quem = escutando.get(valor)?.processo;
+      aviso.textContent = `Já tem ${quem ?? 'algo'} escutando nessa porta agora.`;
       aviso.style.color = 'var(--status-warning)';
       return valor;
     }
@@ -377,9 +426,9 @@ function editRow(binding, { ocupadas, onCancel, onSave }) {
         {
           class: 'btn btn--sm',
           type: 'button',
-          title: 'Preenche com a menor porta que ninguém declarou.',
+          title: 'Preenche com a menor porta que ninguém declarou nem está escutando.',
           onClick: () => {
-            input.value = String(proximaLivre(ocupadas));
+            input.value = String(proximaLivre(ocupadas, escutando));
             validar();
             input.focus();
           },
@@ -436,6 +485,9 @@ export async function renderPorts(container) {
   mount(container, skeletonGrid(3));
 
   let editando = null;
+  //: O acordeão das portas não declaradas sobrevive ao redesenho. Sem isso a
+  //: recarga automática o fechava na cara de quem estava lendo a lista.
+  let acordeaoAberto = false;
 
   const desenhar = (mapa) => {
     const ocupadas = new Set(mapa.bindings.map((b) => b.port));
@@ -456,6 +508,16 @@ export async function renderPorts(container) {
         const segue = window.confirm(
           `A porta ${porta} já está declarada por "${dono?.project_name}".\n\n` +
             'Salvar assim cria um conflito. Continuar?'
+        );
+        if (!segue) return;
+      } else if (porta !== binding.port && emEscuta.has(porta)) {
+        // Ocupada de fato, sem ninguém tendo declarado. O conflito não
+        // apareceria em lugar nenhum do painel — só na falha do próximo `up`.
+        const quem = emEscuta.get(porta)?.processo ?? 'um processo';
+        const segue = window.confirm(
+          `A porta ${porta} está ocupada agora por ${quem}, que nenhum ` +
+            'projeto do painel declara.\n\n' +
+            'O serviço não vai conseguir subir enquanto ele estiver lá. Continuar?'
         );
         if (!segue) return;
       }
@@ -502,11 +564,8 @@ export async function renderPorts(container) {
     const onEncerrar = async (porta, botao) => {
       const segue = window.confirm(
         `Encerrar o processo ${porta.process_name ?? ''} (pid ${porta.pid}) ` +
-          `que está na porta ${porta.port}?
-
-` +
-          `Ele roda em ${porta.cwd ?? 'origem desconhecida'}.
-` +
+          `que está na porta ${porta.port}?\n\n` +
+          `Ele roda em ${porta.cwd ?? 'origem desconhecida'}.\n` +
           'A ação não pode ser desfeita — o processo é encerrado junto com os filhos dele.'
       );
       if (!segue) return;
@@ -532,6 +591,7 @@ export async function renderPorts(container) {
         porta.port,
         {
           forte: Boolean(porta.strong_evidence),
+          processo: porta.process_name,
           texto: porta.strong_evidence
             ? `${porta.process_name ?? 'processo'} de ${porta.project_name}, ` +
               `rodando em ${porta.cwd ?? 'origem desconhecida'}.`
@@ -544,7 +604,7 @@ export async function renderPorts(container) {
 
     const linhas = mapa.bindings.map((binding) =>
       editando === `${binding.project_id}:${binding.service_key}`
-        ? editRow(binding, { ocupadas, onCancel, onSave })
+        ? editRow(binding, { ocupadas, escutando: emEscuta, onCancel, onSave })
         : bindingRow(binding, { onEdit, noAr: emEscuta.get(binding.port) ?? null })
     );
 
@@ -621,13 +681,22 @@ export async function renderPorts(container) {
               el('th', { text: 'Projeto' }),
               el('th', { text: 'Serviço' }),
               el('th', { text: 'Endereço' }),
-              el('th', { class: 'table__end', text: '' }),
+              // A coluna de ação precisa de nome: um `th` vazio deixa o leitor
+              // de tela anunciar "coluna 5, em branco" no lugar de "Ações".
+              el('th', { class: 'table__end' }, [
+                el('span', { class: 'visually-hidden', text: 'Ações' }),
+              ]),
             ]),
           ]),
           el('tbody', {}, linhas),
         ]),
       ]),
-      unclaimedSection(mapa)
+      unclaimedSection(mapa, {
+        aberto: acordeaoAberto,
+        onToggle: (estado) => {
+          acordeaoAberto = estado;
+        },
+      })
     );
   };
 
@@ -640,4 +709,19 @@ export async function renderPorts(container) {
   };
 
   await carregar();
+
+  // A recarga automática se cala em três situações, e as três importam:
+  //
+  // - **edição aberta**: redesenhar apaga o input com o número já digitado;
+  // - **aba escondida**: dado fresco que ninguém está olhando só gasta;
+  // - **tela trocada**: quando o container sai do DOM o timer precisa morrer
+  //   junto, senão continua buscando para sempre em cima de nada.
+  const timer = window.setInterval(() => {
+    if (!container.isConnected) {
+      window.clearInterval(timer);
+      return;
+    }
+    if (editando !== null || document.visibilityState !== 'visible') return;
+    void carregar();
+  }, RECARGA_MS);
 }

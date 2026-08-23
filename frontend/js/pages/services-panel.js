@@ -41,9 +41,20 @@ function table(items, { onOpen }) {
             el('td', { class: 'mono', text: item.url ?? `${item.host}:${item.port ?? '—'}` }),
             el('td', {}, [
               el('span', {
-                text: item.state,
-                style: `color:${STATE_COLOR[item.state] ?? 'inherit'}`,
+                // ONLINE sem prova de dono não é ONLINE — é "alguém respondeu".
+                // A cor verde afirmava que o serviço estava de pé quando o que
+                // respondia era o banco de outro projeto na mesma porta.
+                text: item.unverified_owner ? 'ONLINE?' : item.state,
+                style: `color:${
+                  item.unverified_owner
+                    ? 'var(--status-warning)'
+                    : (STATE_COLOR[item.state] ?? 'inherit')
+                }`,
+                title: item.unverified_owner ?? '',
               }),
+              item.unverified_owner
+                ? el('div', { class: 'field__hint', text: item.unverified_owner })
+                : null,
               item.detail ? el('div', { class: 'field__hint', text: item.detail }) : null,
             ]),
             el('td', { text: item.latency_ms === null ? '—' : `${item.latency_ms} ms` }),

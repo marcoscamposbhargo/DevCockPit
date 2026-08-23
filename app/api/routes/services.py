@@ -37,7 +37,7 @@ router = APIRouter(prefix="/api/projects/{project_id}", tags=["services"])
 global_router = APIRouter(prefix="/api/services", tags=["services"])
 
 
-def _to_out(service, resultado) -> ServiceStateOut:  # type: ignore[no-untyped-def]
+def _to_out(service, resultado, dono_incerto: str | None = None) -> ServiceStateOut:  # type: ignore[no-untyped-def]
     return ServiceStateOut(
         key=service.key,
         label=service.label,
@@ -49,6 +49,41 @@ def _to_out(service, resultado) -> ServiceStateOut:  # type: ignore[no-untyped-d
         latency_ms=resultado.latency_ms,
         detail=resultado.detail,
         checked_at=resultado.checked_at,
+        unverified_owner=dono_incerto,
+    )
+
+
+def _unverified(project, service, resultado, observacao) -> str | None:  # type: ignore[no-untyped-def]
+    """Responde na porta, mas o painel não prova que é deste projeto.
+
+    A verificação de saúde abre um socket e pergunta "tem alguém aí?". Nunca
+    soube perguntar "quem?" — e as duas perguntas têm respostas diferentes
+    quando outro projeto ocupa a mesma porta.
+
+    O caso que motivou isto: o SmartDash declara o banco em 5432, todos os
+    containers dele foram removidos, o `uvicorn` estava parado, e mesmo assim o
+    card dizia "1/2 online". Quem respondia na 5432 era o `ecommerce_postgres`,
+    container de um projeto que nem está cadastrado aqui. O SmartDash já estava
+    desligado; o painel é que não sabia dizer.
+
+    Só acusa com base em evidência **fraca**: se a descoberta casou o processo
+    por diretório ou linha de comando, é prova e não há o que avisar. Sem
+    observação nenhuma — antes do primeiro ciclo do poller — também se cala,
+    porque não saber não é o mesmo que desconfiar.
+    """
+    if resultado.state.value != "ONLINE" or not service.port:
+        return None
+
+    porta = next((p for p in observacao.ports if p.port == service.port), None)
+    if porta is None or porta.strong_evidence:
+        return None
+
+    quem = porta.process_name or "um processo"
+    if porta.project_id and porta.project_id != project.id:
+        return f"Responde, mas quem ocupa a {service.port} é {quem}, do {porta.project_name}."
+    return (
+        f"Responde, mas o painel não consegue provar que é deste projeto — "
+        f"quem ocupa a {service.port} é {quem}."
     )
 
 
@@ -57,18 +92,25 @@ def list_services(
     project_id: str,
     projects: ProjectService = Depends(get_project_service),
     health: HealthService = Depends(get_health_service),
+    discovery: PortDiscoveryService = Depends(get_port_discovery),
 ) -> ServiceList:
     """Serviços com o **último estado conhecido**, sempre de cache.
 
-    Verificar aqui transformaria cada carga de tela em N conexões (NFR-011).
+    Verificar aqui transformaria cada carga de tela em N conexões (NFR-011). A
+    observação de portas também vem de cache, pelo mesmo motivo: quem varre é o
+    poller, nunca o caminho da requisição (NFR-010).
     """
     project = projects.get(project_id)
-    return ServiceList(
-        items=[
-            _to_out(service, health.last_known(project.id, service.key))
-            for service in project.services
-        ]
-    )
+    observacao = discovery.last_known()
+
+    items = []
+    for service in project.services:
+        resultado = health.last_known(project.id, service.key)
+        items.append(
+            _to_out(service, resultado, _unverified(project, service, resultado, observacao))
+        )
+
+    return ServiceList(items=items)
 
 
 @router.put("/services", response_model=ServiceList)
@@ -119,6 +161,7 @@ async def check_services(
     projects: ProjectService = Depends(get_project_service),
     health: HealthService = Depends(get_health_service),
     cache: TTLCache = Depends(get_cache),
+    discovery: PortDiscoveryService = Depends(get_port_discovery),
 ) -> ServiceList:
     """Reverificação sob demanda (FR-063). Único caminho que verifica na hora."""
     project = projects.get(project_id)
@@ -130,12 +173,15 @@ async def check_services(
     # no ciclo seguinte, e quem clicou concluía que a ação não pegou.
     cache.invalidate(DASHBOARD_CACHE_KEY)
 
-    return ServiceList(
-        items=[
-            _to_out(service, health.last_known(project.id, service.key))
-            for service in project.services
-        ]
-    )
+    observacao = discovery.last_known()
+    items = []
+    for service in project.services:
+        resultado = health.last_known(project.id, service.key)
+        items.append(
+            _to_out(service, resultado, _unverified(project, service, resultado, observacao))
+        )
+
+    return ServiceList(items=items)
 
 
 # --- ações de sistema operacional ---

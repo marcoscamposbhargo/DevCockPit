@@ -392,3 +392,81 @@ def test_abrir_no_editor_pede_foco_depois_de_executar(tmp_path: Path) -> None:
 
     assert eventos == ["montou-comando", "registrou", f"focou:{tmp_path.name}"]
     assert runner.labels == ["system.vscode"]
+
+
+# --- "online" sem prova de dono --------------------------------------------
+
+
+def test_servico_online_em_porta_sem_dono_provado_e_marcado(  # type: ignore[no-untyped-def]
+    client, workspace: Path
+) -> None:
+    """O caso do SmartDash: containers todos removidos, `uvicorn` parado, e o
+    card dizendo "1/2 online". Quem respondia na 5432 era o Postgres de um
+    projeto que nem está cadastrado. A verificação de saúde pergunta "tem
+    alguém aí?" e nunca soube perguntar "quem?"."""
+    from app.adapters.system.ports import ListeningPort
+    from app.api.deps import get_port_discovery
+    from app.core.cache import TTLCache
+    from app.models.base import utcnow
+    from app.services.health_service import HealthResult, HealthState
+    from app.services.port_discovery_service import PortDiscoveryService
+    from tests.conftest import WRITE_HEADERS
+    from tests.unit.test_port_discovery import FakePortScanner
+
+    caminho = workspace / "smartdash"
+    caminho.mkdir()
+    (caminho / "docker-compose.yml").write_text(
+        "\n".join(
+            [
+                "services:",
+                "  db:",
+                "    image: postgres:16",
+                "    ports:",
+                '      - "5432:5432"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    project_id = client.post(
+        "/api/projects", json={"path": str(caminho)}, headers=WRITE_HEADERS
+    ).json()["id"]
+
+    # Alguém responde na 5432, e a descoberta só sabe que é um container —
+    # evidência fraca, que não prova dono nenhum.
+    disco = PortDiscoveryService(
+        scanner=FakePortScanner(
+            [
+                ListeningPort(
+                    port=5432,
+                    pid=99,
+                    process_name="com.docker.backend.exe",
+                    cwd="C:/Users/User/AppData/Local/Docker",
+                )
+            ]
+        ),
+        cache=TTLCache(ttl_seconds=300),
+    )
+    disco.observe([])
+
+    app = client.app
+    app.state.health_service._store(
+        HealthResult(
+            project_id=project_id,
+            key="db",
+            state=HealthState.ONLINE,
+            latency_ms=3,
+            checked_at=utcnow(),
+        )
+    )
+    app.dependency_overrides[get_port_discovery] = lambda: disco
+
+    try:
+        resposta = client.get(f"/api/projects/{project_id}/services")
+    finally:
+        app.dependency_overrides.pop(get_port_discovery, None)
+
+    assert resposta.status_code == 200, resposta.text
+    item = next(i for i in resposta.json()["items"] if i["key"] == "db")
+    assert item["state"] == "ONLINE"
+    assert item["unverified_owner"] is not None
+    assert "5432" in item["unverified_owner"]

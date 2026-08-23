@@ -20,6 +20,15 @@ class ServiceStateOut(BaseModel):
     latency_ms: int | None = None
     detail: str | None = None
     checked_at: datetime | None = None
+    #: Responde, mas o painel não consegue provar que quem responde é deste
+    #: projeto. Texto pronto para a tela, ou `None` quando há prova — ou quando
+    #: não há observação de portas para comparar.
+    #:
+    #: A verificação de saúde abre um socket e pergunta "tem alguém aí?". Ela
+    #: nunca soube perguntar "quem?". Um Postgres de outro projeto na 5432
+    #: respondia por um SmartDash inteiramente desligado, e o card dizia
+    #: "1/2 online" para um projeto sem nada de pé.
+    unverified_owner: str | None = None
 
 
 class ServiceList(BaseModel):

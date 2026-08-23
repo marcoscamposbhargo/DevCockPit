@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import (
     get_cache,
+    get_docker_service,
     get_health_service,
     get_port_discovery,
     get_project_service,
     get_system_service,
 )
 from app.core.cache import TTLCache
+from app.core.errors import DomainError
 from app.models.project import ProjectService as ProjectServiceModel
 from app.schemas.health import (
     ObservedPortOut,
@@ -28,6 +30,7 @@ from app.schemas.health import (
     ServiceStateOut,
 )
 from app.services.dashboard_service import CACHE_KEY as DASHBOARD_CACHE_KEY
+from app.services.docker_service import DockerService
 from app.services.health_service import HealthService, targets_from_project
 from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
@@ -53,7 +56,36 @@ def _to_out(service, resultado, dono_incerto: str | None = None) -> ServiceState
     )
 
 
-def _unverified(project, service, resultado, observacao) -> str | None:  # type: ignore[no-untyped-def]
+def _published_by_own_container(project, service, docker) -> bool:  # type: ignore[no-untyped-def]
+    """Um container **deste projeto** publica esta porta no host.
+
+    É a prova que faltava para porta de container. O `cwd` de um container
+    aponta para a instalação do Docker, então nenhuma das regras de atribuição
+    da descoberta consegue provar dono — e sem esta consulta todo serviço em
+    container ficaria marcado como "responde, mas não sei de quem", o que num
+    fluxo de trabalho baseado em Compose é ruído puro e não aviso.
+
+    O `docker ps` daqui é o mesmo que a aba Docker já faz, e sai do mesmo cache
+    (NFR-010): a rota não executa subprocess por conta própria.
+    """
+    if not service.port:
+        return False
+    try:
+        estado = docker.status(project)
+    except DomainError:
+        # Sem Docker, ou sem Compose: nada a confirmar, e o aviso segue seu
+        # curso normal. Falha aqui nunca vira erro da tela de serviços.
+        return False
+
+    return any(
+        publicada.host_port == service.port
+        for container in estado.containers
+        if container.is_running
+        for publicada in container.ports
+    )
+
+
+def _unverified(project, service, resultado, observacao, docker=None) -> str | None:  # type: ignore[no-untyped-def]
     """Responde na porta, mas o painel não prova que é deste projeto.
 
     A verificação de saúde abre um socket e pergunta "tem alguém aí?". Nunca
@@ -78,6 +110,13 @@ def _unverified(project, service, resultado, observacao) -> str | None:  # type:
     if porta is None or porta.strong_evidence:
         return None
 
+    # Container do próprio projeto publicando esta porta é prova, e vale mais
+    # que a inferência pelo número que a descoberta faz. Sem isto, o SmartDash
+    # com os dois containers de pé continuaria marcado — e o aviso perderia o
+    # sentido de tanto aparecer.
+    if docker is not None and _published_by_own_container(project, service, docker):
+        return None
+
     quem = porta.process_name or "um processo"
     if porta.project_id and porta.project_id != project.id:
         return f"Responde, mas quem ocupa a {service.port} é {quem}, do {porta.project_name}."
@@ -93,6 +132,7 @@ def list_services(
     projects: ProjectService = Depends(get_project_service),
     health: HealthService = Depends(get_health_service),
     discovery: PortDiscoveryService = Depends(get_port_discovery),
+    docker: DockerService = Depends(get_docker_service),
 ) -> ServiceList:
     """Serviços com o **último estado conhecido**, sempre de cache.
 
@@ -106,9 +146,8 @@ def list_services(
     items = []
     for service in project.services:
         resultado = health.last_known(project.id, service.key)
-        items.append(
-            _to_out(service, resultado, _unverified(project, service, resultado, observacao))
-        )
+        aviso = _unverified(project, service, resultado, observacao, docker)
+        items.append(_to_out(service, resultado, aviso))
 
     return ServiceList(items=items)
 
@@ -162,6 +201,7 @@ async def check_services(
     health: HealthService = Depends(get_health_service),
     cache: TTLCache = Depends(get_cache),
     discovery: PortDiscoveryService = Depends(get_port_discovery),
+    docker: DockerService = Depends(get_docker_service),
 ) -> ServiceList:
     """Reverificação sob demanda (FR-063). Único caminho que verifica na hora."""
     project = projects.get(project_id)
@@ -177,9 +217,8 @@ async def check_services(
     items = []
     for service in project.services:
         resultado = health.last_known(project.id, service.key)
-        items.append(
-            _to_out(service, resultado, _unverified(project, service, resultado, observacao))
-        )
+        aviso = _unverified(project, service, resultado, observacao, docker)
+        items.append(_to_out(service, resultado, aviso))
 
     return ServiceList(items=items)
 

@@ -470,3 +470,92 @@ def test_servico_online_em_porta_sem_dono_provado_e_marcado(  # type: ignore[no-
     assert item["state"] == "ONLINE"
     assert item["unverified_owner"] is not None
     assert "5432" in item["unverified_owner"]
+
+
+def test_container_do_proprio_projeto_publicando_a_porta_e_prova(client, workspace: Path) -> None:  # type: ignore[no-untyped-def]
+    """Porta de container nunca casa por diretório — o `cwd` de um container
+    aponta para a instalação do Docker. Sem consultar quem publica o quê, todo
+    serviço em Compose ficaria marcado como "responde, mas não sei de quem",
+    o que num fluxo baseado em Docker é ruído puro e não aviso."""
+    from app.adapters.docker.models import ComposeStatus, Container, PublishedPort
+    from app.adapters.system.ports import ListeningPort
+    from app.api.deps import get_docker_service, get_port_discovery
+    from app.core.cache import TTLCache
+    from app.models.base import utcnow
+    from app.services.health_service import HealthResult, HealthState
+    from app.services.port_discovery_service import PortDiscoveryService
+    from tests.conftest import WRITE_HEADERS
+    from tests.unit.test_port_discovery import FakePortScanner
+
+    caminho = workspace / "comdocker"
+    caminho.mkdir()
+    (caminho / "docker-compose.yml").write_text(
+        "\n".join(
+            [
+                "services:",
+                "  db:",
+                "    image: postgres:16",
+                "    ports:",
+                '      - "5435:5432"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    project_id = client.post(
+        "/api/projects", json={"path": str(caminho)}, headers=WRITE_HEADERS
+    ).json()["id"]
+
+    disco = PortDiscoveryService(
+        scanner=FakePortScanner(
+            [
+                ListeningPort(
+                    port=5435,
+                    pid=99,
+                    process_name="com.docker.backend.exe",
+                    cwd="C:/Users/User/AppData/Local/Docker",
+                )
+            ]
+        ),
+        cache=TTLCache(ttl_seconds=300),
+    )
+    disco.observe([])
+
+    class DockerComContainer:
+        def status(self, _project):  # type: ignore[no-untyped-def]
+            return ComposeStatus(
+                available=True,
+                compose_file="docker-compose.yml",
+                containers=[
+                    Container(
+                        name="comdocker-db-1",
+                        service="db",
+                        state="running",
+                        image="postgres:16",
+                        status="Up",
+                        ports=[PublishedPort(host_port=5435, container_port=5432)],
+                    )
+                ],
+            )
+
+    app = client.app
+    app.state.health_service._store(
+        HealthResult(
+            project_id=project_id,
+            key="db",
+            state=HealthState.ONLINE,
+            latency_ms=3,
+            checked_at=utcnow(),
+        )
+    )
+    app.dependency_overrides[get_port_discovery] = lambda: disco
+    app.dependency_overrides[get_docker_service] = DockerComContainer
+
+    try:
+        resposta = client.get(f"/api/projects/{project_id}/services")
+    finally:
+        app.dependency_overrides.pop(get_port_discovery, None)
+        app.dependency_overrides.pop(get_docker_service, None)
+
+    item = next(i for i in resposta.json()["items"] if i["key"] == "db")
+    assert item["state"] == "ONLINE"
+    assert item["unverified_owner"] is None, "o container do projeto publica a porta: é prova"

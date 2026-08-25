@@ -580,7 +580,7 @@ Falta, porque depende de você:
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
 | Cobertura de testes | 89% | >= 70% |
-| Testes | 516 passando (10 de frontend), 1 pulado | — |
+| Testes | 526 passando (10 de frontend), 1 pulado | — |
 
 ---
 
@@ -602,3 +602,4 @@ Falta, porque depende de você:
 | Executável | 2026-08-23 | 2026-08-23 | pasta autocontida de 39,7 MB, abre em 1,4 s; 483 testes |
 | Aplicativo e portas | 2026-08-23 | 2026-08-23 | janela nativa, ícone, prova de dono de porta, teste de frontend; 496 testes |
 | Cockpit AI — Fase 1 | 2026-08-25 | 2026-08-25 | sessão, memória, Meu dia, autoria na auditoria; 516 testes |
+| Tarefas de projeto | 2026-08-25 | 2026-08-25 | `ai_task`, lista por projeto, próxima tarefa no Meu dia; 526 testes |

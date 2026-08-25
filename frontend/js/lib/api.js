@@ -180,6 +180,9 @@ export const api = {
   ports: () => request('GET', '/services/ports'),
 
   openVsCode: (id) => request('POST', `/projects/${encodeURIComponent(id)}/open/vscode`),
+  // Sem projeto: abre o editor vazio, que restaura a última sessão dele.
+  // Nenhum caminho é enviado — não há o que o cliente pudesse forjar.
+  openEditor: () => request('POST', '/services/open/vscode'),
   openFolder: (id) => request('POST', `/projects/${encodeURIComponent(id)}/open/folder`),
   openTerminal: (id) => request('POST', `/projects/${encodeURIComponent(id)}/open/terminal`),
   // A chave é obrigatória e a falha por ausência dela era ilegível: o backend

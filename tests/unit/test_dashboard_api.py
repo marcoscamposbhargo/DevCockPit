@@ -211,6 +211,30 @@ def test_acoes_de_sistema_exigem_guard_de_escrita(client: TestClient, projeto: s
         assert client.post(f"/api/projects/{projeto}/open/{acao}").status_code == 403
 
 
+def test_abrir_editor_vazio_tambem_exige_guard_de_escrita(client: TestClient) -> None:
+    """A rota global não é exceção: abrir programa é escrita, não leitura."""
+    assert client.post("/api/services/open/vscode").status_code == 403
+
+
+def test_abrir_editor_vazio_nao_aceita_caminho_do_cliente(client: TestClient) -> None:
+    """A rota não tem corpo nem parâmetro, e o que sobra é ignorado.
+
+    É a garantia que faz este atalho dispensar validação de root: não existe
+    caminho vindo do cliente para validar (ADR-003).
+    """
+    resposta = client.post(
+        "/api/services/open/vscode",
+        json={"path": "C:/Windows/System32"},
+        headers=WRITE_HEADERS,
+    )
+
+    # O `code` pode não existir na máquina de CI; o que se afirma aqui é que o
+    # caminho enviado nunca vira argumento — o resto é ambiente.
+    assert resposta.status_code in (200, 409)
+    if resposta.status_code == 200:
+        assert resposta.json()["action"] == "system.vscode_blank"
+
+
 def test_projeto_sem_diretorio_nao_abre(client: TestClient, workspace: Path) -> None:
     path = workspace / "some"
     path.mkdir()

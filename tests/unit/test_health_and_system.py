@@ -255,6 +255,61 @@ def test_windows_sem_code_no_path_da_erro_util(tmp_path: Path, monkeypatch) -> N
         WindowsOSAdapter().open_in_editor(tmp_path)
 
 
+def test_editor_vazio_nao_leva_caminho_nenhum(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """O atalho de começar o dia abre o editor sem pasta.
+
+    O argv precisa ser só o binário: qualquer caminho sobrando aqui abriria uma
+    pasta que ninguém escolheu — e a casa do usuário é a última que se quer
+    abrir num editor por engano.
+    """
+    monkeypatch.setattr("app.adapters.system.adapter.shutil.which", lambda name: f"C:/bin/{name}")
+
+    spec = WindowsOSAdapter().open_editor_blank()
+
+    assert spec.argv == ["C:/bin/code"]
+    assert spec.label == "system.vscode_blank"
+    assert spec.detached is True
+
+
+def test_editor_vazio_reaproveita_o_erro_de_code_ausente(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Mesma mensagem do caminho com projeto, porque é o mesmo código."""
+    monkeypatch.setattr("app.adapters.system.adapter.shutil.which", lambda _name: None)
+
+    with pytest.raises(ToolNotFound, match="Install code command"):
+        WindowsOSAdapter().open_editor_blank()
+
+
+def test_editor_vazio_e_auditado_sem_projeto(tmp_path: Path) -> None:
+    """A ação global registra na auditoria com `project_id` nulo.
+
+    Atribuí-la a um projeto qualquer — o último aberto, por exemplo — seria
+    inventar autoria num log que existe para não deixar dúvida sobre o que
+    aconteceu.
+    """
+    from app.adapters.system.adapter import BaseOSAdapter
+    from app.runner.fake import FakeCommandRunner
+    from app.services.system_action_service import SystemActionService
+
+    registros: list[dict] = []
+
+    class AdapterFalso(BaseOSAdapter):
+        def open_in_editor(self, path: Path):  # type: ignore[no-untyped-def]
+            return self._spec(["code", str(path)], path, "system.vscode")
+
+    class AtividadeEspia:
+        def record(self, **kwargs):  # type: ignore[no-untyped-def]
+            registros.append(kwargs)
+
+    runner = FakeCommandRunner()
+    servico = SystemActionService(AdapterFalso(), runner, AtividadeEspia())  # type: ignore[arg-type]
+
+    servico.open_editor_blank()
+
+    assert runner.labels == ["system.vscode_blank"]
+    assert registros[0]["project_id"] is None
+    assert registros[0]["argv"] == ["code"]
+
+
 def test_macos_usa_open(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     adapter = MacOSAdapter()
     monkeypatch.setattr(adapter, "tool_available", lambda _tool: True)

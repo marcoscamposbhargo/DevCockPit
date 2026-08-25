@@ -1,12 +1,12 @@
 import { api } from './lib/api.js';
 import { el, mount } from './lib/dom.js';
-import { invalidateTools } from './lib/actions.js';
+import { invalidateTools, tools } from './lib/actions.js';
 import { icon } from './lib/icons.js';
 import { mountRail } from './lib/rail.js';
 import { applyShell, railHidden, sidebarCollapsed, toggleRail, toggleSidebar } from './lib/shell.js';
 import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from './lib/theme.js';
 import { shortcutsHint, wireShortcuts } from './lib/shortcuts.js';
-import { emptyState } from './lib/ui.js';
+import { emptyState, showError, toast } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderDay } from './pages/day.js';
@@ -114,6 +114,42 @@ function decorateNav() {
     const rotulo = link.textContent.trim();
     link.title = rotulo;
     link.setAttribute('aria-label', rotulo);
+  }
+}
+
+/** Botão do VS Code na barra superior.
+ *
+ * Existe para o começo do dia: liga a máquina, abre o DevCockpit e abre o
+ * editor sem ter que escolher um projeto antes. Abre vazio — o VS Code
+ * restaura a última sessão sozinho. Quem quer um projeto específico continua
+ * usando o botão do card, que manda o caminho.
+ *
+ * Fica na barra superior porque a lateral recolhida esconde as seções de
+ * texto, e um atalho de todo dia não pode mudar de lugar conforme o estado da
+ * barra.
+ */
+async function wireEditorButton() {
+  const botao = document.getElementById('open-editor');
+  botao.replaceChildren(icon('code', { size: 15 }));
+
+  botao.addEventListener('click', async () => {
+    botao.disabled = true;
+    try {
+      await api.openEditor();
+      toast('VS Code: ok.', { kind: 'success' });
+    } catch (error) {
+      showError(error);
+    } finally {
+      botao.disabled = false;
+    }
+  });
+
+  // Sem o `code` no PATH o botão não some — fica desabilitado **com o motivo**,
+  // que é a regra da casa para ação impossível.
+  const disponiveis = await tools();
+  if (!disponiveis.code) {
+    botao.disabled = true;
+    botao.title = "'code' não está no PATH. No VS Code, use 'Shell Command: Install code command in PATH'.";
   }
 }
 
@@ -238,6 +274,7 @@ wireShell();
 wireTheme();
 wireSearch();
 wireShortcuts();
+wireEditorButton();
 
 // A dica mora no rodapé da lateral, ao lado do estado das ferramentas: é o
 // canto onde já se olha para saber "como está o ambiente", e o custo visual de

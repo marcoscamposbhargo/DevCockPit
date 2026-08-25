@@ -913,6 +913,44 @@
   white-space: pre;
 }
 
+/* --- ferramenta da barra superior ---
+   Botão de ícone só, do tamanho do seletor de tema ao lado. Fica na barra
+   superior e não na lateral de propósito: a lateral recolhida esconde as
+   seções de texto, e este é o atalho de abrir o editor ao ligar a máquina —
+   precisa estar no mesmo lugar sempre. */
+
+.topbar__tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.topbar__tool:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--fg-primary);
+}
+
+.topbar__tool:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Sem o `code` no PATH o botão não some: some a promessa de que ele funciona.
+   O motivo fica no `title`, senão sobra um ícone apagado sem explicação. */
+.topbar__tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* --- seletor de tema --- */
 
 .theme-toggle {

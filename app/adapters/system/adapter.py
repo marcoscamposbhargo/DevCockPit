@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
@@ -23,6 +24,7 @@ class OSAdapter(Protocol):
     name: str
 
     def open_in_editor(self, path: Path) -> CommandSpec: ...
+    def open_editor_blank(self) -> CommandSpec: ...
     def open_folder(self, path: Path) -> CommandSpec: ...
     def open_terminal(self, path: Path) -> CommandSpec: ...
     def tool_available(self, tool: str) -> bool: ...
@@ -42,6 +44,22 @@ class BaseOSAdapter:
     def focus_editor_window(self, path: Path) -> None:
         """Sem efeito por padrão. Só o Windows precisa disto (D-46)."""
         return None
+
+    def open_editor_blank(self) -> CommandSpec:
+        """Abre o editor **sem pasta**: ele restaura a última sessão.
+
+        É o atalho de começar o dia — o equivalente a clicar no ícone na barra
+        de tarefas. `open_in_editor` continua sendo o caminho quando existe um
+        projeto para abrir.
+
+        A implementação reaproveita `open_in_editor` e descarta o último
+        argumento, que é o caminho em todas as plataformas. Fazer assim é o que
+        garante que a resolução do binário e a mensagem de "não está no PATH"
+        sejam exatamente as mesmas do caminho com projeto — duplicá-las era
+        deixar duas versões para divergirem.
+        """
+        spec = self.open_in_editor(Path.home())
+        return replace(spec, argv=spec.argv[:-1], label="system.vscode_blank")
 
     def _editor(self) -> str:
         return self.code_bin or "code"

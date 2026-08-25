@@ -48,6 +48,16 @@ class SystemActionService:
         # quando reaproveita uma janela que ficou atrás do browser.
         self.adapter.focus_editor_window(project_dir)
 
+    def open_editor_blank(self) -> None:
+        """Abre o VS Code sem projeto, para o começo do dia.
+
+        Não recebe caminho nenhum — nem do cliente, nem daqui. A rota só diz
+        "abra o editor", e o argv sai inteiro do adapter (ADR-003). É por isso
+        que este atalho não precisa passar pela validação de root: não há path
+        para validar.
+        """
+        self._execute(None, self.adapter.open_editor_blank())
+
     def open_folder(self, project: Project) -> None:
         # O `explorer` do Windows devolve 1 mesmo quando abre a pasta, então
         # aqui o código de saída não é sinal de falha.
@@ -96,14 +106,16 @@ class SystemActionService:
 
     # --- execução ---
 
-    def _execute(self, project: Project, spec, ignore_exit_code: bool = False) -> None:  # type: ignore[no-untyped-def]
+    def _execute(self, project: Project | None, spec, ignore_exit_code: bool = False) -> None:  # type: ignore[no-untyped-def]
         result = self.runner.run(spec)
 
         sucesso = result.ok or (ignore_exit_code and not result.timed_out)
         self.activity.record(
             action=spec.label,
             status=ActivityStatus.SUCCESS if sucesso else ActivityStatus.FAILED,
-            project_id=project.id,
+            # `None` na ação global (abrir o editor vazio): a auditoria
+            # registra o que houve sem inventar um projeto que não existe.
+            project_id=project.id if project is not None else None,
             duration_ms=result.duration_ms,
             exit_code=result.exit_code,
             argv=spec.argv,

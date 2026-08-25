@@ -236,6 +236,19 @@ def open_vscode(
     return OpenResult(opened=True, action="system.vscode")
 
 
+@global_router.post("/open/vscode", response_model=OpenResult)
+def open_vscode_blank(
+    system: SystemActionService = Depends(get_system_service),
+) -> OpenResult:
+    """Abre o VS Code sem projeto — o atalho de começar o dia.
+
+    Não recebe corpo nem parâmetro: não há caminho para o cliente informar, e
+    por isso não há caminho para o cliente forjar.
+    """
+    system.open_editor_blank()
+    return OpenResult(opened=True, action="system.vscode_blank")
+
+
 @router.post("/open/folder", response_model=OpenResult)
 def open_folder(
     project_id: str,

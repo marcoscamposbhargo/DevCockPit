@@ -35,6 +35,9 @@ from app.schemas.ai import (
     MemoryList,
     MemoryOut,
     MemoryUpdate,
+    ProposalOut,
+    ProposeAsk,
+    ProposeOut,
     SessionEnd,
     SessionFactsOut,
     SessionList,
@@ -46,6 +49,7 @@ from app.schemas.ai import (
     TaskUpdate,
 )
 from app.services.ai.chat_service import ChatService
+from app.services.ai.orchestrator import Orchestrator
 from app.services.briefing_service import BriefingService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
@@ -319,6 +323,49 @@ def chat_history(
     return ChatHistoryOut(
         items=[_mensagem_out(m) for m in chat.history(project)]
     )
+
+
+@global_router.post("/propose", response_model=ProposeOut)
+def propose_action(
+    payload: ProposeAsk,
+    projects: ProjectService = Depends(get_project_service),
+    chat: ChatService = Depends(get_chat_service),
+) -> ProposeOut:
+    """O que a IA faria com esta frase — **sem fazer**.
+
+    Devolve uma ação do registro fechado, já validada, e o caminho da rota que
+    a tela deve chamar se a pessoa confirmar. Esse caminho é o mesmo do botão:
+    a IA não ganha execução própria (defesa D-A3).
+
+    Não é stream porque não é texto: é um objeto pequeno, e a maior parte das
+    frases resolve por regra em milissegundos, sem tocar no modelo.
+    """
+    # Só id e nome, e sem paginar: o catálogo inteiro é o que permite resolver
+    # "sobe o kiteasy" sem o usuário dizer em qual projeto está.
+    registrados, _ = projects.list(limit=200)
+    catalogo_projetos = [(p.id, p.name) for p in registrados]
+    orquestrador = Orchestrator(catalogo_projetos)
+
+    # A regra roda sempre. O provedor só é montado se ela não decidir — assim
+    # "sobe o kiteasy" responde na hora mesmo com a IA desligada.
+    proposta = orquestrador.propose(payload.question)
+    if proposta is None:
+        try:
+            chat.exigir_ia_ligada()
+            provedor = chat.provedor_do_perfil(payload.model)
+        except DomainError as erro:
+            return ProposeOut(message=erro.message)
+        try:
+            proposta = orquestrador.propose(payload.question, provedor)
+        except DomainError as erro:
+            return ProposeOut(message=erro.message)
+
+    if proposta is None:
+        return ProposeOut(
+            message="Não encontrei nenhuma ação do painel que sirva para isso."
+        )
+
+    return ProposeOut(proposal=ProposalOut(**proposta.to_dict()))
 
 
 @global_router.post("/ask")

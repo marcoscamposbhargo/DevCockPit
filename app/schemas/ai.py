@@ -185,6 +185,46 @@ class ChatAsk(BaseModel):
     model: Literal["default", "alt"] = "default"
 
 
+class ProposeAsk(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    model: Literal["default", "alt"] = "default"
+
+
+class ProposalOut(BaseModel):
+    """Uma ação que a IA propõe — e que só acontece se a pessoa confirmar.
+
+    `path` e `method` apontam para a **mesma rota que o botão usa**. É o que
+    materializa a defesa D-A3: a IA não ganha caminho de execução próprio, ela
+    aponta para um caminho que já existia.
+    """
+
+    action: str
+    label: str
+    #: Texto pronto para a tela, na segunda pessoa e no futuro: é uma promessa
+    #: do que vai acontecer, não a descrição de algo já feito.
+    describe: str
+    #: READ | SAFE_WRITE | SENSITIVE_WRITE | DESTRUCTIVE
+    classe: str
+    #: Tudo que não é READ para e pergunta antes.
+    needs_confirmation: bool
+    method: str
+    path: str
+    project_id: str | None = None
+    project_name: str | None = None
+    reason: str = ""
+    #: "regra" ou "modelo". A tela não mostra; a auditoria sim, e é o que
+    #: permite medir depois quanto do sistema depende do modelo.
+    origem: str = "regra"
+
+
+class ProposeOut(BaseModel):
+    #: `None` quando nada do registro serve — que é o caso mais comum, porque
+    #: a maior parte do que se digita é dúvida, não ordem.
+    proposal: ProposalOut | None = None
+    #: Por que não houve proposta, em texto para a tela.
+    message: str = ""
+
+
 class ChatMessageOut(BaseModel):
     id: int
     role: str

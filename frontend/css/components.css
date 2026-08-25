@@ -2659,3 +2659,60 @@
 .quick-ask__rodape:empty {
   display: none;
 }
+
+/* --- ação proposta pela IA ---
+   Cartão, e não linha de texto: uma ordem que vai mexer no ambiente precisa
+   parar o olho. A borda usa a cor de aviso porque o que se pede aqui não é
+   leitura — é mudança de estado da máquina. */
+
+.quick-ask__acao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.quick-ask__acao[data-executando='true'] {
+  opacity: 0.6;
+}
+
+.quick-ask__acao-topo {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--accent);
+}
+
+.quick-ask__acao-nome {
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  color: var(--fg-primary);
+}
+
+/* O nome do projeto é o dado que evita o pior erro possível deste recurso:
+   confirmar a ação certa no projeto errado. Por isso fica em destaque, e não
+   escondido dentro da frase. */
+.quick-ask__acao-proj {
+  margin-left: auto;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.quick-ask__acao-texto {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg-secondary);
+}
+
+.quick-ask__acao-botoes {
+  display: flex;
+  gap: var(--sp-2);
+}

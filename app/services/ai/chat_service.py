@@ -303,6 +303,22 @@ class ChatService:
 
     # --- guardas ---
 
+    def exigir_ia_ligada(self) -> None:
+        """A mesma guarda, pública: o orquestrador precisa dela sem um projeto.
+
+        A pergunta rápida e a proposta de ação não têm projeto, então não passam
+        por `_exigir_liberado` — mas o interruptor geral vale para as duas.
+        """
+        self._exigir_ia_ligada()
+
+    def provedor_do_perfil(self, perfil: str = PERFIL_PADRAO):  # type: ignore[no-untyped-def]
+        """O provedor montado, para quem precisa dele fora do chat.
+
+        Existe para o orquestrador: ele fala com o modelo direto, com prompt e
+        teto próprios, mas não deveria remontar a configuração por conta.
+        """
+        return self._exigir_provedor(perfil)
+
     def _exigir_ia_ligada(self) -> None:
         if not self.settings.ai_enabled:
             raise AiDisabled(

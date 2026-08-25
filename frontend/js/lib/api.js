@@ -177,6 +177,25 @@ export const api = {
    */
   askQuick: (question, opcoes = {}) => sseAsk('/ai/ask', { question }, opcoes),
 
+  /** O que a IA faria com esta frase — sem fazer.
+   *
+   * Devolve `{ proposal, message }`. `proposal` vem `null` na maioria das
+   * frases, porque a maior parte do que se digita é dúvida e não ordem.
+   */
+  proposeAction: (question, model = 'default') =>
+    request('POST', '/ai/propose', { body: { question, model } }),
+
+  /** Executa a ação **proposta**, pela rota que a proposta indicou.
+   *
+   * O caminho não é inventado pelo cliente: ele veio de `proposeAction`, do
+   * registro fechado do servidor, e é a mesma rota que o botão equivalente
+   * chama. A IA não ganha caminho de execução próprio (defesa D-A3).
+   */
+  runProposal: (proposal) => {
+    const caminho = proposal.path.replace(/^\/api/, '');
+    return request(proposal.method, caminho);
+  },
+
   chatStream: (id, question, opcoes = {}) =>
     sseAsk(`/projects/${encodeURIComponent(id)}/chat`, { question }, opcoes),
 

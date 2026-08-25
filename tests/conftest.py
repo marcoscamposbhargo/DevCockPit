@@ -25,6 +25,28 @@ INTEGRATION_MARKERS = {"integration", "integration_git", "integration_docker"}
 
 
 @pytest.fixture(autouse=True)
+def ambiente_limpo_de_devcockpit(monkeypatch):  # type: ignore[no-untyped-def]
+    """A suíte não enxerga a configuração da máquina de quem a roda.
+
+    `Settings` lê variáveis `DEVCOCKPIT_*` do ambiente, e quem usa o painel no
+    dia a dia costuma ter várias definidas. Sem esta limpeza, um teste que
+    monta `Settings(ai_model="a")` herdava o `DEVCOCKPIT_AI_MODEL_ALT` da
+    máquina e passava a afirmar algo sobre a configuração do desenvolvedor em
+    vez de sobre o código — falhando só para quem tem a variável.
+
+    Aconteceu de verdade: dois testes de IA quebraram numa máquina com o Ollama
+    configurado, e passavam em todas as outras.
+
+    Quem precisa de uma variável define com `monkeypatch.setenv`, que roda
+    depois desta fixture.
+    """
+    import os
+
+    for chave in [c for c in os.environ if c.startswith("DEVCOCKPIT_")]:
+        monkeypatch.delenv(chave, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def bloqueia_execucao_real_em_job(request, monkeypatch):  # type: ignore[no-untyped-def]
     """Rede de proteção: job não executa comando real fora de teste de integração.
 

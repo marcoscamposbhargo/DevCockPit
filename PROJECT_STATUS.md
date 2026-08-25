@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-25 (Cockpit AI Fases 1 e 2: sessão, memória, tarefas e chat contextual)
+**Última atualização:** 2026-08-26 (operação de subir projeto: pré-voo de porta e detecção de projeto leve)
 
 ---
 
@@ -61,6 +61,11 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
       tela **Ports**, com o mapa das portas declaradas, o conflito marcado e a
       troca do número na própria linha, com sugestão de porta livre. Ela edita
       o registro do DevCockpit, nunca o arquivo do projeto (D-55, D-56).
+- [x] (2026-08-26) "Dificuldade pra subir os projetos, terminais com conflito":
+      três causas distintas. Pré-voo de porta antes de ligar (o conflito
+      aparecia só pelo erro do Compose); detecção por import no código,
+      monorepo e site estático (sete projetos sem botão viraram zero); e a aba
+      Server oferecendo cadastrar a porta que o framework escolheu.
 - [x] (2026-08-25) Cockpit AI, Fase 2 entregue: chat contextual com stream,
       três provedores (Anthropic, OpenAI, Ollama local), Context Engine com
       orçamento e proveniência, redação de segredos e teto de gasto. Desligado
@@ -584,7 +589,7 @@ Falta, porque depende de você:
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
 | Cobertura de testes | 89% | >= 70% |
-| Testes | 572 passando (10 de frontend), 1 pulado | — |
+| Testes | 589 passando (10 de frontend), 1 pulado | — |
 
 ---
 
@@ -608,3 +613,4 @@ Falta, porque depende de você:
 | Cockpit AI — Fase 1 | 2026-08-25 | 2026-08-25 | sessão, memória, Meu dia, autoria na auditoria; 516 testes |
 | Tarefas de projeto | 2026-08-25 | 2026-08-25 | `ai_task`, lista por projeto, próxima tarefa no Meu dia; 526 testes |
 | Cockpit AI — Fase 2 | 2026-08-25 | 2026-08-25 | chat com contexto, 3 provedores, redação de segredos, teto de gasto; 572 testes |
+| Operação de subida | 2026-08-26 | 2026-08-26 | pré-voo de porta, projeto leve detectado, porta sem cadastro oferecida; 589 testes |

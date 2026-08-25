@@ -494,3 +494,93 @@ async def test_sem_descoberta_a_mensagem_continua_correta(
 
     with pytest.raises(Exception, match="5432"):
         await env.up(job, projeto.id)
+
+
+# --- servidor subido fora do painel ---------------------------------------
+
+
+class DescobertaComExterno:
+    """Última varredura com um processo deste projeto que o painel não subiu."""
+
+    def __init__(self, portas) -> None:  # type: ignore[no-untyped-def]
+        self.portas = portas
+        self.encerrados: list[int] = []
+
+    def last_known(self):  # type: ignore[no-untyped-def]
+        from app.services.port_discovery_service import PortObservation
+
+        return PortObservation(ports=self.portas)
+
+    def stop_orphan(self, pid: int):  # type: ignore[no-untyped-def]
+        self.encerrados.append(pid)
+        return next(porta for porta in self.portas if porta.pid == pid)
+
+
+def porta_externa(project_id: str, pid: int = 4321):  # type: ignore[no-untyped-def]
+    from app.services.port_discovery_service import ObservedPort
+
+    return ObservedPort(
+        port=3000,
+        pid=pid,
+        process_name="node.exe",
+        project_id=project_id,
+        project_name="Projeto",
+        matched_by="cwd",
+        unmanaged=True,
+    )
+
+
+def test_desliga_servidor_que_o_painel_nao_subiu(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """O buraco do "não desliga".
+
+    `servers.status` só conhece o que nasceu do painel. Um `npm run dev`
+    iniciado no terminal deixava o botão sem alvo: ele respondia sucesso e o
+    processo seguia atendendo na porta.
+    """
+    com_run(projeto)
+    descoberta = DescobertaComExterno([porta_externa(projeto.id)])
+    ambiente = servico(session_factory, tmp_path)
+    ambiente.discovery = descoberta
+
+    servers = DevServerService(session=session, logs_dir=tmp_path)
+    alvo = ambiente.down(projeto, servers, include_docker=False)
+
+    assert alvo == "external"
+    assert descoberta.encerrados == [4321]
+
+
+def test_processo_de_outro_projeto_nao_e_tocado(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    com_run(projeto)
+    descoberta = DescobertaComExterno([porta_externa("outro-projeto")])
+    ambiente = servico(session_factory, tmp_path)
+    ambiente.discovery = descoberta
+
+    servers = DevServerService(session=session, logs_dir=tmp_path)
+    alvo = ambiente.down(projeto, servers, include_docker=False)
+
+    assert alvo == "nothing"
+    assert descoberta.encerrados == []
+
+
+def test_processo_gerenciado_pelo_painel_nao_passa_por_aqui(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """`unmanaged=False` é o que o painel subiu — quem para é `servers.stop`."""
+    from app.services.port_discovery_service import ObservedPort
+
+    com_run(projeto)
+    gerenciada = ObservedPort(
+        port=3000, pid=99, project_id=projeto.id, matched_by="cwd", unmanaged=False
+    )
+    descoberta = DescobertaComExterno([gerenciada])
+    ambiente = servico(session_factory, tmp_path)
+    ambiente.discovery = descoberta
+
+    servers = DevServerService(session=session, logs_dir=tmp_path)
+    ambiente.down(projeto, servers, include_docker=False)
+
+    assert descoberta.encerrados == []

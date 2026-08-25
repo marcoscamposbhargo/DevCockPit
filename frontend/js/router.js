@@ -3,6 +3,32 @@
 const routes = new Map();
 let notFoundHandler = null;
 
+//: Trabalho que a tela atual deixou de pé — timer, observador, relógio — e que
+//: precisa parar quando ela sair.
+//:
+//: Existe porque a tela **não sai do DOM**: o `<main id="view">` é o mesmo
+//: elemento em todas as rotas, e só o conteúdo dele é trocado. Uma página que
+//: se protegia com `container.isConnected` estava perguntando algo que nunca é
+//: falso — o timer da tela Ports sobrevivia à navegação e, a cada seis
+//: segundos, redesenhava Ports por cima do Dashboard.
+const limpezas = [];
+
+/** Registra algo para parar quando a rota mudar. */
+export function aoSairDaRota(parar) {
+  limpezas.push(parar);
+}
+
+function limparRotaAnterior() {
+  while (limpezas.length) {
+    const parar = limpezas.pop();
+    try {
+      parar();
+    } catch {
+      // Limpeza que falha não pode impedir a próxima tela de aparecer.
+    }
+  }
+}
+
 export function register(name, pattern, render) {
   routes.set(name, { pattern, render });
 }
@@ -47,6 +73,8 @@ export function navigate(path) {
 
 export function start(container, onRouteChange) {
   const handle = async () => {
+    limparRotaAnterior();
+
     const match = resolve(window.location.hash);
     if (!match) {
       if (notFoundHandler) notFoundHandler(container);

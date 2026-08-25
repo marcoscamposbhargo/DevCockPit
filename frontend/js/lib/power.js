@@ -176,7 +176,14 @@ async function pararAplicacao(project, { derrubarDocker = false } = {}) {
   const real = await api.checkServices(project.id).catch(() => ({ items: [] }));
   const aindaResponde = real.items.some((item) => item.state === 'ONLINE');
 
-  if (stopped === 'docker') {
+  if (stopped === 'external') {
+    // Vale dizer que o alvo não era do painel: quem subiu no terminal precisa
+    // saber que aquele processo morreu, senão vai procurá-lo depois.
+    toast(`${project.name}: parei o servidor que estava rodando fora do painel.`, {
+      kind: 'success',
+      meta: 'Ele não tinha sido iniciado daqui, mas roda dentro do projeto.',
+    });
+  } else if (stopped === 'docker') {
     toast(`${project.name}: containers parados.`, { kind: 'success' });
   } else if (aindaResponde) {
     // O caso normal deste fluxo, e por isso a mensagem é informativa e não de

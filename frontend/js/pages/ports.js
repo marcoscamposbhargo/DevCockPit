@@ -15,7 +15,7 @@ import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { emptyState, pageHeader, showError, skeletonGrid, toast } from '../lib/ui.js';
-import { navigate } from '../router.js';
+import { aoSairDaRota, navigate } from '../router.js';
 
 const PORTA_MIN = 1;
 const PORTA_MAX = 65535;
@@ -769,14 +769,17 @@ export async function renderPorts(container) {
   //
   // - **edição aberta**: redesenhar apaga o input com o número já digitado;
   // - **aba escondida**: dado fresco que ninguém está olhando só gasta;
-  // - **tela trocada**: quando o container sai do DOM o timer precisa morrer
-  //   junto, senão continua buscando para sempre em cima de nada.
+  // - **tela trocada**: o timer morre junto com a rota.
+  //
+  // A terceira já foi um bug: o teste era `container.isConnected`, e o
+  // container é o `<main id="view">`, que **nunca** sai do DOM — só o conteúdo
+  // dele é trocado. O timer sobrevivia à navegação e, a cada seis segundos,
+  // redesenhava esta tela por cima da que estivesse aberta. Quem sabe que a
+  // rota mudou é o roteador, e é ele quem manda parar.
   const timer = window.setInterval(() => {
-    if (!container.isConnected) {
-      window.clearInterval(timer);
-      return;
-    }
     if (editando !== null || document.visibilityState !== 'visible') return;
     void carregar();
   }, RECARGA_MS);
+
+  aoSairDaRota(() => window.clearInterval(timer));
 }

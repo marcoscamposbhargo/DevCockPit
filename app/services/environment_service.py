@@ -356,13 +356,50 @@ class EnvironmentService:
         """
         rodando = servers.status(project).running
 
-        if include_docker or not rodando:
-            # Sem aplicação de pé, quem atende é o Compose — e é ele que a
-            # pessoa está mandando desligar.
-            return "docker" if self._compose_file(project) else "nothing"
+        if rodando:
+            servers.stop(project)
+            if not include_docker:
+                return "app"
 
-        servers.stop(project)
-        return "app"
+        # Aplicação de pé que o painel **não** subiu. Era o buraco do "não
+        # desliga": `servers.status` só conhece o que nasceu daqui, então um
+        # `npm run dev` iniciado no terminal deixava o botão sem alvo — ele
+        # respondia sucesso e o processo seguia atendendo.
+        #
+        # Quem valida se pode encerrar é a descoberta, com a mesma defesa D4 de
+        # sempre: só processo dentro de um root permitido, e só o que ela mesma
+        # classificou como não gerenciado.
+        if not include_docker and self._parar_externos(project):
+            return "external"
+
+        return "docker" if self._compose_file(project) else "nothing"
+
+    def _parar_externos(self, project: Project) -> int:
+        """Encerra processos deste projeto que o painel não iniciou.
+
+        Devolve quantos parou. Falha em um não impede os outros: o objetivo é
+        o projeto sair do ar, e um processo teimoso vira aviso, não desistência.
+        """
+        if self.discovery is None:
+            return 0
+
+        alvos = [
+            porta
+            for porta in self.discovery.last_known().for_project(project.id)
+            if porta.unmanaged and porta.pid
+        ]
+
+        parados = 0
+        for porta in alvos:
+            try:
+                self.discovery.stop_orphan(porta.pid)
+                parados += 1
+            except DomainError as erro:
+                logger.warning(
+                    "não foi possível encerrar processo externo",
+                    extra={"extra_fields": {"pid": porta.pid, "erro": str(erro)}},
+                )
+        return parados
 
 
 #: As duas formas com que o Docker relata porta ocupada, conforme a versão e a

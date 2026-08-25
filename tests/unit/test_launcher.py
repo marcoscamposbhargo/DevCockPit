@@ -43,6 +43,59 @@ def test_prepara_pastas_e_aponta_settings(tmp_path: Path, ambiente_limpo: None) 
     assert Path(os.environ["DEVCOCKPIT_ROOTS_FILE"]).parent == tmp_path / "configs"
 
 
+def test_env_ao_lado_do_executavel_e_lido(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """O `.env` mora na pasta de dados, não no diretório de trabalho.
+
+    `env_file=".env"` das `Settings` é relativo ao cwd, que num aplicativo
+    empacotado é onde quer que o atalho tenha sido clicado. O usuário escrevia
+    o arquivo no lugar certo e ele era ignorado em silêncio — "a IA não liga e
+    não diz por quê" é o modo de falha que este projeto não aceita.
+    """
+    import os
+
+    monkeypatch.delenv("DEVCOCKPIT_AI_PROVIDER", raising=False)
+    monkeypatch.delenv("DEVCOCKPIT_AI_MODEL", raising=False)
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "# comentário e linha vazia são ignorados",
+                "",
+                "DEVCOCKPIT_AI_PROVIDER=local",
+                'DEVCOCKPIT_AI_MODEL="llama3.2:3b"',
+                "linha sem igual",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    launcher.preparar_ambiente(tmp_path)
+
+    assert os.environ["DEVCOCKPIT_AI_PROVIDER"] == "local"
+    # As aspas são do formato do arquivo, não do valor.
+    assert os.environ["DEVCOCKPIT_AI_MODEL"] == "llama3.2:3b"
+
+
+def test_env_nao_sobrescreve_variavel_ja_definida(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mesma regra do resto do launcher: o ambiente ganha do arquivo."""
+    import os
+
+    monkeypatch.setenv("DEVCOCKPIT_AI_PROVIDER", "anthropic")
+    (tmp_path / ".env").write_text("DEVCOCKPIT_AI_PROVIDER=local", encoding="utf-8")
+
+    launcher.preparar_ambiente(tmp_path)
+
+    assert os.environ["DEVCOCKPIT_AI_PROVIDER"] == "anthropic"
+
+
+def test_sem_env_nao_e_erro(tmp_path: Path, ambiente_limpo: None) -> None:
+    """Instalação nova não tem `.env`, e isso é o caso normal."""
+    launcher.preparar_ambiente(tmp_path)  # não levanta
+
+
 def test_valor_definido_pelo_usuario_ganha(
     tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:

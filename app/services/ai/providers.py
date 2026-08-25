@@ -123,7 +123,7 @@ class _HttpProvider:
                     self._url(), headers=self._headers(), json=self._body(request, stream=False)
                 )
         except httpx.HTTPError as erro:
-            raise ProviderError(f"Falha ao falar com {self.name}: {erro}") from erro
+            raise ProviderError(self._explicar_falha_de_rede(erro)) from erro
 
         if resposta.status_code >= 400:
             raise ProviderError(self._explicar(resposta))
@@ -147,7 +147,11 @@ class _HttpProvider:
                     for linha in resposta.iter_lines():
                         yield from self._processar_linha(linha)
         except httpx.HTTPError as erro:
-            raise ProviderError(f"Falha ao falar com {self.name}: {erro}") from erro
+            raise ProviderError(self._explicar_falha_de_rede(erro)) from erro
+
+    def _explicar_falha_de_rede(self, erro: Exception) -> str:
+        """Sobrescrito pelo provedor local, que sabe o que costuma faltar."""
+        return f"Falha ao falar com {self.name}: {erro}"
 
     def _processar_linha(self, linha: str) -> Iterator[str]:
         linha = (linha or "").strip()
@@ -349,6 +353,63 @@ class LocalProvider(_HttpProvider):
             ),
             model=str(dados.get("model") or self.model),
         )
+
+    def _explicar(self, resposta: httpx.Response) -> str:  # type: ignore[override]
+        """No provedor local, "modelo não encontrado" tem conserto na hora.
+
+        A mensagem genérica manda conferir a variável de ambiente — o que não
+        ajuda quem não sabe o que existe na máquina. Aqui dá para perguntar, e
+        um erro que lista as opções vale por uma ida à documentação.
+        """
+        if resposta.status_code == 404:
+            disponiveis = self._modelos_instalados()
+            if disponiveis:
+                return (
+                    f"O modelo {self.model!r} não está instalado no Ollama. "
+                    f"Instalados: {', '.join(disponiveis)}. "
+                    "Escolha um em `DEVCOCKPIT_AI_MODEL`, ou baixe o que falta "
+                    f"com `ollama pull {self.model}`."
+                )
+            return (
+                f"O modelo {self.model!r} não está instalado no Ollama, e não há "
+                f"nenhum outro. Baixe um com `ollama pull {self.model}`."
+            )
+        return super()._explicar(resposta)
+
+    def _explicar_falha_de_rede(self, erro: Exception) -> str:
+        """Ollama desligado é o caso comum, e tem uma linha de conserto.
+
+        "Falha ao falar com local: [Errno 10061]" não diz a ninguém que basta
+        abrir o Ollama. Este é o caminho da NFR-060: dependência externa
+        ausente vira instrução, não erro cru de biblioteca.
+        """
+        # `ConnectTimeout` vem **antes** de `TimeoutException`, e a ordem é o
+        # que faz o texto certo aparecer: no Windows, conectar numa porta sem
+        # ninguém escutando pendura até o timeout em vez de ser recusado na
+        # hora (a mesma peculiaridade que o health check documenta). Sem esta
+        # ordem, o Ollama fechado — o caso mais comum de todos — receberia o
+        # conselho de aumentar o timeout, que não conserta nada.
+        if isinstance(erro, httpx.ConnectError | httpx.ConnectTimeout):
+            return (
+                f"O Ollama não respondeu em {self.base_url}. Abra o aplicativo "
+                "Ollama, ou rode `ollama serve` num terminal."
+            )
+        if isinstance(erro, httpx.TimeoutException):
+            return (
+                f"O Ollama conectou mas não respondeu a tempo ({self.timeout_s:g}s). "
+                "Modelo grande demora para carregar na memória na primeira "
+                "pergunta; aumente `DEVCOCKPIT_AI_TIMEOUT` ou escolha um modelo menor."
+            )
+        return super()._explicar_falha_de_rede(erro)
+
+    def _modelos_instalados(self) -> list[str]:
+        """Best-effort: se a consulta falhar, a mensagem só fica mais pobre."""
+        try:
+            with httpx.Client(timeout=5.0) as cliente:
+                dados = cliente.get(f"{self.base_url}/api/tags").json()
+            return sorted(str(m.get("name")) for m in dados.get("models", []) if m.get("name"))
+        except (httpx.HTTPError, ValueError, KeyError):
+            return []
 
 
 class FakeProvider:

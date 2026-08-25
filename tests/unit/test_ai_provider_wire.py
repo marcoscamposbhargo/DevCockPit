@@ -54,6 +54,10 @@ class Imitacao(BaseHTTPRequestHandler):
     def log_message(self, *_args) -> None:  # silêncio na suíte
         pass
 
+    def do_GET(self) -> None:  # noqa: N802 - assinatura da biblioteca
+        """`/api/tags` do Ollama: o que está instalado na máquina."""
+        self._json({"models": [{"name": "llama3.2:1b"}, {"name": "llama3.2:3b"}]})
+
     def do_POST(self) -> None:  # noqa: N802 - assinatura da biblioteca
         tamanho = int(self.headers.get("Content-Length") or 0)
         corpo = json.loads(self.rfile.read(tamanho) or b"{}")
@@ -216,3 +220,44 @@ def test_provedor_fora_do_ar_nao_derruba_o_painel() -> None:
 
     with pytest.raises(ProviderError, match="Falha ao falar com anthropic"):
         list(provedor.stream(pedido()))
+
+
+# --- provedor local: erro que diz o que fazer ------------------------------
+
+
+def test_modelo_ausente_no_ollama_lista_os_instalados(servidor: str) -> None:
+    """404 do Ollama quase sempre é modelo não baixado.
+
+    A mensagem genérica manda conferir a variável de ambiente, o que não ajuda
+    quem não sabe o que existe na máquina. O provedor local sabe perguntar.
+    """
+    Imitacao.modo = "local"
+    Imitacao.status = 404
+    provedor = LocalProvider(api_key="", model="llama3.1", base_url=servidor)
+
+    with pytest.raises(ProviderError) as erro:
+        provedor.complete(pedido())
+
+    mensagem = str(erro.value)
+    assert "llama3.1" in mensagem
+    assert "llama3.2:1b" in mensagem and "llama3.2:3b" in mensagem
+    assert "ollama pull" in mensagem
+
+
+def test_ollama_desligado_vira_instrucao_e_nao_erro_de_socket() -> None:
+    """NFR-060: dependência externa ausente não vira erro cru de biblioteca.
+
+    O endereço aponta para uma porta fechada de propósito — é exatamente o que
+    acontece com o Ollama fechado, que é o caso mais comum de todos.
+    """
+    provedor = LocalProvider(
+        api_key="", model="llama3.2:3b", base_url="http://127.0.0.1:1", timeout_s=2
+    )
+
+    with pytest.raises(ProviderError) as erro:
+        provedor.complete(pedido())
+
+    mensagem = str(erro.value)
+    assert "Ollama" in mensagem
+    assert "ollama serve" in mensagem
+    assert "Errno" not in mensagem

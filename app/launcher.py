@@ -62,6 +62,33 @@ def preparar_ambiente(base: Path) -> None:
     os.environ.setdefault("DEVCOCKPIT_ROOTS_FILE", str(base / "configs" / "roots.yml"))
     os.environ.setdefault("DEVCOCKPIT_DEFAULTS_FILE", str(base / "configs" / "defaults.yml"))
 
+    _carregar_env(base / ".env")
+
+
+def _carregar_env(arquivo: Path) -> None:
+    """Lê o `.env` que fica **ao lado do executável**.
+
+    O `env_file=".env"` das `Settings` é relativo ao diretório de trabalho, que
+    num aplicativo empacotado é onde quer que o atalho tenha sido clicado. O
+    resultado era um `.env` escrito no lugar certo e ignorado em silêncio — e
+    "a IA não liga e não diz por quê" é exatamente o modo de falha que este
+    projeto não aceita.
+
+    `setdefault` mantém a regra da casa: variável já definida no ambiente ganha
+    do arquivo. Nada é validado aqui; quem valida é `Settings`.
+    """
+    try:
+        linhas = arquivo.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+
+    for linha in linhas:
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        chave, _, valor = linha.partition("=")
+        os.environ.setdefault(chave.strip(), valor.strip().strip("\"'"))
+
 
 def semear_configuracao(base: Path) -> list[str]:
     """Cria `roots.yml` e `defaults.yml` na primeira execução. Devolve o que criou.

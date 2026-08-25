@@ -1,6 +1,6 @@
 # Plano de implementação
 
-> **Status: Fase 1 implementada em 2026-08-25. As demais seguem propostas.**
+> **Status: Fases 1 e 2 implementadas em 2026-08-25. As demais seguem propostas.**
 
 ## A inversão que esta análise propõe
 
@@ -50,25 +50,39 @@ sessão de trabalho e memória de projeto'. 4 arquivo(s) sem commit ao encerrar"
 
 ---
 
-## Fase 2 — O agente entra
+## Fase 2 — O agente entra ✅ entregue em 2026-08-25
 
 **Entrega:** perguntar sobre o projeto sem explicar o projeto.
 
 | # | Item |
 |---|------|
-| 2.1 | `AIProvider` + implementação Anthropic |
-| 2.2 | `ContextEngine` v1 (camadas 1–6, busca lexical, orçamento) |
-| 2.3 | Chat contextual com stream (SSE, reusando o padrão do console de job) |
-| 2.4 | Redação de segredos e consentimento (D-A1, D-A2, D-A5) |
-| 2.5 | `ai_usage_day`, teto diário, custo visível na tela |
-| 2.6 | Resumo de sessão redigido pelo modelo **a partir dos fatos** da Fase 1 |
-| 2.7 | Testes de segurança da IA (os sete de `AI_SECURITY.md`) |
+| 2.1 | ~~`AIProvider` + Anthropic, OpenAI e local (Ollama)~~ |
+| 2.2 | ~~`ContextEngine` v1 — camadas, orçamento, proveniência~~ |
+| 2.3 | ~~Chat com stream (SSE, mesmo transporte do console de job)~~ |
+| 2.4 | ~~Redação de segredos e consentimento (D-A1, D-A2, D-A5)~~ |
+| 2.5 | ~~`ai_usage_day`, teto diário, gasto visível na tela~~ |
+| 2.6 | ~~Resumo de sessão redigido **a partir dos fatos**~~ |
+| 2.7 | ~~Testes de segurança (os sete de `AI_SECURITY.md`)~~ |
 
-**Critério de saída:** três perguntas reais respondidas com contexto correto;
-custo por sessão visível; nenhuma chave vazando em nenhum caminho de contexto.
+**Critério de saída — verificado em 2026-08-25.** Sem chave de provedor à mão,
+a verificação foi feita contra um servidor que imita a API e **relata o que
+recebeu**:
 
-**Risco:** médio — é onde dado passa a sair da máquina. Nada avança sem os
-testes 2.7 passando.
+- o contexto chegou com identidade do projeto, memória, sessão em andamento,
+  estado e o README rotulado como *dado, não instrução*;
+- um projeto com `.env` contendo `OPENAI_API_KEY` e `DB_PASSWORD`: **nada disso
+  chegou ao provedor**;
+- um `README.md` com `STRIPE_SECRET_KEY=sk-live-…`: chegou **redigido**;
+- gasto contabilizado e visível (1.290 tokens na primeira pergunta).
+
+O que **não** foi verificado, e precisa ser dito: nenhuma chamada à API real de
+nenhum provedor. O formato de requisição e a leitura do stream dos três estão
+exercitados por HTTP contra o servidor de imitação
+(`tests/unit/test_ai_provider_wire.py`), o que prova o cliente — não o contrato
+do fornecedor.
+
+**Risco:** médio — é onde dado passa a sair da máquina. Os sete testes de
+segurança passam.
 
 ---
 

@@ -25,7 +25,7 @@ escreveu — texto gerado alimentando texto gerado.
 | Fase | Entrega visível para o usuário |
 |------|-------------------------------|
 | 1 | ✅ "Iniciar sessão" e "Encerrar sessão" no projeto; Start My Day; memória editável |
-| 2 | chat que já sabe de qual projeto se fala; resumo de sessão redigido; custo na tela |
+| 2 | ✅ chat que já sabe de qual projeto se fala; resumo de sessão redigido; custo na tela |
 | 3 | especialistas, comandos `/`, ações propostas com confirmação, tarefas |
 | 4 | tela Project Intelligence com score explicável |
 | 5 | análise de planilha e dataset; automações |

@@ -21,12 +21,23 @@ dependencies = [
     "psutil>=6.0",
 ]
 
+[project.scripts]
+devcockpit = "app.launcher:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "ruff>=0.8",
+]
+# Só para gerar o executável (scripts/build_exe.ps1). Fora do grupo `dev`
+# porque nada da rotina de desenvolvimento depende dele.
+build = [
+    "pyinstaller>=6.10",
+    # Janela nativa (WebView2) e geracao do icone do aplicativo.
+    "pywebview>=5.0",
+    "pillow>=10.0",
 ]
 
 [build-system]

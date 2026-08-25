@@ -6,6 +6,7 @@ Nada de porta, path ou timeout hardcoded fora daqui (NFR-022).
 from __future__ import annotations
 
 import ipaddress
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,7 +14,23 @@ import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+def _project_root() -> Path:
+    """Onde moram os recursos empacotados: frontend, migrações, configs de exemplo.
+
+    Congelado pelo PyInstaller, o código roda de dentro de um diretório
+    temporário (`sys._MEIPASS`) e `__file__` aponta para lá — não para a pasta
+    do executável. Só os **recursos** vivem ali; banco, log e configuração do
+    usuário ficam ao lado do `.exe`, e o `launcher` passa esses caminhos por
+    variável de ambiente, sempre absolutos.
+    """
+    empacotado = getattr(sys, "_MEIPASS", None)
+    if empacotado is not None:
+        return Path(empacotado)
+    return Path(__file__).resolve().parents[2]
+
+
+PROJECT_ROOT = _project_root()
 
 # Hosts pelos quais a aplicação aceita ser alcançada (defesa D10).
 ALLOWED_HTTP_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
@@ -64,9 +81,18 @@ class Settings(BaseSettings):
     job_output_limit: int = 2 * 1024 * 1024
     job_retention: float = 3600.0
 
-    # --- retenção ---
+    # --- histórico e retenção ---
+    #: Janela de "projeto recente" que decide quem o poller verifica (Q-02).
+    #: Apesar do nome, não é retenção: é elegibilidade.
     health_history_days: int = 7
+    #: Intervalo mínimo entre duas gravações iguais no histórico de health.
+    #: Mudança de estado grava sempre; repetição grava de tempos em tempos.
+    health_snapshot_interval: float = 300.0
+    #: Por quanto tempo o histórico de health fica no banco.
+    health_snapshot_retention_days: int = 14
     activity_retention_days: int = 90
+    #: De quanto em quanto tempo a poda roda, dentro do laço do poller.
+    retention_interval: float = 3600.0
 
     # --- binários externos; vazio resolve pelo PATH ---
     git_bin: str = ""

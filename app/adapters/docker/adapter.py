@@ -83,6 +83,23 @@ class DockerAdapter:
         args = [*self._compose_args(compose_file), "ps", "--all", "--format", "json"]
         return self._spec(project_dir, args, "docker.ps")
 
+    def ps_global_spec(self, cwd: Path) -> CommandSpec:
+        """Todos os containers em execucao da maquina, com rotulos.
+
+        Existe para responder **de quem e** uma porta publicada por container.
+        O `cwd` de um processo de container aponta para a instalacao do Docker,
+        entao a atribuicao por diretorio nunca casa; a heuristica que sobrava
+        era "se um unico projeto declara este numero, e dele" — e ela erra
+        exatamente quando dois projetos declaram a mesma porta padrao, que e o
+        caso comum (8000, 3000, 5432).
+
+        O Compose ja grava o diretorio do projeto em
+        `com.docker.compose.project.working_dir`. Perguntar custa uma chamada e
+        troca palpite por fato.
+        """
+        args = ["ps", "--format", "{{json .}}"]
+        return self._spec(cwd, args, "docker.ps.global")
+
     def action_spec(
         self,
         project_dir: Path,

@@ -126,6 +126,7 @@ class JobManager:
         key: str,
         action: str,
         project_id: str | None = None,
+        timeout_s: float | None = None,
     ) -> Job:
         """Enfileira trabalho em processo, não comando externo.
 
@@ -144,7 +145,9 @@ class JobManager:
         job = Job(id=f"j_{uuid.uuid4().hex[:10]}", action=action, key=key, project_id=project_id)
         self._jobs[job.id] = job
         self._active_by_key[key] = job.id
-        self._tasks[job.id] = asyncio.create_task(self._execute_callable(job, work))
+        self._tasks[job.id] = asyncio.create_task(
+            self._execute_callable(job, work, timeout_s=timeout_s)
+        )
 
         self._purge_old()
         return job
@@ -153,12 +156,23 @@ class JobManager:
         self,
         job: Job,
         work: Callable[[Job], Awaitable[str | None]],
+        *,
+        timeout_s: float | None = None,
     ) -> None:
         job.status = JobStatus.RUNNING
         job.started_at = utcnow()
 
         try:
-            message = await work(job)
+            if timeout_s is None:
+                message = await work(job)
+            else:
+                message = await asyncio.wait_for(work(job), timeout=timeout_s)
+        except TimeoutError:
+            # Mesmo desfecho de um comando externo que estoura: o job termina
+            # dizendo por quê, em vez de ficar RUNNING para sempre segurando a
+            # chave e recusando a próxima varredura com 409.
+            job.status = JobStatus.TIMEOUT
+            job.message = f"Excedeu o tempo limite de {timeout_s:.0f}s."
         except DomainError as exc:
             job.status = JobStatus.FAILED
             job.message = exc.message

@@ -164,6 +164,12 @@ class ActiveServiceOut(BaseModel):
     url: str | None = None
     port: int | None = None
     state: str
+    #: A porta respondeu **e** o painel prova que quem responde é deste
+    #: projeto. Falso significa "alguém atende nessa porta", não "seu projeto
+    #: está no ar" — a distinção que faltava quando dois projetos declaram a
+    #: mesma porta padrão.
+    proven: bool = True
+    owner_hint: str | None = None
 
 
 class PortConflictOut(BaseModel):
@@ -240,8 +246,12 @@ class EnvironmentPlanOut(BaseModel):
 
 
 class EnvironmentStopped(BaseModel):
-    #: O que de fato foi parado: `"app"`, `"docker"` ou `"nothing"` — este
-    #: último quando não havia nem aplicação de pé nem Compose para derrubar.
+    #: O que de fato foi parado:
+    #:
+    #: - `"app"` — o servidor que o painel subiu;
+    #: - `"external"` — servidor deste projeto iniciado **fora** do painel;
+    #: - `"docker"` — os containers (vira job, ver `job_id`);
+    #: - `"nothing"` — não havia nada de pé nem Compose para derrubar.
     stopped: str
     #: Presente quando a parada dos containers virou job: `compose down` demora
     #: e a resposta não pode esperar por ele. O cliente acompanha pelo console.

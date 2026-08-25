@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.adapters.docker.adapter import DockerAdapter
 from app.adapters.system.ports import build_port_scanner
 from app.api.middleware import (
     CorrelationIdMiddleware,
@@ -25,6 +26,7 @@ from app.api.middleware import (
 )
 from app.api.routes import (
     activity,
+    analytics,
     dashboard,
     dev_server,
     discovery,
@@ -46,9 +48,12 @@ from app.jobs.job_manager import JobManager
 from app.models.base import Base, create_session_factory
 from app.runner.allowlist import assert_registry_is_safe
 from app.runner.command_runner import SubprocessCommandRunner
+from app.services.container_ports_service import ContainerPortsService
+from app.services.health_history_service import HealthHistoryService
 from app.services.health_poller import HealthPoller
 from app.services.health_service import HealthService
 from app.services.port_discovery_service import PortDiscoveryService
+from app.services.retention_service import RetentionService
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +118,34 @@ def create_app(
         # limitam o que a tela oferece encerrar (defesa D4, reusada).
         allowed_roots=roots.allowed_roots,
     )
+    app.state.health_history = HealthHistoryService(
+        session_factory=app.state.session_factory,
+        min_interval_s=settings.health_snapshot_interval,
+    )
+    app.state.retention = RetentionService(
+        session_factory=app.state.session_factory,
+        activity_days=settings.activity_retention_days,
+        health_days=settings.health_snapshot_retention_days,
+        interval_s=settings.retention_interval,
+    )
+    app.state.container_ports = ContainerPortsService(
+        adapter=DockerAdapter(
+            runner=app.state.command_runner,
+            docker_bin=settings.docker_bin,
+            read_timeout_s=settings.timeout_docker_read,
+        ),
+        runner=app.state.command_runner,
+        cwd=PROJECT_ROOT,
+    )
     app.state.health_poller = HealthPoller(
         session_factory=app.state.session_factory,
         health=app.state.health_service,
         interval_s=settings.health_poll_interval,
         recent_days=settings.health_history_days,
         ports=app.state.port_discovery,
+        history=app.state.health_history,
+        retention=app.state.retention,
+        containers=app.state.container_ports,
     )
 
     # Ordem de execução: o último adicionado roda primeiro.
@@ -145,6 +172,7 @@ def create_app(
     app.include_router(services.global_router)
     app.include_router(dashboard.router)
     app.include_router(activity.router)
+    app.include_router(analytics.router)
     app.include_router(dev_server.router)
     app.include_router(dev_server.global_router)
     app.include_router(environment.router)

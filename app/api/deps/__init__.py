@@ -18,6 +18,7 @@ from app.core.cache import TTLCache
 from app.core.config import PROJECT_ROOT, RootsConfig, Settings
 from app.jobs.job_manager import JobManager
 from app.services.activity_service import ActivityService
+from app.services.analytics_service import AnalyticsService
 from app.services.dashboard_service import DashboardService
 from app.services.detection_service import DetectionService
 from app.services.dev_server_service import DevServerService
@@ -167,8 +168,26 @@ def get_dashboard_service(
     session: Session = Depends(get_session),
     cache: TTLCache = Depends(get_cache),
     health: HealthService = Depends(get_health_service),
+    ports: PortDiscoveryService = Depends(get_port_discovery),
 ) -> DashboardService:
-    return DashboardService(session=session, cache=cache, health=health)
+    return DashboardService(session=session, cache=cache, health=health, ports=ports)
+
+
+def get_analytics_service(
+    session: Session = Depends(get_session),
+    cache: TTLCache = Depends(get_cache),
+    settings: Settings = Depends(get_settings_dep),
+) -> AnalyticsService:
+    """Análise histórica.
+
+    O teto de cobertura por amostra vem do intervalo de gravação do histórico:
+    o que passa dele é buraco, não disponibilidade (ver `AnalyticsService`).
+    """
+    return AnalyticsService(
+        session=session,
+        cache=cache,
+        max_gap_s=settings.health_snapshot_interval * 2,
+    )
 
 
 def get_discovery_service(

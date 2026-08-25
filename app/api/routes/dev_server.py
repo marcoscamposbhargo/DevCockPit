@@ -14,14 +14,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import get_dev_server_service, get_project_service
+from app.api.deps import (
+    get_cache,
+    get_dev_server_service,
+    get_health_service,
+    get_project_service,
+)
+from app.core.cache import TTLCache
 from app.schemas.health import (
     DevServerLogs,
     DevServerOut,
     RunningServerList,
     RunningServerOut,
 )
+from app.services.dashboard_service import CACHE_KEY as DASHBOARD_CACHE_KEY
 from app.services.dev_server_service import DevServerService, DevServerState
+from app.services.health_service import HealthService
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/api/projects/{project_id}/server", tags=["server"])
@@ -80,13 +88,32 @@ def server_status(
     return _to_out(servers.status(projects.get(project_id)))
 
 
+def _esquecer_estado(cache: TTLCache, health: HealthService, project_id: str) -> None:
+    """Joga fora o que o painel achava saber sobre este projeto.
+
+    Ligar e desligar mudam exatamente o que o dashboard mostra, e o cache dele
+    dura mais que a paciência de quem clicou: o botão respondia sucesso e a
+    tela continuava dizendo o contrário por meio minuto. Pior no desligar — a
+    impressão que fica é a de um projeto que não desliga.
+
+    Só se apaga o que se sabe estar velho; o valor novo vem do próximo ciclo do
+    verificador, ou de um "Verificar agora".
+    """
+    cache.invalidate(DASHBOARD_CACHE_KEY)
+    health.invalidate(project_id)
+
+
 @router.post("/start", response_model=DevServerOut)
 def server_start(
     project_id: str,
     projects: ProjectService = Depends(get_project_service),
     servers: DevServerService = Depends(get_dev_server_service),
+    cache: TTLCache = Depends(get_cache),
+    health: HealthService = Depends(get_health_service),
 ) -> DevServerOut:
-    return _to_out(servers.start(projects.get(project_id, touch=True)))
+    estado = servers.start(projects.get(project_id, touch=True))
+    _esquecer_estado(cache, health, project_id)
+    return _to_out(estado)
 
 
 @router.post("/stop", response_model=DevServerOut)
@@ -94,8 +121,12 @@ def server_stop(
     project_id: str,
     projects: ProjectService = Depends(get_project_service),
     servers: DevServerService = Depends(get_dev_server_service),
+    cache: TTLCache = Depends(get_cache),
+    health: HealthService = Depends(get_health_service),
 ) -> DevServerOut:
-    return _to_out(servers.stop(projects.get(project_id)))
+    estado = servers.stop(projects.get(project_id))
+    _esquecer_estado(cache, health, project_id)
+    return _to_out(estado)
 
 
 @router.post("/restart", response_model=DevServerOut)
@@ -103,6 +134,8 @@ def server_restart(
     project_id: str,
     projects: ProjectService = Depends(get_project_service),
     servers: DevServerService = Depends(get_dev_server_service),
+    cache: TTLCache = Depends(get_cache),
+    health: HealthService = Depends(get_health_service),
 ) -> DevServerOut:
     """Para e sobe de novo, sem passar pelo ambiente.
 
@@ -112,7 +145,9 @@ def server_restart(
     """
     project = projects.get(project_id, touch=True)
     servers.stop(project)
-    return _to_out(servers.start(project))
+    estado = servers.start(project)
+    _esquecer_estado(cache, health, project_id)
+    return _to_out(estado)
 
 
 @router.get("/logs", response_model=DevServerLogs)

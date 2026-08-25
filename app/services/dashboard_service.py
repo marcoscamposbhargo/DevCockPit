@@ -18,6 +18,7 @@ from app.models.base import utcnow
 from app.models.project import Project, ProjectStatus
 from app.repositories.project_repository import ProjectRepository
 from app.services.health_service import HealthService, HealthState
+from app.services.port_discovery_service import PortDiscoveryService
 
 
 @dataclass
@@ -37,6 +38,13 @@ class ActiveService:
     url: str | None
     port: int | None
     state: str
+    #: O painel prova que quem responde nessa porta é deste projeto — porque
+    #: foi ele quem subiu, porque o processo roda dentro do diretório do
+    #: projeto, ou porque o Compose marcou o container.
+    proven: bool = True
+    #: Quando não há prova, o que se sabe de quem está na porta. É o que separa
+    #: "seu projeto está no ar" de "alguém está nessa porta".
+    owner_hint: str | None = None
 
 
 @dataclass
@@ -73,10 +81,15 @@ class DashboardService:
         session: Session,
         cache: TTLCache,
         health: HealthService,
+        ports: PortDiscoveryService | None = None,
     ) -> None:
         self.repo = ProjectRepository(session)
         self.cache = cache
         self.health = health
+        #: Só leitura do que o poller já observou — nada de varrer aqui, que é
+        #: caminho de requisição. Serve para responder "quem está nessa porta?",
+        #: pergunta que a verificação de saúde nunca soube fazer.
+        self.ports = ports
 
     def build(self) -> Dashboard:
         cached = self.cache.get(CACHE_KEY)
@@ -128,7 +141,9 @@ class DashboardService:
             if any(tech.name in ("docker", "docker-compose") for tech in project.technologies)
         )
 
-        rodando = {service.project_id for service in active_services}
+        # Só conta quem tem prova. Contar porta respondida faria "5 rodando"
+        # numa máquina com dois projetos de pé e três coincidências de número.
+        rodando = {service.project_id for service in active_services if service.proven}
         sem_diretorio = by_status.get(ProjectStatus.MISSING.value, 0)
         parados = max(total - len(rodando) - sem_diretorio, 0)
 
@@ -166,6 +181,20 @@ class DashboardService:
         return sorted(pendentes, key=lambda item: item.dirty_count, reverse=True)[:10]
 
     def _active_services(self, projects: list[Project]) -> list[ActiveService]:
+        """Serviços que respondem — separando os que são deste projeto.
+
+        A verificação de saúde abre um socket e pergunta "tem alguém aí?".
+        Nunca soube perguntar "quem?", e as duas respostas divergem sempre que
+        dois projetos declaram a mesma porta padrão: o Dashboard-contabil
+        apareceu "no ar" mostrando o container da PLATAFORMA DE INGRESSOS, que
+        é quem realmente ocupava a 8000.
+
+        Aqui a resposta da porta é cruzada com a atribuição que a descoberta já
+        fez. Sem prova de dono, o serviço continua aparecendo — o painel não
+        finge que a porta está muda —, mas marcado, e **fora** da contagem de
+        projetos rodando.
+        """
+        observadas = self.ports.last_known().by_port() if self.ports is not None else {}
         ativos: list[ActiveService] = []
 
         for project in projects:
@@ -173,6 +202,10 @@ class DashboardService:
                 resultado = self.health.last_known(project.id, service.key)
                 if resultado.state != HealthState.ONLINE:
                     continue
+
+                dono = observadas.get(service.port) if service.port else None
+                provado, pista = self._avaliar_dono(project, dono)
+
                 ativos.append(
                     ActiveService(
                         project_id=project.id,
@@ -182,10 +215,45 @@ class DashboardService:
                         url=service.url,
                         port=service.port,
                         state=resultado.state.value,
+                        proven=provado,
+                        owner_hint=pista,
                     )
                 )
 
+        # Provados primeiro: é o que a pessoa foi ver.
+        ativos.sort(key=lambda item: not item.proven)
         return ativos[:20]
+
+    @staticmethod
+    def _avaliar_dono(project: Project, dono) -> tuple[bool, str | None]:  # type: ignore[no-untyped-def]
+        """Decide se dá para afirmar que quem responde é deste projeto.
+
+        Sem observação nenhuma — antes do primeiro ciclo do poller — o
+        resultado é "provado". Não saber não é o mesmo que desconfiar, e marcar
+        tudo como suspeito no primeiro minuto de uso seria pior que o defeito
+        que isto conserta.
+        """
+        if dono is None:
+            return True, None
+
+        if dono.project_id == project.id:
+            if dono.strong_evidence:
+                return True, None
+            return False, (
+                f"Responde, mas o painel não prova que é deste projeto — "
+                f"quem ocupa a porta é {dono.process_name or 'um processo'}."
+            )
+
+        if dono.project_id:
+            return False, (
+                f"Quem ocupa a porta é {dono.process_name or 'um processo'}, "
+                f"do {dono.project_name}."
+            )
+
+        return False, (
+            f"Responde, mas sem dono conhecido — "
+            f"quem ocupa a porta é {dono.process_name or 'um processo'}."
+        )
 
     def _port_conflicts(self, projects: list[Project]) -> list[PortConflict]:
         """Duas coisas disputando a mesma porta é a dor que aparece na hora errada."""

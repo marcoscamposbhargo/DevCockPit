@@ -73,8 +73,13 @@ class ObservedPort:
 
         Quem afirma "está no ar" precisa de prova. Quem só mostra "ocupada por
         alguém" pode se contentar com o palpite, porque não está afirmando dono.
+
+        `container-label` entrou depois e é prova das boas: o Compose grava o
+        diretório do projeto no próprio container, então não há dedução — é o
+        Docker dizendo de quem é. Diferente de `container`, que continua sendo
+        o palpite pelo número declarado.
         """
-        return self.matched_by in ("cwd", "cmdline")
+        return self.matched_by in ("cwd", "cmdline", "container-label")
 
     #: Diretório de trabalho do processo, quando foi possível ler. É o que
     #: identifica o processo para um humano — "node.exe" não diz nada, "node.exe
@@ -163,9 +168,16 @@ class PortDiscoveryService:
     # --- varredura ---
 
     def observe(
-        self, projects: list[ProjectRef], managed_pids: set[int] | None = None
+        self,
+        projects: list[ProjectRef],
+        managed_pids: set[int] | None = None,
+        container_dirs: dict[int, str] | None = None,
     ) -> PortObservation:
         """Varre e atribui. Chamado pelo poller, nunca no caminho da requisição.
+
+        `container_dirs` mapeia porta publicada para o diretório do projeto,
+        lido dos rótulos do Compose. É o que permite dizer de quem é uma porta
+        de container sem chutar pelo número declarado.
 
         `managed_pids` são os processos que o painel subiu (a tabela
         `dev_server`). Servem para separar "este servidor é meu, e o botão
@@ -189,7 +201,7 @@ class PortDiscoveryService:
         gerenciados = with_descendants(managed_pids or set()) | self_process_tree()
         observacao = PortObservation(
             ports=[
-                self._assign(porta, projects, dono_por_porta, gerenciados)
+                self._assign(porta, projects, dono_por_porta, gerenciados, container_dirs or {})
                 for porta in escutando
             ]
         )
@@ -267,8 +279,10 @@ class PortDiscoveryService:
         projects: list[ProjectRef],
         dono_por_porta: dict[int, ProjectRef],
         gerenciados: set[int] | None = None,
+        container_dirs: dict[int, str] | None = None,
     ) -> ObservedPort:
         gerenciados = gerenciados or set()
+        container_dirs = container_dirs or {}
 
         dono = self._match_by_cwd(porta, projects)
         if dono is not None:
@@ -281,6 +295,11 @@ class PortDiscoveryService:
             return self._observed(
                 porta, dono, "cmdline", unmanaged=self._is_unmanaged(porta, dono, gerenciados)
             )
+
+        dono = self._match_by_container_label(porta, projects, container_dirs)
+        if dono is not None:
+            # O Compose disse de quem é o container. Não há o que deduzir.
+            return self._observed(porta, dono, "container-label")
 
         if porta.via_container_runtime:  # noqa: SIM102 - a ordem das regras é o contrato
             # O `cwd` do Docker aponta para a instalação dele, então as duas
@@ -399,6 +418,30 @@ class PortDiscoveryService:
             if raiz is None:
                 continue
             if len(atual) >= len(raiz) and atual[: len(raiz)] == raiz:
+                return project
+        return None
+
+    @staticmethod
+    def _match_by_container_label(
+        porta: ListeningPort,
+        projects: list[ProjectRef],
+        container_dirs: dict[int, str],
+    ) -> ProjectRef | None:
+        """Casa a porta com o projeto pelo diretório que o Compose gravou.
+
+        Vale para qualquer porta publicada por container, inclusive quando dois
+        projetos declaram o mesmo número — que é exatamente onde a regra
+        anterior, baseada em "só um declara", se calava ou errava.
+        """
+        diretorio = normalized(container_dirs.get(porta.port))
+        if diretorio is None:
+            return None
+
+        for project in sorted(projects, key=lambda p: len(p.path), reverse=True):
+            raiz = normalized(project.path)
+            if raiz is None:
+                continue
+            if len(diretorio) >= len(raiz) and diretorio[: len(raiz)] == raiz:
                 return project
         return None
 

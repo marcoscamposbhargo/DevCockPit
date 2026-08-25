@@ -18,12 +18,15 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.project import DevServer
 from app.repositories.project_repository import ProjectRepository
+from app.services.container_ports_service import ContainerPortsService
+from app.services.health_history_service import HealthHistoryService
 from app.services.health_service import (
     HealthService,
     should_poll,
     targets_from_project,
 )
 from app.services.port_discovery_service import PortDiscoveryService, refs_from_projects
+from app.services.retention_service import RetentionService
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,9 @@ class HealthPoller:
         interval_s: float = 30.0,
         recent_days: int = 7,
         ports: PortDiscoveryService | None = None,
+        history: HealthHistoryService | None = None,
+        retention: RetentionService | None = None,
+        containers: ContainerPortsService | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.health = health
@@ -46,6 +52,17 @@ class HealthPoller:
         #: sentido lado a lado, e as duas leem a mesma lista de projetos. Um
         #: segundo laço faria a mesma consulta de banco duas vezes.
         self.ports = ports
+        #: Gravação do histórico e poda das tabelas que crescem sozinhas. As
+        #: duas moram aqui porque este já é o laço de background da aplicação:
+        #: um segundo laço só para escrever linha e apagar linha seria mais uma
+        #: peça para manter e mais um lugar onde exceção fica em silêncio.
+        self.history = history
+        self.retention = retention
+        #: De quem é cada porta publicada por container. Sem isto, a atribuição
+        #: de porta de container é um palpite pelo número declarado — e o
+        #: palpite fez um projeto parado aparecer "no ar" mostrando o container
+        #: de outro.
+        self.containers = containers
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
@@ -84,13 +101,26 @@ class HealthPoller:
         if self.ports is not None:
             # Numa thread porque `psutil` é síncrono. Custa ~5 ms nesta
             # máquina, mas bloquear o event loop por qualquer tempo num
-            # servidor que também serve SSE não se justifica.
-            await asyncio.to_thread(self.ports.observe, refs, gerenciados)
+            # servidor que também serve SSE não se justifica. O mesmo vale para
+            # a consulta ao Docker, que é subprocesso.
+            container_dirs: dict[int, str] = {}
+            if self.containers is not None:
+                container_dirs = await asyncio.to_thread(self.containers.read)
+            await asyncio.to_thread(self.ports.observe, refs, gerenciados, container_dirs)
+
+        if self.retention is not None:
+            await asyncio.to_thread(self.retention.prune_if_due)
 
         if not targets:
             return 0
 
-        await self.health.check_many(targets)
+        results = await self.health.check_many(targets)
+
+        if self.history is not None:
+            # Numa thread pelo mesmo motivo da descoberta de porta: a sessão do
+            # SQLAlchemy é síncrona e o event loop também serve SSE.
+            await asyncio.to_thread(self.history.record, results)
+
         return len(targets)
 
     def _collect(self) -> tuple[list, list, set[int]]:

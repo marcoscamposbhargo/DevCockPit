@@ -6,7 +6,13 @@ import asyncio
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.deps import get_discovery_service, get_job_manager, get_project_service
+from app.api.deps import (
+    get_discovery_service,
+    get_job_manager,
+    get_project_service,
+    get_settings_dep,
+)
+from app.core.config import Settings
 from app.core.errors import DomainError
 from app.jobs.job import Job
 from app.jobs.job_manager import JobManager
@@ -47,6 +53,7 @@ async def scan(
     payload: ScanRequest,
     service: DiscoveryService = Depends(get_discovery_service),
     manager: JobManager = Depends(get_job_manager),
+    settings: Settings = Depends(get_settings_dep),
 ) -> JobAccepted:
     """Dispara a varredura como job (FR-090, cumprindo D-23).
 
@@ -74,7 +81,16 @@ async def scan(
 
         return f"{len(response.items)} candidato(s) encontrado(s)."
 
-    job = manager.submit_callable(work, key=SCAN_KEY, action="discovery.scan")
+    # `timeout_scan` existia na configuração desde a Fase 0 sem ninguém ler.
+    # Uma raiz enorme ou um link cíclico deixava a varredura correndo sem teto,
+    # com a chave presa: a próxima tentativa levava 409 e não havia como sair
+    # disso a não ser reiniciando o servidor.
+    job = manager.submit_callable(
+        work,
+        key=SCAN_KEY,
+        action="discovery.scan",
+        timeout_s=settings.timeout_scan,
+    )
     return JobAccepted(job_id=job.id, action=job.action, status=job.status)
 
 

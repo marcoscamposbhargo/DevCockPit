@@ -3,18 +3,18 @@
 > **Status: implementado e em uso.** Escrito a partir de medições feitas nesta
 > máquina em 2026-08-25, não de números de catálogo.
 
-Este é o guia prático de como usar o Ollama dentro do painel: quando vale o
-modelo rápido, quando vale o caprichado, e o que esperar de cada um. Os
-documentos vizinhos explicam *como funciona por dentro* — este explica *como
-usar*.
+Este é o guia prático de como usar o Ollama dentro do painel: onde perguntar,
+qual modelo responde, e — o que mais importa — **o que esperar de cada um**. Os
+documentos vizinhos explicam *como funciona por dentro*; este explica *como
+usar*, e onde não confiar.
 
 ## O que está configurado
 
 | | |
 |---|---|
 | Provedor | `local` — Ollama em `http://127.0.0.1:11434` |
-| Modelo rápido | `qwen2.5-coder:3b` |
-| Modelo caprichado | `qwen2.5-coder:7b` |
+| Modelo padrão | `qwen2.5-coder:7b` |
+| Modelo reserva | `qwen2.5-coder:3b` |
 | Chave de API | nenhuma. Não existe e não é necessária |
 | Custo em dinheiro | zero |
 
@@ -62,19 +62,34 @@ a memória, a sessão em andamento, as tarefas abertas e o README.
 É o caminho certo para "o que ficou pendente aqui?" e o caminho errado para
 "qual o comando do `netstat`?".
 
-## Quando usar o caprichado
+## Os dois modelos, e o que esperar de cada um
 
-**Regra: o 3b responde sempre. O 7b é a segunda tentativa.**
+O **7b é o padrão**; o 3b fica na reserva, atrás do botão "Refazer com o
+caprichado" na pergunta rápida e do seletor no chat de projeto.
 
-Na pergunta rápida, depois da resposta aparece **"Refazer com o caprichado"** —
-um clique, mesma pergunta, modelo maior. No chat de projeto, o seletor
-**Rápido | Caprichado** fica no cabeçalho e é escolhido antes de perguntar.
+Vale registrar o que a medição diz, porque ela não sustenta a troca — a escolha
+foi do usuário, com o dado à vista, e está aqui para quem revisitar:
 
-Por que não um roteador automático que decide sozinho: para julgar "essa
-pergunta é difícil" seria preciso um modelo, e aí se paga uma chamada inteira
-só para escolher quem responde — num provedor onde uma chamada custa dezenas de
-segundos. Quem julga se a resposta serviu é você, olhando para ela. O custo
-disso é zero quando o 3b acerta, e ele acerta na maioria.
+| | Perguntas fáceis de terminal | Perguntas de diagnóstico |
+|---|---|---|
+| `qwen2.5-coder:3b` | 4 de 4 corretas | **0 de 4** |
+| `qwen2.5-coder:7b` | 4 de 4 corretas | **0 de 4** |
+
+Os dois acertam o que é decorado e erram o que exige raciocínio. O 7b custa o
+dobro do tempo pelos mesmos acertos.
+
+E há um risco que o tamanho não corrige. Perguntado por que um socket TCP para
+porta fechada pendura no Windows, o 3b listou palpites e admitiu não ter
+certeza; o **7b inventou "delayed ACK"**, que não tem relação nenhuma com
+recusa de conexão, e afirmou com convicção. **Errado com convicção é pior que
+errado com dúvida** — o primeiro você confere, o segundo você acredita.
+
+### Por que não há roteador automático
+
+Para julgar "essa pergunta é difícil" seria preciso um modelo, e aí se paga uma
+chamada inteira só para escolher quem responde — num provedor onde cada chamada
+custa dezenas de segundos. Quem julga se a resposta serviu é você, olhando para
+ela.
 
 ## Os números desta máquina
 
@@ -128,12 +143,22 @@ medido em vez de supor.
 
 ## O aviso que importa
 
-Um modelo de 3B **erra**. O de 7B erra menos, e também erra.
+Um modelo de 3B **erra**. O de 7B, medido aqui, **não erra menos** — erra o
+mesmo, mais devagar e com mais convicção.
 
-No terminal, comando errado custa trabalho: o próprio llama sugeriu
-`git reset --hard` como se fosse alternativa inofensiva ao `--soft`. Use o
-modelo local como memória auxiliar — antes de rodar qualquer coisa que
-**apaga arquivo, descarta alteração ou encerra processo**, confira.
+O que os dois fazem bem é **lembrar comando**: sintaxe de `git`, flag de
+`netstat`, o que significa uma mensagem de erro conhecida. O que nenhum dos
+dois fez foi **diagnosticar** — nas quatro perguntas de causa raiz, incluindo
+um bug real deste repositório (`except OSError` antes de `except
+TimeoutError`, que torna o segundo código morto desde o Python 3.10), os dois
+disseram que o código estava correto.
+
+Trate-os como índice remissivo, não como colega de dupla.
+
+E no terminal, comando errado custa trabalho: o llama chegou a sugerir
+`git reset --hard` como se fosse alternativa inofensiva ao `--soft`. Antes de
+rodar qualquer coisa que **apaga arquivo, descarta alteração ou encerra
+processo**, confira.
 
 O prompt do assistente de terminal já pede que ele avise sobre comando
 destrutivo antes de mostrá-lo. Pedir não é garantir.
@@ -152,12 +177,13 @@ Variável já definida no ambiente do sistema ganha do arquivo.
 ```ini
 DEVCOCKPIT_AI_ENABLED=true
 DEVCOCKPIT_AI_PROVIDER=local
-DEVCOCKPIT_AI_MODEL=qwen2.5-coder:3b
-DEVCOCKPIT_AI_MODEL_ALT=qwen2.5-coder:7b
+DEVCOCKPIT_AI_MODEL=qwen2.5-coder:7b
+DEVCOCKPIT_AI_MODEL_ALT=qwen2.5-coder:3b
 DEVCOCKPIT_AI_BASE_URL=http://127.0.0.1:11434
 
-# Modelo local carrega na memória na primeira pergunta do dia.
-DEVCOCKPIT_AI_TIMEOUT=180
+# Modelo local carrega na memória na primeira pergunta do dia — e o 7b são
+# 5 GB a subir antes da primeira palavra.
+DEVCOCKPIT_AI_TIMEOUT=300
 
 # Ajustado ao ritmo medido acima: 12.000 tokens custariam ~2,5 min só de
 # leitura no 3b, antes da primeira palavra da resposta.

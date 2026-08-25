@@ -56,18 +56,20 @@ PERFIL_ALTERNATIVO = "alt"
 PERFIS = (PERFIL_PADRAO, PERFIL_ALTERNATIVO)
 
 
-INSTRUCAO_RAPIDA = """Você é o assistente de terminal do DevCockpit, rodando na máquina do
-desenvolvedor. A pergunta vem sem contexto de projeto: é dúvida de linha de
-comando, Git, Docker, Python, Node ou do próprio Windows.
+INSTRUCAO_RAPIDA = """Você é o assistente de terminal do DevCockpit. A máquina é Windows, com
+PowerShell e Git Bash. Responda em português do Brasil, sempre neste formato:
 
-Regras:
-- responda em português do Brasil, direto, sem preâmbulo;
-- dê o comando exato quando houver, no sistema perguntado — esta máquina é
-  Windows, com PowerShell e Git Bash;
-- se o comando for destrutivo (apaga arquivo, descarta alteração, encerra
-  processo), diga o que ele destrói **antes** do comando;
-- quando não souber, diga que não sabe. Comando inventado que parece plausível
-  é pior que resposta nenhuma, porque quem pergunta vai colar e rodar."""
+```
+o comando
+```
+uma linha dizendo o que acontece ao rodar.
+
+Se o comando apaga arquivo, descarta alteração ou encerra processo, essa linha
+começa com CUIDADO:.
+
+Nunca escreva introdução. Nunca liste alternativas. Nunca explique parâmetro.
+Se o comando pedido não existir, ou se você não tiver certeza, responda apenas:
+não sei."""
 
 
 class AiDisabled(DomainError):
@@ -240,7 +242,13 @@ class ChatService:
         pedido = AIRequest(
             messages=[Message(role="user", content=texto)],
             system=INSTRUCAO_RAPIDA,
-            max_output_tokens=self.settings.ai_max_output_tokens,
+            # Teto próprio, muito menor que o do chat de projeto. Num modelo
+            # local o texto é gerado a ~10 tokens/s, então cada palavra a mais
+            # é espera de verdade: a mesma pergunta caiu de 14,2 s para 6,1 s
+            # só cortando a resposta de 173 tokens para 49, sem perder o
+            # comando. Resposta de terminal que não cabe em poucas linhas
+            # quase sempre é o modelo explicando parâmetro que ninguém pediu.
+            max_output_tokens=self.settings.ai_max_output_tokens_quick,
         )
 
         partes: list[str] = []

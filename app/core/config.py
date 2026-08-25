@@ -127,6 +127,13 @@ class Settings(BaseSettings):
     ai_timeout: float = 120.0
     ai_max_context_tokens: int = 12000
     ai_max_output_tokens: int = 2000
+    #: Teto de resposta da pergunta rápida, separado do chat de projeto.
+    #:
+    #: Num provedor local o texto sai a ~10 tokens/s, então o tamanho da
+    #: resposta **é** o tempo de espera. Medido: a mesma pergunta de terminal
+    #: caiu de 14,2 s para 6,1 s quando a resposta encolheu de 173 para 49
+    #: tokens — mesmo comando, sem nada de útil perdido.
+    ai_max_output_tokens_quick: int = 300
     #: Teto de tokens por dia. Zero desliga o teto — desaconselhado: custo
     #: invisível é o que um dia assusta.
     ai_daily_token_budget: int = 200_000

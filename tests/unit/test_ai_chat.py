@@ -477,3 +477,21 @@ def test_pergunta_rapida_respeita_o_perfil_de_modelo(session: Session) -> None:
     chat = ChatService(session, ajustes)
 
     assert chat._exigir_provedor("alt").model == "caprichado"
+
+
+def test_pergunta_rapida_tem_teto_de_resposta_proprio(session: Session) -> None:
+    """O teto da pergunta rápida é menor que o do chat de projeto.
+
+    Num provedor local o texto é gerado a ~10 tokens/s, então o tamanho da
+    resposta **é** o tempo de espera: a mesma pergunta caiu de 14,2 s para
+    6,1 s quando encolheu de 173 para 49 tokens, sem perder o comando. Herdar
+    o teto de 2.000 do chat era prometer três minutos de digitação numa dúvida
+    de `netstat`.
+    """
+    falso = FakeProvider()
+    ajustes = config(ai_max_output_tokens=2000, ai_max_output_tokens_quick=300)
+    chat = ChatService(session, ajustes, provider=falso)
+
+    list(chat.ask_quick("Como vejo a porta 3000?"))
+
+    assert falso.last_request.max_output_tokens == 300

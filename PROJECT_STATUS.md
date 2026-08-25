@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-23 (aplicativo com janela própria; portas com prova de dono; frontend ganha teste)
+**Última atualização:** 2026-08-25 (Cockpit AI Fase 1: sessão de trabalho, memória de projeto e Meu dia — sem IA)
 
 ---
 
@@ -61,6 +61,10 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
       tela **Ports**, com o mapa das portas declaradas, o conflito marcado e a
       troca do número na própria linha, com sugestão de porta livre. Ela edita
       o registro do DevCockpit, nunca o arquivo do projeto (D-55, D-56).
+- [x] (2026-08-25) Cockpit AI, Fase 1 entregue: sessão de trabalho com resumo
+      montado dos fatos observados (commits pelo corte de sha, ações, quedas),
+      memória de projeto e global com origem declarada, e a tela "Meu dia".
+      Nada disso usa IA — é o que dá à Fase 2 fato para ler em vez de dedução.
 - [x] (2026-08-23) "Subiu 3 projetos ativos sem eu pedir": nada subiu — o
       painel é que afirmava "no ar" só porque a porta respondia. A atribuição
       de porta de container passou a vir do rótulo do Compose (fato, não
@@ -325,8 +329,8 @@ teste removidos.
 
 ## Em andamento
 
-Nada. P0, P1 e o executável entregues em 2026-08-23; a fila segue em
-**Prioridades**, no topo.
+Cockpit AI. Fase 1 entregue em 2026-08-25 (`docs/ai/`); a Fase 2 — provedor,
+Context Engine e chat contextual — espera uma semana de uso real da sessão.
 
 ---
 
@@ -576,7 +580,7 @@ Falta, porque depende de você:
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
 | Cobertura de testes | 89% | >= 70% |
-| Testes | 496 passando (10 de frontend), 1 pulado | — |
+| Testes | 516 passando (10 de frontend), 1 pulado | — |
 
 ---
 
@@ -597,3 +601,4 @@ Falta, porque depende de você:
 | Análise e retenção | 2026-08-23 | 2026-08-23 | gráficos no dashboard, histórico de health gravado e podado; 475 testes |
 | Executável | 2026-08-23 | 2026-08-23 | pasta autocontida de 39,7 MB, abre em 1,4 s; 483 testes |
 | Aplicativo e portas | 2026-08-23 | 2026-08-23 | janela nativa, ícone, prova de dono de porta, teste de frontend; 496 testes |
+| Cockpit AI — Fase 1 | 2026-08-25 | 2026-08-25 | sessão, memória, Meu dia, autoria na auditoria; 516 testes |

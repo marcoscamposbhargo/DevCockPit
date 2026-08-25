@@ -1,6 +1,6 @@
 # Plano de implementação
 
-> **Status: proposta, aguardando autorização.**
+> **Status: Fase 1 implementada em 2026-08-25. As demais seguem propostas.**
 
 ## A inversão que esta análise propõe
 
@@ -19,23 +19,32 @@ Construí-los primeiro tem três efeitos:
 
 ---
 
-## Fase 1 — Fundação sem IA
+## Fase 1 — Fundação sem IA ✅ entregue em 2026-08-25
 
 **Entrega:** o painel passa a lembrar o trabalho.
 
+Uma correção ao plano, feita na implementação: `ai_message` **não** entrou na
+migração 006. Ela só passa a ser escrita quando o chat existir, e tabela criada
+antes de alguém escrever nela é o defeito que este projeto já corrigiu duas
+vezes (`health_snapshot` e `git_repository`). Fica para a Fase 2.
+
 | # | Item | O que é |
 |---|------|---------|
-| 1.1 | Migração `006` + `007` | tabelas de sessão, mensagem e memória |
-| 1.2 | `SessionService` | abrir, encerrar, listar sessões |
-| 1.3 | Coleta de fatos | `git diff --stat`, ações da janela, quedas de serviço |
-| 1.4 | `MemoryService` | CRUD de memória com `source` e confirmação |
-| 1.5 | Rotas `/api/ai/sessions`, `/api/ai/memory` | contrato HTTP |
-| 1.6 | Tela **Sessão** no projeto | iniciar, ver anterior, encerrar com resumo |
-| 1.7 | **Start My Day** | briefing de todos os projetos, sem IA |
-| 1.8 | `actor` na auditoria | preparação para o passo seguinte |
+| 1.1 | ~~Migração `006`~~ | `ai_session`, `ai_memory`, `activity_log.actor/agent/reason`, `project.ai_enabled` |
+| 1.2 | ~~`SessionService`~~ | abrir, encerrar, listar sessões |
+| 1.3 | ~~Coleta de fatos~~ | `git diff --stat`, ações da janela, quedas de serviço |
+| 1.4 | ~~`MemoryService`~~ | CRUD de memória com `source` e confirmação |
+| 1.5 | ~~Rotas de sessão, memória e briefing~~ | contrato HTTP |
+| 1.6 | ~~Tela **Sessão** no projeto~~ | iniciar, ver anterior, encerrar com resumo |
+| 1.7 | ~~**Start My Day**~~ | briefing de todos os projetos, sem IA |
+| 1.8 | ~~`actor` na auditoria~~ | preparação para o passo seguinte |
 
-**Critério de saída:** encerrar uma sessão e, no dia seguinte, o painel dizer
-onde parou — com dados que ele mesmo observou, sem modelo nenhum configurado.
+**Critério de saída — verificado em 2026-08-25**, no painel real: uma sessão
+aberta no próprio DEVCOCKPIT marcou `e1e574a` com 24 arquivos sujos; ao
+encerrar, o resumo saiu montado sozinho — *"1 commit(s), o último: 'feat:
+sessão de trabalho e memória de projeto'. 4 arquivo(s) sem commit ao encerrar"*
+— com o commit capturado pelo corte de sha, sem modelo nenhum configurado.
+20 testes novos; 516 no total.
 
 **Risco:** baixo. Nada disso toca execução de comando nem segurança.
 
@@ -127,15 +136,9 @@ painel, e a que mais depende de as anteriores terem ficado boas.
 | 4 | ~4 | 2 | — | sim |
 | 5 | ~6 | 2 | 1 | sim |
 
-## Antes de qualquer linha de código
+## Antes de qualquer linha de código — resolvido
 
-Três pendências do repositório, que ficam piores com módulo novo por cima:
-
-1. **52 arquivos sem commit**, acumulando sete sessões de trabalho;
-2. a branch `varredura/bugs-e-organizacao` está 32 commits à frente da `main`;
-3. `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz,
-   sem decisão.
-
-Começar o Cockpit AI sobre isso significa que um `git reset` errado leva junto
-dois dias de trabalho e o módulo novo. **Recomendação: commitar e resolver a
-branch antes da Fase 1.**
+As três pendências que travavam o início foram fechadas antes da Fase 1: o
+trabalho acumulado virou sete commits temáticos, a `main` absorveu a branch de
+varredura, e o repositório foi publicado (privado). Sobra decidir se
+`Dockerfile`, `docker-compose.yml` e `.dockerignore` entram.

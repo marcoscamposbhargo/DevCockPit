@@ -1,10 +1,12 @@
-# Cockpit AI — documentação da proposta
+# Cockpit AI — documentação
 
 Incremento proposto ao DevCockpit: uma camada de contexto, memória e assistência
 sobre o painel de operação que já existe.
 
-**Nada aqui está implementado.** São documentos de projeto, escritos antes do
-código, aguardando autorização (`AI_IMPLEMENTATION_PLAN.md`).
+**Fases 1 e 2 implementadas em 2026-08-25**; as demais seguem propostas. Os
+documentos foram escritos antes do código e continuam sendo o desenho — o que
+mudou de rumo na implementação está anotado no próprio documento, não apagado.
+Ver `AI_IMPLEMENTATION_PLAN.md` para o que entrou em cada fase.
 
 | Doc | Assunto |
 |-----|---------|
@@ -17,6 +19,10 @@ código, aguardando autorização (`AI_IMPLEMENTATION_PLAN.md`).
 | [AI_DATABASE_SCHEMA](AI_DATABASE_SCHEMA.md) | cinco tabelas novas e três colunas |
 | [AI_IMPLEMENTATION_PLAN](AI_IMPLEMENTATION_PLAN.md) | cinco fases, com critério de saída |
 | [AI_ROADMAP](AI_ROADMAP.md) | ordem, o que fica fora, sinais de parar |
+| [LOCAL_MODEL_GUIDE](LOCAL_MODEL_GUIDE.md) | **uso prático** do Ollama: quando usar cada modelo, números medidos, erros |
+
+O último é o único de uso, e não de projeto: os outros dizem *como funciona por
+dentro*, ele diz *como usar*.
 
 ## Os três achados que moldaram a proposta
 

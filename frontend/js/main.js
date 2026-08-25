@@ -9,6 +9,7 @@ import { shortcutsHint, wireShortcuts } from './lib/shortcuts.js';
 import { emptyState } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
 import { renderDashboard } from './pages/dashboard.js';
+import { renderDay } from './pages/day.js';
 import { renderDiscovery } from './pages/discovery.js';
 import { renderProject } from './pages/project.js';
 import { renderPorts } from './pages/ports.js';
@@ -18,6 +19,7 @@ import { navigate, register, setNotFound, start } from './router.js';
 
 const view = document.getElementById('view');
 
+register('day', '/day', renderDay);
 register('dashboard', '/dashboard', renderDashboard);
 register('projects', '/projects', renderProjects);
 register('discovery', '/discovery', renderDiscovery);

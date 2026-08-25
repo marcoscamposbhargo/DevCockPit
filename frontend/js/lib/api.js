@@ -87,6 +87,27 @@ export const api = {
     }),
 
   dashboard: () => request('GET', '/dashboard'),
+
+  // Cockpit AI — Fase 1. Nada aqui fala com modelo: é sessão, memória e o
+  // briefing do dia, montados do que o painel já mede.
+  day: () => request('GET', '/ai/day'),
+  sessions: (id) => request('GET', `/projects/${encodeURIComponent(id)}/sessions`),
+  startSession: (id, objective) =>
+    request('POST', `/projects/${encodeURIComponent(id)}/sessions/start`, {
+      body: { objective: objective || null },
+    }),
+  endSession: (id, summary, nextSteps) =>
+    request('POST', `/projects/${encodeURIComponent(id)}/sessions/end`, {
+      body: { summary: summary || null, next_steps: nextSteps || null },
+    }),
+  projectMemory: (id, kind) =>
+    request('GET', `/projects/${encodeURIComponent(id)}/memory`, { params: { kind } }),
+  createProjectMemory: (id, body) =>
+    request('POST', `/projects/${encodeURIComponent(id)}/memory`, { body }),
+  globalMemory: (kind) => request('GET', '/ai/memory', { params: { kind } }),
+  createGlobalMemory: (body) => request('POST', '/ai/memory', { body }),
+  confirmMemory: (memoryId) => request('POST', `/ai/memory/${memoryId}/confirm`),
+  deleteMemory: (memoryId) => request('DELETE', `/ai/memory/${memoryId}`),
   analytics: (days = 14) => request('GET', '/analytics', { params: { days } }),
 
   listServices: (id) => request('GET', `/projects/${encodeURIComponent(id)}/services`),

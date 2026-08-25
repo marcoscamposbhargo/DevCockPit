@@ -19,6 +19,7 @@ from app.core.config import PROJECT_ROOT, RootsConfig, Settings
 from app.jobs.job_manager import JobManager
 from app.services.activity_service import ActivityService
 from app.services.analytics_service import AnalyticsService
+from app.services.briefing_service import BriefingService
 from app.services.dashboard_service import DashboardService
 from app.services.detection_service import DetectionService
 from app.services.dev_server_service import DevServerService
@@ -28,9 +29,11 @@ from app.services.environment_service import EnvironmentService
 from app.services.git_service import GitService
 from app.services.health_service import HealthService
 from app.services.manifest_service import ManifestService
+from app.services.memory_service import MemoryService
 from app.services.metrics_service import MetricsService
 from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
+from app.services.session_service import SessionService
 from app.services.system_action_service import SystemActionService
 
 
@@ -188,6 +191,31 @@ def get_analytics_service(
         cache=cache,
         max_gap_s=settings.health_snapshot_interval * 2,
     )
+
+
+def get_session_service(
+    session: Session = Depends(get_session),
+    git: GitService = Depends(get_git_service),
+) -> SessionService:
+    """Sessão de trabalho.
+
+    O Git entra para marcar começo e fim: sem ele o resumo continua saindo, só
+    que sem commits — ausência de dependência externa nunca vira erro de tela.
+    """
+    return SessionService(session=session, git=git)
+
+
+def get_memory_service(session: Session = Depends(get_session)) -> MemoryService:
+    return MemoryService(session)
+
+
+def get_briefing_service(
+    session: Session = Depends(get_session),
+    cache: TTLCache = Depends(get_cache),
+    health: HealthService = Depends(get_health_service),
+) -> BriefingService:
+    """Briefing do dia: só lê o que o poller e as consultas já apuraram."""
+    return BriefingService(session=session, cache=cache, health=health)
 
 
 def get_discovery_service(

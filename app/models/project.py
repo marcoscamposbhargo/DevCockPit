@@ -61,6 +61,10 @@ class Project(Base):
         String(20), nullable=False, default=ProjectStatus.REGISTERED.value
     )
     is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Projeto excluído do Cockpit AI: nada dele entra em contexto e nada é
+    #: enviado a provedor nenhum (defesa D-A1). Cliente, contrato ou dado
+    #: sensível — a decisão é do usuário, projeto a projeto.
+    ai_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     detection_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_accessed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=utcnow)
@@ -138,6 +142,16 @@ class ActivityLog(Base):
     argv: Mapped[str | None] = mapped_column(Text, nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    #: Quem pediu a ação. `user` é o padrão e cobre todo o histórico anterior;
+    #: `ai` só aparece quando o agente propuser e alguém confirmar (Fase 3).
+    #: Com este campo, "o que o agente fez ontem?" é filtro na tela de
+    #: Atividade que já existe — sem tabela nova e sem tela nova.
+    actor: Mapped[str] = mapped_column(String(10), nullable=False, default="user")
+    #: Perfil de especialista, quando `actor` for `ai`.
+    agent: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: Por que o agente propôs. Sem isto, auditoria de IA é lista de comandos
+    #: sem motivo — inútil justamente quando se quer entender o que houve.
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=utcnow)
 
     __table_args__ = (Index("ix_activity_project_created", "project_id", "created_at"),)

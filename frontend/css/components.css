@@ -2253,3 +2253,134 @@
   color: var(--fg-primary);
   font-weight: var(--fw-medium);
 }
+
+/* --- sessão de trabalho e briefing do dia --- */
+
+.form-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--sp-3);
+}
+
+@media (max-width: 700px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Os fatos observados ficam visualmente separados do que a pessoa escreve: um
+   é registro do painel, o outro é declaração de quem trabalhou, e a tela não
+   pode dar a mesma cara às duas coisas. */
+.session-facts,
+.session-previous {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.definition-list--compact {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--sp-1) var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-sm);
+}
+
+.definition-list--compact dt {
+  color: var(--fg-muted);
+}
+
+.session-commits {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-4);
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+}
+
+.day-suggestion {
+  margin-bottom: var(--sp-4);
+  color: var(--fg-secondary);
+}
+
+.day-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.day-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+/* O primeiro é a sugestão de foco: ganha destaque de borda, não de cor de
+   fundo — a tela sugere, não decide. */
+.day-card[data-first='true'] {
+  border-color: var(--accent);
+}
+
+.day-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.day-card__rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-card__name {
+  font-weight: var(--fw-semibold);
+}
+
+.day-card__reason {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.day-card__next {
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 2px solid var(--accent);
+  background: var(--bg-subtle);
+}
+
+.day-card__next p {
+  margin: 2px 0 0;
+}
+
+.day-card__last summary {
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.day-card__foot {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: auto;
+  padding-top: var(--sp-2);
+}

@@ -9,10 +9,14 @@ import { renderDockerPanel } from './docker-panel.js';
 import { renderGitPanel } from './git-panel.js';
 import { renderManifestPanel } from './manifest-panel.js';
 import { renderServerPanel } from './server-panel.js';
+import { renderSessionPanel } from './session-panel.js';
 import { renderServicesPanel } from './services-panel.js';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
+  // Sessão vem logo depois de Overview: é a aba que se abre ao começar e ao
+  // terminar o dia, e a que responde "onde eu parei?".
+  { key: 'session', label: 'Sessão' },
   // Server vem antes de Docker porque é a aba do dia a dia: subir o backend e
   // ler o que ele cuspiu acontece dezenas de vezes; mexer em container, não.
   { key: 'server', label: 'Server' },
@@ -225,7 +229,9 @@ export async function renderProject(container, params, query) {
     panel
   );
 
-  if (activeTab === 'server') {
+  if (activeTab === 'session') {
+    await renderSessionPanel(panel, project);
+  } else if (activeTab === 'server') {
     await renderServerPanel(panel);
   } else if (activeTab === 'git') {
     await renderGitPanel(panel);

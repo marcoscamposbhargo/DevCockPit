@@ -26,6 +26,7 @@ from app.api.middleware import (
 )
 from app.api.routes import (
     activity,
+    ai,
     analytics,
     dashboard,
     dev_server,
@@ -173,6 +174,8 @@ def create_app(
     app.include_router(dashboard.router)
     app.include_router(activity.router)
     app.include_router(analytics.router)
+    app.include_router(ai.router)
+    app.include_router(ai.global_router)
     app.include_router(dev_server.router)
     app.include_router(dev_server.global_router)
     app.include_router(environment.router)

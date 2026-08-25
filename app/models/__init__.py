@@ -1,3 +1,4 @@
+from app.models.ai import AiMemory, AiSession, MemoryKind, MemorySource
 from app.models.base import Base, create_session_factory, session_scope, utcnow
 from app.models.project import (
     ActivityLog,
@@ -16,6 +17,8 @@ from app.models.project import (
 
 __all__ = [
     "ActivityLog",
+    "AiMemory",
+    "AiSession",
     "ActivityStatus",
     "Base",
     "DevServer",
@@ -23,6 +26,8 @@ __all__ = [
     "GitRepository",
     "HealthSnapshot",
     "HealthKind",
+    "MemoryKind",
+    "MemorySource",
     "Project",
     "ProjectService",
     "ProjectStatus",

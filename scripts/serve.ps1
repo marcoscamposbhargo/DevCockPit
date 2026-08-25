@@ -54,35 +54,79 @@ $errLog = Join-Path $logDir 'server.err'
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 
 function Get-ServerProcesses {
-    # A porta é a verdade, não o arquivo de PID: um servidor subido à mão por
+    # O processo é a verdade, não o arquivo de PID: um servidor subido à mão por
     # fora deste script também precisa ser encontrado, senão o "já está no ar"
     # mente e duas instâncias brigam pela mesma porta.
+    #
+    # E a busca ignora a porta de propósito. Desde que a subida procura porta
+    # livre, o servidor pode estar em 8766 enquanto o script foi chamado sem
+    # argumento: casar por "--port 8765" faria -Status dizer PARADO e -Stop não
+    # parar nada, com o servidor de pé o tempo todo.
     Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-        Where-Object { $_.CommandLine -like "*uvicorn*app.main:app*--port $Port*" }
+        Where-Object { $_.CommandLine -like '*uvicorn*app.main:app*' }
+}
+
+function Get-ServerPort {
+    # Em que porta o servidor que está de pé realmente subiu.
+    $processo = @(Get-ServerProcesses) | Select-Object -First 1
+    if ($null -eq $processo) { return $null }
+    if ($processo.CommandLine -match '--port\s+(\d+)') { return [int] $Matches[1] }
+    return $null
 }
 
 function Test-ServerResponding {
+    param([int] $Porta)
+
     try {
-        $resposta = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/health" `
-            -Headers @{ Host = "127.0.0.1:$Port" } -TimeoutSec 3 -UseBasicParsing
+        $resposta = Invoke-WebRequest -Uri "http://127.0.0.1:$Porta/api/health" `
+            -Headers @{ Host = "127.0.0.1:$Porta" } -TimeoutSec 3 -UseBasicParsing
         return $resposta.StatusCode -eq 200
     } catch {
         return $false
     }
 }
 
+function Test-PortaLivre {
+    param([int] $Porta)
+
+    $escuta = $null
+    try {
+        $escuta = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Porta)
+        $escuta.Start()
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if ($null -ne $escuta) { $escuta.Stop() }
+    }
+}
+
+function Get-PortaLivre {
+    param([int] $Preferida)
+
+    # O Docker Desktop tomou a 8765 desta maquina numa manha em que o painel
+    # estava parado, e o uvicorn morria com WinError 10048 sem que o script
+    # dissesse por que. Ceder a porta custa menos que disputar.
+    foreach ($candidata in $Preferida..($Preferida + 19)) {
+        if (Test-PortaLivre -Porta $candidata) { return $candidata }
+    }
+    return $null
+}
+
 function Show-Status {
     $processos = @(Get-ServerProcesses)
-    $respondendo = Test-ServerResponding
+    $porta = Get-ServerPort
+    if ($null -eq $porta) { $porta = $Port }
+    $respondendo = Test-ServerResponding -Porta $porta
 
     if ($processos.Count -eq 0 -and -not $respondendo) {
-        Write-Host "PARADO — nada escutando em 127.0.0.1:$Port" -ForegroundColor DarkGray
+        Write-Host "PARADO — nada escutando em 127.0.0.1:$porta" -ForegroundColor DarkGray
         return $false
     }
 
     $pids = ($processos | Select-Object -ExpandProperty ProcessId) -join ', '
     if ($respondendo) {
-        Write-Host "NO AR — http://127.0.0.1:$Port (pid $pids)" -ForegroundColor Green
+        Write-Host "NO AR — http://127.0.0.1:$porta (pid $pids)" -ForegroundColor Green
     } else {
         # Processo vivo que não responde é pior que processo morto: a porta está
         # ocupada e a aplicação não atende.
@@ -141,7 +185,22 @@ function Start-Server {
         throw "Falha ao aplicar as migracoes (codigo $LASTEXITCODE)."
     }
 
-    $argumentos = @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', "$Port")
+    $porta = Get-PortaLivre -Preferida $Port
+    if ($null -eq $porta) {
+        throw "Nenhuma porta livre entre $Port e $($Port + 19)."
+    }
+    if ($porta -ne $Port) {
+        Write-Host "Porta $Port ocupada; usando $porta" -ForegroundColor Yellow
+    }
+
+    # A porta precisa chegar tambem as Settings, e nao so ao uvicorn: ela entra
+    # na lista de origens aceitas em requisicao que altera estado (defesa D5).
+    # Subir em 8766 com as Settings dizendo 8765 devolve 403 em todo botao do
+    # painel, com a tela carregando normalmente. O processo filho herda a
+    # variavel desta sessao.
+    $env:DEVCOCKPIT_PORT = "$porta"
+
+    $argumentos = @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', "$porta")
     if ($Reload) { $argumentos += '--reload' }
 
     # Sem `-NoNewWindow`: o processo precisa sobreviver ao terminal que o criou.
@@ -153,8 +212,8 @@ function Start-Server {
 
     $limite = (Get-Date).AddSeconds(30)
     while ((Get-Date) -lt $limite) {
-        if (Test-ServerResponding) {
-            Write-Host "NO AR — http://127.0.0.1:$Port (pid $($processo.Id))" -ForegroundColor Green
+        if (Test-ServerResponding -Porta $porta) {
+            Write-Host "NO AR — http://127.0.0.1:$porta (pid $($processo.Id))" -ForegroundColor Green
             Write-Host "Log: logs\server.err   Parar: scripts\serve.ps1 -Stop" -ForegroundColor DarkGray
             return
         }

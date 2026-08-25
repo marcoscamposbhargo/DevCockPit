@@ -2090,3 +2090,166 @@
   gap: var(--sp-2);
   justify-content: flex-end;
 }
+
+/* --- gráficos de análise ---
+   Mesma regra dos outros: cor vem do tema, nada de canvas. */
+
+.cols {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cols__plot {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: var(--cols-altura, 120px);
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cols__col {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-end;
+  min-width: 4px;
+  height: 100%;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.cols__col:hover,
+.cols__col:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+/* Dia sem nada continua ocupando a coluna, e um traço no chão diz que o dia
+   existiu e foi silencioso — diferente de um vazio que parece falha de
+   desenho. */
+.cols__pilha {
+  display: flex;
+  flex-direction: column-reverse;
+  width: 100%;
+  min-height: 2px;
+  border-radius: inherit;
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+
+.cols__seg {
+  flex-basis: 0;
+  min-height: 2px;
+  background: var(--status-running);
+}
+
+.cols__seg[data-kind='failed'] {
+  background: var(--status-error);
+}
+
+.cols__seg[data-kind='timeout'] {
+  background: var(--status-warning);
+}
+
+.cols__seg[data-kind='denied'] {
+  background: var(--status-unknown);
+}
+
+.cols__eixo {
+  display: flex;
+  justify-content: space-between;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.cols__max {
+  color: var(--fg-secondary);
+}
+
+.horas {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+}
+
+/* A célula vazia não desaparece: a hora existiu, e o vazio é a informação. */
+.horas__celula {
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: color-mix(
+    in srgb,
+    var(--accent) calc(var(--intensidade, 0) * 85%),
+    var(--bg-subtle)
+  );
+}
+
+.analise-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+  color: var(--fg-secondary);
+  font-size: var(--fs-xs);
+}
+
+.analise-legenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.analise-legenda i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--status-running);
+}
+
+.analise-legenda i[data-kind='failed'] {
+  background: var(--status-error);
+}
+
+.analise-legenda i[data-kind='timeout'] {
+  background: var(--status-warning);
+}
+
+.analise-legenda i[data-kind='denied'] {
+  background: var(--status-unknown);
+}
+
+/* Seletor de período: três opções fixas, então botões e não `select`. O menu
+   esconde as alternativas atrás de um clique para economizar espaço que aqui
+   não falta. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.segmented__opt {
+  padding: 2px var(--sp-2);
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-secondary);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.segmented__opt:first-child {
+  border-left: 0;
+}
+
+.segmented__opt:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.segmented__opt[aria-pressed='true'] {
+  background: var(--bg-subtle);
+  color: var(--fg-primary);
+  font-weight: var(--fw-medium);
+}

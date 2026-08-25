@@ -87,6 +87,7 @@ export const api = {
     }),
 
   dashboard: () => request('GET', '/dashboard'),
+  analytics: (days = 14) => request('GET', '/analytics', { params: { days } }),
 
   listServices: (id) => request('GET', `/projects/${encodeURIComponent(id)}/services`),
   checkServices: (id) => request('POST', `/projects/${encodeURIComponent(id)}/services/check`),

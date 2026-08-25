@@ -5,6 +5,7 @@
 //: desenhando dentro de um container que já saiu do DOM.
 let maquinaAtual = null;
 
+import { analyticsPanel } from '../lib/analytics-panel.js';
 import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
@@ -134,12 +135,49 @@ function activeServices(itens) {
                   })
                 : el('span', { class: 'mono', text: `:${item.port ?? '—'}` }),
             ]),
-            el('td', { class: 'table__end' }, [statusBadge('RUNNING')]),
+            el('td', { class: 'table__end' }, [
+              // Duas afirmações diferentes, e a tela não pode dar a mesma cara
+              // às duas: "no ar" é o painel dizendo que este serviço é deste
+              // projeto; "ocupada" é o painel dizendo apenas que alguém
+              // atende ali. Um projeto parado cuja porta padrão está tomada
+              // por outro aparecia como rodando.
+              item.proven === false
+                ? el('span', { class: 'signal', dataset: { kind: 'partial' }, title: item.owner_hint ?? '' }, [
+                    el('span', { class: 'signal__dot' }),
+                    'porta ocupada',
+                  ])
+                : statusBadge('RUNNING'),
+            ]),
           ])
         )
       ),
     ]),
   ]);
+}
+
+//: Quantas linhas de porta cabem no dashboard sem ele virar uma listagem.
+//: Vinte e nove portas declaradas empurravam o resto da tela para baixo e
+//: transformavam o painel de operação num relatório — a tela de Ports existe
+//: justamente para a lista inteira.
+const PORTAS_NO_DASHBOARD = 7;
+
+/** As portas que merecem o espaço escasso do dashboard.
+ *
+ * Ordem: conflito primeiro (é o que exige decisão), depois o que está de fato
+ * atendendo (é o que responde "o que está no ar agora"), e por último o
+ * declarado e silencioso — que é informação de cadastro, não de operação.
+ */
+export function portasRelevantes(portas, noAr) {
+  const peso = (item) => {
+    if (item.conflict) return 0;
+    if (noAr.get(item.port)?.forte) return 1;
+    if (noAr.has(item.port)) return 2;
+    return 3;
+  };
+
+  return [...portas]
+    .sort((a, b) => peso(a) - peso(b) || a.port - b.port)
+    .slice(0, PORTAS_NO_DASHBOARD);
 }
 
 /** Mapa de portas — o que a tela não mostrava e é a pergunta de todo dia:
@@ -149,12 +187,15 @@ function portMap(portas, noAr) {
     return panelEmpty('Nenhuma porta declarada pelos projetos cadastrados.');
   }
 
+  const mostradas = portasRelevantes(portas, noAr);
+  const ocultas = portas.length - mostradas.length;
+
   return el('div', { class: 'table-wrap' }, [
     el('table', { class: 'table' }, [
       el(
         'tbody',
         {},
-        portas.map((item) =>
+        mostradas.map((item) =>
           el('tr', { dataset: { conflict: String(item.conflict) } }, [
             el('td', { class: 'mono', text: String(item.port) }),
             el('td', { text: item.projects.join(', ') }),
@@ -184,6 +225,14 @@ function portMap(portas, noAr) {
         )
       ),
     ]),
+    // O que não coube não pode sumir em silêncio: sem esta linha, sete de
+    // vinte e nove pareceriam o total, e a tela mentiria por omissão.
+    ocultas > 0
+      ? el('div', { class: 'field__hint', style: 'margin-top:var(--sp-2)' }, [
+          `mais ${ocultas} porta(s) declarada(s) · `,
+          el('a', { href: '#/ports', text: 'ver todas em Ports →' }),
+        ])
+      : null,
   ]);
 }
 
@@ -338,7 +387,10 @@ export async function renderDashboard(container) {
     el('div', { class: 'panel-grid' }, [
       panel({
         title: 'Serviços ativos',
-        count: data.active_services.length,
+        // A contagem do cabeçalho é a dos provados, a mesma do card "Rodando".
+        // Duas contagens diferentes na mesma tela para a mesma pergunta é como
+        // se perde a confiança no painel inteiro.
+        count: data.active_services.filter((s) => s.proven !== false).length,
         body: activeServices(data.active_services),
       }),
       panel({
@@ -374,6 +426,11 @@ export async function renderDashboard(container) {
     panel({
       title: 'Máquina',
       body: maquina.element,
-    })
+    }),
+
+    // A análise fecha a tela porque muda de tempo verbal: tudo acima é agora,
+    // daqui para baixo é histórico. Ela carrega por conta própria, depois do
+    // resto — o dashboard não espera por ela.
+    analyticsPanel().element
   );
 }

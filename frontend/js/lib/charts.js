@@ -128,3 +128,83 @@ export function tomPara(valor, { atencao = 75, critico = 90 } = {}) {
   if (valor >= atencao) return 'atencao';
   return 'ok';
 }
+
+/**
+ * Colunas empilhadas — uma por dia, cada uma dividida por desfecho.
+ *
+ * Empilhado e não lado a lado porque a pergunta é dupla: "trabalhei quanto
+ * neste dia?" (a altura total) e "quanto disso deu errado?" (a fatia). Duas
+ * barras vizinhas respondem a primeira mal, porque obrigam a somar de olho.
+ *
+ * HTML e não SVG: são retângulos alinhados a uma grade, e cada coluna precisa
+ * de `title` e de foco para o teclado. Em SVG isso seria reimplementar o que
+ * uma div já faz.
+ *
+ * @param {Array<{label: string, total: number, partes: Array<{kind: string, valor: number, rotulo: string}>}>} colunas
+ */
+export function stackedColumns(colunas, { altura = 120 } = {}) {
+  const maximo = Math.max(1, ...colunas.map((c) => c.total));
+
+  return el('div', { class: 'cols', style: `--cols-altura:${altura}px` }, [
+    el(
+      'div',
+      { class: 'cols__plot' },
+      colunas.map((coluna) => {
+        const detalhe = coluna.partes
+          .filter((parte) => parte.valor > 0)
+          .map((parte) => `${parte.valor} ${parte.rotulo}`)
+          .join(' · ');
+
+        return el(
+          'div',
+          {
+            class: 'cols__col',
+            tabindex: '0',
+            title: `${coluna.label}: ${detalhe || 'nada'}`,
+          },
+          [
+            el(
+              'div',
+              { class: 'cols__pilha', style: `height:${((coluna.total / maximo) * 100).toFixed(1)}%` },
+              coluna.partes
+                .filter((parte) => parte.valor > 0)
+                .map((parte) =>
+                  el('div', {
+                    class: 'cols__seg',
+                    dataset: { kind: parte.kind },
+                    style: `flex-grow:${parte.valor}`,
+                  })
+                )
+            ),
+          ]
+        );
+      })
+    ),
+    el('div', { class: 'cols__eixo' }, [
+      el('span', { text: colunas[0]?.label ?? '' }),
+      el('span', { class: 'cols__max', text: `pico ${maximo}` }),
+      el('span', { text: colunas.at(-1)?.label ?? '' }),
+    ]),
+  ]);
+}
+
+/**
+ * Faixa de 24 células, uma por hora do dia.
+ *
+ * Responde "quando eu trabalho" sem eixo nem número: a intensidade basta, e o
+ * padrão semanal aparece de relance.
+ */
+export function hourStrip(horas) {
+  const maximo = Math.max(1, ...horas);
+  return el(
+    'div',
+    { class: 'horas' },
+    horas.map((valor, hora) =>
+      el('span', {
+        class: 'horas__celula',
+        title: `${String(hora).padStart(2, '0')}h — ${valor} ação(ões)`,
+        style: `--intensidade:${(valor / maximo).toFixed(2)}`,
+      })
+    )
+  );
+}

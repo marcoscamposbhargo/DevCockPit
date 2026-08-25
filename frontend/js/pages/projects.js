@@ -27,6 +27,10 @@ function buildSignals(dashboard) {
   const git = new Map();
 
   for (const service of dashboard?.active_services ?? []) {
+    // `proven: false` é "alguém responde nessa porta", não "este projeto está
+    // no ar". Contar os dois igual fazia o card dizer "1/2 online" para um
+    // projeto parado cuja porta padrão estava ocupada por outro.
+    if (service.proven === false) continue;
     online.set(service.project_id, (online.get(service.project_id) ?? 0) + 1);
   }
   for (const change of dashboard?.pending_changes ?? []) {

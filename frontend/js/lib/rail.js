@@ -121,6 +121,7 @@ function combinar(projetos, dashboard) {
   const git = new Map();
 
   for (const item of dashboard?.active_services ?? []) {
+    if (item.proven === false) continue;
     online.set(item.project_id, (online.get(item.project_id) ?? 0) + 1);
     if (!servico.has(item.project_id) && (item.url || item.port)) {
       // O primeiro serviço com endereço é o que o botão "abrir" usa: numa

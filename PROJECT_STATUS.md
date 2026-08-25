@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-26 (operação de subir projeto: pré-voo de porta e detecção de projeto leve)
+**Última atualização:** 2026-08-25 (health check saturado corrigido; Cockpit AI rodando local no Ollama)
 
 ---
 

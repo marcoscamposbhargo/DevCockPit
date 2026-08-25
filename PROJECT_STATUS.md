@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-25 (health check saturado corrigido; Cockpit AI rodando local no Ollama)
+**Última atualização:** 2026-08-25 (Fase 3.4: a IA propõe ação e a pessoa confirma)
 
 ---
 

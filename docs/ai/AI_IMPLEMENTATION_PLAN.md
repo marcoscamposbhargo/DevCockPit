@@ -90,15 +90,25 @@ segurança passam.
 
 | # | Item |
 |---|------|
-| 3.1 | Migração `008` (`ai_task`) e tela de tarefas por projeto |
+| 3.1 | ~~Migração `007` (`ai_task`) e tela de tarefas por projeto~~ ✅ |
 | 3.2 | Perfis de especialista + prompts versionados |
 | 3.3 | Orquestrador (regra primeiro, modelo no empate) |
-| 3.4 | Ações propostas com confirmação e classificação |
+| 3.4 | ~~Ações propostas com confirmação e classificação~~ ✅ |
 | 3.5 | Command palette (`/plan`, `/find-bugs`, `/status`…) |
 | 3.6 | `activity_log` com `actor="ai"` ponta a ponta |
 
-**Critério de saída:** o agente propõe "subir o Postgres deste projeto", o
-usuário confirma, a ação roda pela allowlist e aparece na auditoria como IA.
+**Critério de saída — 3.4 verificado em 2026-08-25**, no app instalado: "sobe o
+kiteasy" devolveu `environment.up` em **0,2 s** (caminho da regra, sem tocar no
+modelo), com cartão de confirmação nomeando o projeto; "faz o deploy em
+produção" foi **recusado**, porque `deploy` não existe no registro.
+
+Antes de implementar, dois números decidiram o desenho: o `qwen2.5-coder:7b`
+acertou 6 de 6 na escolha de ação e 7 de 7 na escolha de projeto entre 18
+cadastrados — inclusive corrigindo "smartdah" para `smartdash`. O `3b` falhou
+justamente em recusar o que não existe.
+
+Falta de 3.4: a execução confirmada ainda é auditada como ação do usuário. É
+verdade parcial — quem propôs foi a IA —, e fecha com 3.6.
 
 **Risco:** médio-alto — é onde a IA encosta em execução. A defesa é não ter
 capacidade nova nenhuma (D-A3), verificada por teste.

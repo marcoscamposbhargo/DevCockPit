@@ -7,21 +7,29 @@ que o painel observou e do que a pessoa declarou.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import (
     get_briefing_service,
+    get_chat_service,
     get_memory_service,
     get_project_service,
     get_session_service,
     get_task_service,
 )
-from app.models.ai import AiMemory, AiSession
+from app.core.errors import DomainError
+from app.models.ai import AiMemory, AiMessage, AiSession
 from app.models.task import AiTask
 from app.schemas.ai import (
+    AiStatusOut,
     BriefingOut,
+    ChatAsk,
+    ChatHistoryOut,
+    ChatMessageOut,
     DayItemOut,
     MemoryCreate,
     MemoryList,
@@ -37,6 +45,7 @@ from app.schemas.ai import (
     TaskOut,
     TaskUpdate,
 )
+from app.services.ai.chat_service import ChatService
 from app.services.briefing_service import BriefingService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
@@ -284,6 +293,93 @@ def delete_task(task_id: int, tasks: TaskService = Depends(get_task_service)) ->
     """Apagar é para engano. Desistência tem estado próprio (`DROPPED`), que
     preserva a informação de que a ideia foi considerada e descartada."""
     tasks.delete(task_id)
+
+
+# --- chat -----------------------------------------------------------------
+
+
+@global_router.get("/status", response_model=AiStatusOut)
+def ai_status(chat: ChatService = Depends(get_chat_service)) -> AiStatusOut:
+    """Diz se dá para conversar, e o que falta quando não dá.
+
+    Existe para a tela **explicar** em vez de quebrar: sem provedor
+    configurado, o painel inteiro continua funcionando e esta aba diz o que
+    fazer (NFR-060).
+    """
+    return AiStatusOut(**chat.status())
+
+
+@router.get("/chat", response_model=ChatHistoryOut)
+def chat_history(
+    project_id: str,
+    projects: ProjectService = Depends(get_project_service),
+    chat: ChatService = Depends(get_chat_service),
+) -> ChatHistoryOut:
+    project = projects.get(project_id)
+    return ChatHistoryOut(
+        items=[_mensagem_out(m) for m in chat.history(project)]
+    )
+
+
+@router.post("/chat")
+async def chat_ask(
+    project_id: str,
+    payload: ChatAsk,
+    request: Request,
+    projects: ProjectService = Depends(get_project_service),
+    chat: ChatService = Depends(get_chat_service),
+) -> StreamingResponse:
+    """Pergunta com resposta em stream (SSE).
+
+    Mesmo transporte do console de job, que já existe e o painel já sabe
+    consumir. As guardas — IA ligada, projeto participante, orçamento do dia —
+    rodam **antes** do primeiro byte: recusa vira erro HTTP normal, não um
+    stream que começa e morre.
+    """
+    project = projects.get(project_id, touch=True)
+
+    # O estado vivo entra por aqui, de quem já o conhece: o Context Engine não
+    # consulta porta nem saúde, porque é caminho de requisição (NFR-010).
+    estado = {
+        "serviços declarados": len(project.services),
+        "status do projeto": project.status,
+    }
+
+    def eventos():  # type: ignore[no-untyped-def]
+        try:
+            for pedaco in chat.ask(project, payload.question, estado=estado):
+                dados = json.dumps({"text": pedaco}, ensure_ascii=False)
+                yield f"event: chunk\ndata: {dados}\n\n"
+        except DomainError as erro:
+            corpo = json.dumps(
+                {"code": erro.code, "message": erro.message}, ensure_ascii=False
+            )
+            yield f"event: error\ndata: {corpo}\n\n"
+            return
+        yield "event: end\ndata: {}\n\n"
+
+    return StreamingResponse(
+        eventos(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _mensagem_out(registro: AiMessage) -> ChatMessageOut:
+    return ChatMessageOut(
+        id=registro.id,
+        role=registro.role,
+        content=registro.content,
+        context_summary=registro.context_summary,
+        context_tokens=registro.context_tokens,
+        tokens_in=registro.tokens_in,
+        tokens_out=registro.tokens_out,
+        created_at=registro.created_at,
+    )
 
 
 # --- o dia ----------------------------------------------------------------

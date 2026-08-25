@@ -112,6 +112,59 @@ export const api = {
   updateTask: (taskId, body) => request('PATCH', `/ai/tasks/${taskId}`, { body }),
   deleteTask: (taskId) => request('DELETE', `/ai/tasks/${taskId}`),
 
+  aiStatus: () => request('GET', '/ai/status'),
+  chatHistory: (id) => request('GET', `/projects/${encodeURIComponent(id)}/chat`),
+
+  /** Pergunta com resposta em stream (SSE).
+   *
+   * `fetch` e não `EventSource`: a pergunta vai num POST, e `EventSource` só
+   * sabe fazer GET. O parser é curto porque o formato é curto.
+   */
+  chatStream: async (id, question, { onChunk, onError } = {}) => {
+    const resposta = await fetch(
+      new URL(`${BASE}/projects/${encodeURIComponent(id)}/chat`, window.location.origin),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-DevCockpit-Client': 'web' },
+        body: JSON.stringify({ question }),
+      }
+    );
+
+    if (!resposta.ok) {
+      const payload = await resposta.json().catch(() => null);
+      const erro = payload?.error ?? {};
+      throw new ApiError({
+        code: erro.code ?? 'INTERNAL_ERROR',
+        message: erro.message ?? `Falha na requisição (${resposta.status}).`,
+        status: resposta.status,
+      });
+    }
+
+    const leitor = resposta.body.getReader();
+    const decodificador = new TextDecoder();
+    let resto = '';
+
+    for (;;) {
+      const { value, done } = await leitor.read();
+      if (done) break;
+      resto += decodificador.decode(value, { stream: true });
+
+      const blocos = resto.split('\n\n');
+      resto = blocos.pop() ?? '';
+
+      for (const bloco of blocos) {
+        const linhas = bloco.split('\n');
+        const evento = linhas.find((l) => l.startsWith('event:'))?.slice(6).trim();
+        const dados = linhas.find((l) => l.startsWith('data:'))?.slice(5).trim();
+        if (!dados) continue;
+
+        const payload = JSON.parse(dados);
+        if (evento === 'chunk') onChunk?.(payload.text ?? '');
+        else if (evento === 'error') onError?.(payload);
+      }
+    }
+  },
+
   globalMemory: (kind) => request('GET', '/ai/memory', { params: { kind } }),
   createGlobalMemory: (body) => request('POST', '/ai/memory', { body }),
   confirmMemory: (memoryId) => request('POST', `/ai/memory/${memoryId}/confirm`),

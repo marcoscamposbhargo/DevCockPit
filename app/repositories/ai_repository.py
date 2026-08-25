@@ -7,7 +7,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.ai import AiMemory, AiSession
+from app.models.ai import AiMemory, AiMessage, AiSession, AiUsageDay
+from app.models.base import utcnow
 
 
 class SessionRepository:
@@ -133,3 +134,61 @@ class MemoryRepository:
         # não ter funcionado.
         self.session.flush()
         return apagados
+
+
+class MessageRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, registro: AiMessage) -> AiMessage:
+        self.session.add(registro)
+        self.session.flush()
+        return registro
+
+    def list_for(self, session_id: str, limit: int = 50) -> list[AiMessage]:
+        """As mensagens de uma sessão, em ordem de conversa.
+
+        A consulta pega as **últimas** e devolve na ordem certa: numa conversa
+        longa, o que interessa é o fim, mas ler de trás para a frente não é
+        conversa.
+        """
+        stmt = (
+            select(AiMessage)
+            .where(AiMessage.session_id == session_id)
+            .order_by(AiMessage.id.desc())
+            .limit(limit)
+        )
+        return list(reversed(list(self.session.execute(stmt).scalars())))
+
+
+class UsageRepository:
+    """Gasto por dia. Uma linha, criada na primeira chamada do dia."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    @staticmethod
+    def _hoje() -> str:
+        # Dia **local**: quem lê a tela pensa no próprio calendário, não em UTC.
+        return utcnow().astimezone().date().isoformat()
+
+    def today(self) -> AiUsageDay:
+        dia = self._hoje()
+        registro = self.session.get(AiUsageDay, dia)
+        if registro is None:
+            registro = AiUsageDay(day=dia)
+            self.session.add(registro)
+            self.session.flush()
+        return registro
+
+    def add(self, *, tokens_in: int = 0, tokens_out: int = 0) -> AiUsageDay:
+        registro = self.today()
+        registro.tokens_in += max(0, int(tokens_in))
+        registro.tokens_out += max(0, int(tokens_out))
+        registro.calls += 1
+        self.session.flush()
+        return registro
+
+    def recent(self, days: int = 14) -> list[AiUsageDay]:
+        stmt = select(AiUsageDay).order_by(AiUsageDay.day.desc()).limit(days)
+        return list(self.session.execute(stmt).scalars())

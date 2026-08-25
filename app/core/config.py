@@ -94,6 +94,25 @@ class Settings(BaseSettings):
     #: De quanto em quanto tempo a poda roda, dentro do laço do poller.
     retention_interval: float = 3600.0
 
+    # --- Cockpit AI ---
+    #: Desligado por padrão, e ligar é ato fora da interface: a partir daqui,
+    #: conteúdo dos projetos passa a ser enviado ao provedor (defesa D-A1).
+    ai_enabled: bool = False
+    #: anthropic | openai | local | fake | none
+    ai_provider: str = "none"
+    ai_model: str = ""
+    #: Nunca gravada em banco, nunca devolvida por rota (defesa D-A5).
+    ai_api_key: str = ""
+    #: Endereço do provedor. Configurável para proxy, gateway corporativo e
+    #: para o servidor que a suíte usa no lugar da API real.
+    ai_base_url: str = ""
+    ai_timeout: float = 120.0
+    ai_max_context_tokens: int = 12000
+    ai_max_output_tokens: int = 2000
+    #: Teto de tokens por dia. Zero desliga o teto — desaconselhado: custo
+    #: invisível é o que um dia assusta.
+    ai_daily_token_budget: int = 200_000
+
     # --- binários externos; vazio resolve pelo PATH ---
     git_bin: str = ""
     docker_bin: str = ""

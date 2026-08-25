@@ -18,6 +18,7 @@ from app.core.cache import TTLCache
 from app.core.config import PROJECT_ROOT, RootsConfig, Settings
 from app.jobs.job_manager import JobManager
 from app.services.activity_service import ActivityService
+from app.services.ai.chat_service import ChatService
 from app.services.analytics_service import AnalyticsService
 from app.services.briefing_service import BriefingService
 from app.services.dashboard_service import DashboardService
@@ -212,6 +213,19 @@ def get_memory_service(session: Session = Depends(get_session)) -> MemoryService
 
 def get_task_service(session: Session = Depends(get_session)) -> TaskService:
     return TaskService(session)
+
+
+def get_chat_service(
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings_dep),
+) -> ChatService:
+    """Chat contextual.
+
+    O provedor é montado sob demanda, dentro do serviço: sem chave configurada
+    o resto do painel continua funcionando, e a tela de IA explica o que falta
+    em vez de quebrar (NFR-060).
+    """
+    return ChatService(session=session, settings=settings)
 
 
 def get_briefing_service(

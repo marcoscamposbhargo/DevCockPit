@@ -148,3 +148,44 @@ class BriefingOut(BaseModel):
     open_sessions: list[str] = Field(default_factory=list)
     items: list[DayItemOut] = Field(default_factory=list)
     suggestion: str | None = None
+
+
+# --- chat -----------------------------------------------------------------
+
+
+class AiStatusOut(BaseModel):
+    """O que a tela precisa saber antes de oferecer o chat.
+
+    Nunca inclui a chave, nem parte dela: a chave não sai do processo por
+    nenhuma rota (defesa D-A5).
+    """
+
+    enabled: bool
+    configured: bool
+    #: Quando não configurado, o que fazer para configurar.
+    reason: str | None = None
+    provider: str
+    model: str
+    tokens_today: int = 0
+    daily_budget: int = 0
+    calls_today: int = 0
+
+
+class ChatAsk(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+
+
+class ChatMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    #: Que camadas de contexto entraram — proveniência, não o conteúdo.
+    context_summary: str | None = None
+    context_tokens: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    created_at: datetime
+
+
+class ChatHistoryOut(BaseModel):
+    items: list[ChatMessageOut] = Field(default_factory=list)

@@ -1,4 +1,4 @@
-from app.models.ai import AiMemory, AiSession, MemoryKind, MemorySource
+from app.models.ai import AiMemory, AiMessage, AiSession, AiUsageDay, MemoryKind, MemorySource
 from app.models.base import Base, create_session_factory, session_scope, utcnow
 from app.models.project import (
     ActivityLog,
@@ -19,8 +19,10 @@ from app.models.task import AiTask, TaskPriority, TaskStatus
 __all__ = [
     "ActivityLog",
     "AiMemory",
+    "AiMessage",
     "AiSession",
     "AiTask",
+    "AiUsageDay",
     "ActivityStatus",
     "Base",
     "DevServer",

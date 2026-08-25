@@ -2410,3 +2410,86 @@
   color: var(--fg-secondary);
   font-size: var(--fs-sm);
 }
+
+/* --- chat do Cockpit AI --- */
+
+.chat-fluxo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-height: 52vh;
+  margin-bottom: var(--sp-3);
+  overflow-y: auto;
+}
+
+.chat-msg {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+/* A pergunta é recuada e discreta; a resposta ocupa a largura. Numa conversa
+   longa, o que se relê é o que a IA disse. */
+.chat-msg[data-role='user'] {
+  margin-left: var(--sp-6);
+  background: var(--bg-subtle);
+}
+
+.chat-msg[data-error='true'] {
+  border-color: var(--status-error);
+}
+
+.chat-msg__quem {
+  margin-bottom: var(--sp-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+
+.chat-msg__texto {
+  white-space: pre-wrap;
+  line-height: var(--lh-normal);
+}
+
+.chat-msg__contexto {
+  margin-top: var(--sp-2);
+}
+
+.chat-msg__contexto summary {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.chat-entrada {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-end;
+}
+
+.chat-entrada .input {
+  flex: 1 1 auto;
+  resize: vertical;
+}
+
+.chat-uso {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  margin-left: auto;
+}
+
+.code-block {
+  margin: var(--sp-3) 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-x: auto;
+  white-space: pre;
+}

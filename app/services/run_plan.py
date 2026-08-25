@@ -360,6 +360,22 @@ def plan_from_python(project_dir: Path, port: int | None = None) -> RunPlan | No
             evidence=f"uvicorn · {alvo}",
         )
 
+    if "streamlit" in dependencias:
+        alvo = next(
+            (nome for nome in ("streamlit_app.py", "app.py", "main.py")
+             if (project_dir / nome).is_file()),
+            None,
+        )
+        if alvo:
+            argv = [interpretador, "-m", "streamlit", "run", alvo]
+            if port:
+                argv += ["--server.port", str(port)]
+            return RunPlan(
+                argv=_validate_argv(argv, origem="dependências/código"),
+                source="python",
+                evidence=f"streamlit · {alvo}",
+            )
+
     if "flask" in dependencias:
         argv = [interpretador, "-m", "flask", "run", "--host", "127.0.0.1"]
         if port:
@@ -371,6 +387,56 @@ def plan_from_python(project_dir: Path, port: int | None = None) -> RunPlan | No
         )
 
     return None
+
+
+#: Arquivos de entrada olhados quando o projeto não declara dependência. São os
+#: mesmos candidatos de ponto de entrada, mais os nomes clássicos de servidor.
+CODIGO_DE_ENTRADA = (
+    "app.py",
+    "main.py",
+    "server.py",
+    "wsgi.py",
+    "asgi.py",
+    "run.py",
+    "streamlit_app.py",
+    "src/app.py",
+    "src/main.py",
+    "app/main.py",
+)
+
+#: Import que denuncia o framework. Só o que dá para subir sem adivinhar.
+FRAMEWORKS_NO_CODIGO = ("flask", "fastapi", "starlette", "django", "streamlit", "uvicorn")
+
+
+def _frameworks_no_codigo(project_dir: Path) -> set[str]:
+    """Frameworks importados pelo código, quando não há arquivo de dependência.
+
+    `import flask` num `app.py` é evidência **mais forte** que uma linha em
+    `requirements.txt`: é o uso, não a intenção. O painel não olhava para isso,
+    e por causa disso um Flask de um arquivo só — projeto leve, dos que mais
+    aparecem — ficava sem botão de ligar, obrigando a escrever `devcockpit.yml`
+    à mão para algo que estava explícito na primeira linha do arquivo.
+
+    Só as primeiras linhas de cada candidato: import fica no topo, e ler o
+    arquivo inteiro custaria caro num diretório grande.
+    """
+    encontrados: set[str] = set()
+
+    for relativo in CODIGO_DE_ENTRADA:
+        caminho = project_dir / relativo
+        if not caminho.is_file():
+            continue
+        try:
+            with caminho.open(encoding="utf-8", errors="replace") as arquivo:
+                cabecalho = "".join(next(arquivo, "") for _ in range(40)).lower()
+        except OSError:
+            continue
+
+        for framework in FRAMEWORKS_NO_CODIGO:
+            if f"import {framework}" in cabecalho or f"from {framework}" in cabecalho:
+                encontrados.add(framework)
+
+    return encontrados
 
 
 def _python_dependencies(project_dir: Path) -> set[str]:
@@ -399,6 +465,11 @@ def _python_dependencies(project_dir: Path) -> set[str]:
             if limpa and not limpa.startswith(("#", "-")):
                 encontrados.add(_package_name(limpa))
 
+    # Sem nada declarado, o código responde. Com declaração, ela manda: quem
+    # escreveu `requirements.txt` disse o que o projeto usa de verdade.
+    if not encontrados:
+        encontrados |= _frameworks_no_codigo(project_dir)
+
     return encontrados
 
 
@@ -413,6 +484,76 @@ def _package_name(spec: str) -> str:
 # --- composição ----------------------------------------------------------
 
 
+#: Subpastas de monorepo, na ordem em que fazem sentido subir. Backend antes de
+#: frontend porque o front quase sempre depende dele — e porque subir o front
+#: contra uma API morta produz uma tela que carrega e não funciona, que é pior
+#: que não subir.
+SUBPROJETOS = ("backend", "api", "server", "src/backend", "frontend", "web", "client", "app")
+
+
+def plan_from_subproject(project_dir: Path, port: int | None = None) -> RunPlan | None:
+    """Plano de um monorepo: procura um nível abaixo.
+
+    Um repositório com `backend/` e `frontend/` não tem marcador nenhum na
+    raiz, e o painel se declarava incapaz de subir — quando bastava olhar uma
+    pasta adiante. Só um nível: dois já seria varredura, e varredura tem tela
+    própria.
+    """
+    for relativo in SUBPROJETOS:
+        sub = project_dir / relativo
+        if not sub.is_dir():
+            continue
+
+        plano = plan_from_node(sub) or plan_from_python(sub, port=port)
+        if plano is None:
+            continue
+
+        # `cwd` relativo ao projeto: o comando roda dentro da subpasta, e o
+        # registro do painel continua apontando para a raiz do repositório.
+        return RunPlan(
+            argv=plano.argv,
+            cwd=relativo,
+            source=plano.source,
+            evidence=f"{plano.evidence} · em {relativo}/",
+            service=plano.service,
+        )
+
+    return None
+
+
+#: Onde um site sem build costuma ter a página inicial.
+RAIZES_ESTATICAS = ("", "app", "public", "dist", "site", "www")
+
+
+def plan_from_static(project_dir: Path, port: int | None = None) -> RunPlan | None:
+    """Site estático: serve a pasta, sem build nenhum.
+
+    Existe porque projeto leve é justamente o que mais aparece e o que menos
+    tinha resposta: um `index.html` com JavaScript solto não tem `dev script`
+    nem framework, e mesmo assim precisa de um servidor — abrir o arquivo pelo
+    `file://` quebra `fetch`, módulo ES e rota.
+
+    `http.server` é da biblioteca padrão: não instala nada e existe em qualquer
+    Python. Não serve para produção, e é justamente por isso que serve aqui.
+    """
+    for relativo in RAIZES_ESTATICAS:
+        pasta = project_dir / relativo if relativo else project_dir
+        if not (pasta / "index.html").is_file():
+            continue
+
+        argv = [python_for(project_dir), "-m", "http.server", str(port or 8080)]
+        if relativo:
+            argv += ["--directory", relativo]
+
+        return RunPlan(
+            argv=_validate_argv(argv, origem="estático"),
+            source="static",
+            evidence=f"index.html{f' em {relativo}/' if relativo else ''} · sem build",
+        )
+
+    return None
+
+
 def resolve_run_plan(project_dir: Path, port: int | None = None) -> RunPlan | None:
     """O plano de execução do projeto, ou `None` se não der para saber.
 
@@ -423,4 +564,12 @@ def resolve_run_plan(project_dir: Path, port: int | None = None) -> RunPlan | No
     if do_manifesto is not None:
         return do_manifesto
 
-    return plan_from_node(project_dir) or plan_from_python(project_dir, port=port)
+    # A ordem é a da confiança: framework declarado na raiz vence subpasta, que
+    # vence servir estático. O estático é o último porque um `index.html` numa
+    # pasta de build acompanharia um projeto que tem forma melhor de subir.
+    return (
+        plan_from_node(project_dir)
+        or plan_from_python(project_dir, port=port)
+        or plan_from_subproject(project_dir, port=port)
+        or plan_from_static(project_dir, port=port)
+    )

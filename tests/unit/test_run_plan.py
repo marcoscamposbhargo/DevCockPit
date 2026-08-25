@@ -223,3 +223,113 @@ def test_projeto_sem_pista_alguma_nao_tem_plano(tmp_path: Path) -> None:
     escreve(tmp_path, "README.md", "# nada aqui")
 
     assert resolve_run_plan(tmp_path) is None
+
+
+# --- projetos leves: o que o painel não sabia subir -----------------------
+
+
+def test_flask_num_arquivo_so_sem_requirements(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """`import flask` no código é evidência mais forte que uma linha em
+    requirements: é o uso, não a intenção.
+
+    Este é o projeto leve que mais aparece — e ficava sem botão de ligar,
+    obrigando a escrever `devcockpit.yml` à mão para algo explícito na primeira
+    linha do arquivo.
+    """
+    (tmp_path / "app.py").write_text(
+        "import sqlite3\nfrom flask import Flask\n\napp = Flask(__name__)\n", encoding="utf-8"
+    )
+
+    plano = resolve_run_plan(tmp_path)
+
+    assert plano is not None
+    assert "flask" in plano.display
+    assert plano.evidence == "flask run"
+
+
+def test_declaracao_vence_o_codigo(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Quem escreveu requirements disse o que o projeto usa de verdade."""
+    (tmp_path / "requirements.txt").write_text("fastapi\nuvicorn\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text("from flask import Flask\n", encoding="utf-8")
+
+    plano = resolve_run_plan(tmp_path)
+
+    assert "uvicorn" in plano.display, "a declaração manda; o código é o recurso de quem não tem"
+
+
+def test_streamlit_pelo_codigo(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "app.py").write_text("import streamlit as st\n", encoding="utf-8")
+
+    plano = resolve_run_plan(tmp_path)
+
+    assert "streamlit" in plano.display
+    assert "run" in plano.argv
+
+
+def test_monorepo_olha_uma_pasta_adiante(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Repositório com backend/ e frontend/ não tem marcador na raiz."""
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "requirements.txt").write_text("fastapi\nuvicorn\n", encoding="utf-8")
+    (backend / "main.py").write_text("app = 1\n", encoding="utf-8")
+
+    plano = resolve_run_plan(tmp_path)
+
+    assert plano is not None
+    assert plano.cwd == "backend"
+    assert "uvicorn" in plano.display
+    assert "em backend/" in plano.evidence
+
+
+def test_backend_vem_antes_do_frontend(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Subir o front contra uma API morta dá tela que carrega e não funciona."""
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    (backend / "main.py").write_text("app = 1\n", encoding="utf-8")
+
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text('{"scripts":{"dev":"next dev"}}', encoding="utf-8")
+
+    assert resolve_run_plan(tmp_path).cwd == "backend"
+
+
+def test_site_estatico_ganha_servidor_da_biblioteca_padrao(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """`file://` quebra fetch, módulo ES e rota — precisa de servidor."""
+    (tmp_path / "index.html").write_text("<h1>oi</h1>", encoding="utf-8")
+
+    plano = resolve_run_plan(tmp_path, port=4321)
+
+    assert plano.source == "static"
+    assert "http.server" in plano.display
+    assert "4321" in plano.display
+
+
+def test_estatico_em_subpasta_aponta_o_diretorio(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "index.html").write_text("<h1>oi</h1>", encoding="utf-8")
+
+    plano = resolve_run_plan(tmp_path)
+
+    assert "--directory" in plano.argv
+    assert "app" in plano.argv
+
+
+def test_projeto_com_framework_nao_vira_estatico(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """O estático é o último recurso: index.html numa pasta de build não pode
+    ganhar de um projeto que tem forma melhor de subir."""
+    (tmp_path / "package.json").write_text('{"scripts":{"dev":"vite"}}', encoding="utf-8")
+    (tmp_path / "index.html").write_text("<h1>oi</h1>", encoding="utf-8")
+
+    plano = resolve_run_plan(tmp_path)
+
+    assert plano.source == "node"
+
+
+def test_projeto_vazio_continua_sem_plano(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Melhor não oferecer botão do que oferecer um que roda a coisa errada."""
+    (tmp_path / "notas.txt").write_text("nada aqui", encoding="utf-8")
+
+    assert resolve_run_plan(tmp_path) is None

@@ -33,6 +33,7 @@ from app.services.manifest_service import ManifestService
 from app.services.memory_service import MemoryService
 from app.services.metrics_service import MetricsService
 from app.services.port_discovery_service import PortDiscoveryService
+from app.services.preflight_service import PreflightService
 from app.services.project_service import ProjectService
 from app.services.session_service import SessionService
 from app.services.system_action_service import SystemActionService
@@ -209,6 +210,13 @@ def get_session_service(
 
 def get_memory_service(session: Session = Depends(get_session)) -> MemoryService:
     return MemoryService(session)
+
+
+def get_preflight_service(
+    ports: PortDiscoveryService = Depends(get_port_discovery),
+) -> PreflightService:
+    """Pré-voo de porta: lê a última varredura, nunca escaneia."""
+    return PreflightService(discovery=ports)
 
 
 def get_task_service(session: Session = Depends(get_session)) -> TaskService:

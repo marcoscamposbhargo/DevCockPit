@@ -61,6 +61,47 @@ function avisoPorta(estado) {
   ]);
 }
 
+/** Porta em uso por este projeto que ninguém declarou.
+ *
+ * É a última milha do projeto leve: ele sobe, funciona, e o painel não mostra
+ * estado nem oferece "Abrir" porque a porta que o framework escolheu — 5000 do
+ * Flask, 8501 do Streamlit — nunca foi cadastrada.
+ *
+ * Cadastrar é ação explícita, com um clique. O painel não grava sozinho: seria
+ * escrever no cadastro por conta própria, e configuração que muda sem ninguém
+ * pedir é o tipo de coisa que destrói a confiança na ferramenta.
+ */
+function portaSemCadastro(projectId, estado, aoCadastrar) {
+  const portas = estado.undeclared_ports ?? [];
+  if (!portas.length) return null;
+
+  return el('div', { class: 'alert', role: 'status' }, [
+    el('span', { class: 'alert__icon' }, [icon('plug', { size: 16 })]),
+    el('div', { class: 'alert__body' }, [
+      el('strong', {
+        text:
+          portas.length === 1
+            ? `Este projeto está escutando na porta ${portas[0]}`
+            : `Este projeto está escutando em ${portas.join(', ')}`,
+      }),
+      el('p', {
+        class: 'field__hint',
+        text:
+          'Nenhum serviço cadastrado com esse número. Cadastrando, o painel ' +
+          'passa a mostrar o estado e a oferecer o botão de abrir.',
+      }),
+      el('div', { class: 'form-actions' }, portas.map((porta) =>
+        el('button', {
+          class: 'btn btn--sm btn--primary',
+          type: 'button',
+          text: `Cadastrar ${porta}`,
+          onClick: () => aoCadastrar(porta),
+        })
+      )),
+    ]),
+  ]);
+}
+
 function semComando(projectId) {
   return emptyState({
     iconName: 'terminal',
@@ -107,6 +148,48 @@ export async function renderServerPanel(panel) {
   const redesenhar = async () => {
     visor.parar();
     await renderServerPanel(panel);
+  };
+
+  /** Cadastra a porta observada como serviço deste projeto.
+   *
+   * Preserva os serviços que já existem: `PUT` substitui a lista inteira, e
+   * mandar só o novo apagaria o resto — bug que este projeto já pagou uma vez.
+   */
+  const cadastrarPorta = async (porta) => {
+    try {
+      const projeto = await api.getProject(projectId);
+      const existentes = projeto.services.map((servico) => ({
+        key: servico.key,
+        label: servico.label,
+        host: servico.host,
+        port: servico.port,
+        url: servico.url,
+        health_url: servico.health_url,
+        health_kind: servico.health_kind,
+        open_in_browser: servico.open_in_browser,
+      }));
+
+      await api.replaceServices(projectId, [
+        ...existentes,
+        {
+          key: existentes.length ? `servico-${porta}` : 'app',
+          label: `App (${porta})`,
+          host: 'localhost',
+          port: porta,
+          url: `http://localhost:${porta}`,
+          health_url: `http://localhost:${porta}`,
+          health_kind: 'HTTP',
+          open_in_browser: true,
+        },
+      ]);
+      toast(`Porta ${porta} cadastrada.`, {
+        kind: 'success',
+        meta: 'O verificador passa a acompanhar, e o botão de abrir aparece.',
+      });
+      await renderServerPanel(panel);
+    } catch (error) {
+      showError(error);
+    }
   };
 
   const agir = async (botao, rotulo, acao) => {
@@ -182,6 +265,7 @@ export async function renderServerPanel(panel) {
 
     estado.command ? comandoCard(estado) : null,
     avisoPorta(estado),
+    portaSemCadastro(projectId, estado, cadastrarPorta),
 
     el('p', {
       class: 'field__hint',

@@ -584,3 +584,104 @@ def test_processo_gerenciado_pelo_painel_nao_passa_por_aqui(
     ambiente.down(projeto, servers, include_docker=False)
 
     assert descoberta.encerrados == []
+
+
+# --- pré-voo de porta -----------------------------------------------------
+
+
+class DescobertaComPortas:
+    def __init__(self, portas) -> None:  # type: ignore[no-untyped-def]
+        self._portas = portas
+
+    def last_known(self):  # type: ignore[no-untyped-def]
+        from app.services.port_discovery_service import PortObservation
+
+        return PortObservation(ports=self._portas)
+
+
+def porta_observada(**extra):  # type: ignore[no-untyped-def]
+    from app.services.port_discovery_service import ObservedPort
+
+    base = {"port": 8000, "pid": 111, "process_name": "python.exe", "matched_by": "cwd"}
+    base.update(extra)
+    return ObservedPort(**base)
+
+
+def com_servico(projeto, key="backend", porta=8000):  # type: ignore[no-untyped-def]
+    from app.models.project import ProjectService
+
+    projeto.services.append(ProjectService(key=key, label=key.title(), port=porta))
+    return projeto
+
+
+def test_porta_livre_libera_a_subida(projeto) -> None:  # type: ignore[no-untyped-def]
+    from app.services.preflight_service import PreflightService
+
+    com_servico(projeto)
+    resultado = PreflightService(DescobertaComPortas([porta_observada(port=9999)])).check(projeto)
+
+    assert resultado.ready
+    assert resultado.blockers == []
+
+
+def test_porta_de_outro_projeto_bloqueia(projeto) -> None:  # type: ignore[no-untyped-def]
+    """O caso que doía: descobrir isso pelo erro do Compose, no meio da subida."""
+    from app.services.preflight_service import PreflightService
+
+    com_servico(projeto)
+    ocupada = porta_observada(project_id="outro", project_name="Outro Projeto")
+    resultado = PreflightService(DescobertaComPortas([ocupada])).check(projeto)
+
+    assert not resultado.ready
+    assert resultado.blockers[0].port == 8000
+    assert resultado.blockers[0].occupant_project_name == "Outro Projeto"
+    assert "8000" in resultado.message()
+
+
+def test_porta_do_proprio_projeto_nao_e_impedimento(projeto) -> None:  # type: ignore[no-untyped-def]
+    """Já estar no ar é o resultado desejado, não obstáculo."""
+    from app.services.preflight_service import PreflightService
+
+    com_servico(projeto)
+    minha = porta_observada(project_id=projeto.id, project_name=projeto.name)
+    resultado = PreflightService(DescobertaComPortas([minha])).check(projeto)
+
+    assert resultado.ready
+    assert resultado.already_ours == [8000]
+
+
+def test_processo_paravel_vira_saida_oferecida(projeto) -> None:  # type: ignore[no-untyped-def]
+    from app.services.preflight_service import PreflightService
+
+    com_servico(projeto)
+    largado = porta_observada(pid=4321, orphan=True)
+    resultado = PreflightService(DescobertaComPortas([largado])).check(projeto)
+
+    assert resultado.blockers[0].stoppable_pid == 4321
+    assert resultado.blockers[0].resolvable
+
+
+def test_ocupante_intocavel_nao_e_oferecido(projeto) -> None:  # type: ignore[no-untyped-def]
+    """Fora dos roots permitidos, nada é oferecido para encerrar (defesa D4)."""
+    from app.services.preflight_service import PreflightService
+
+    com_servico(projeto)
+    sistema = porta_observada(pid=4, process_name="svchost.exe", matched_by="unknown")
+    resultado = PreflightService(DescobertaComPortas([sistema])).check(projeto)
+
+    assert resultado.blockers[0].stoppable_pid is None
+    assert not resultado.blockers[0].resolvable
+
+
+def test_sem_varredura_o_preflight_se_cala(projeto) -> None:  # type: ignore[no-untyped-def]
+    """Antes do primeiro ciclo do poller não há o que cruzar.
+
+    Nem libera por ignorância, nem bloqueia por desconfiança: declara que não
+    observou, e a tela diz isso.
+    """
+    from app.services.preflight_service import PreflightService
+
+    com_servico(projeto)
+
+    assert PreflightService(None).check(projeto).observed is False
+    assert PreflightService(DescobertaComPortas([])).check(projeto).observed is False

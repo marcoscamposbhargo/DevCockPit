@@ -18,6 +18,7 @@ from app.api.deps import (
     get_cache,
     get_dev_server_service,
     get_health_service,
+    get_port_discovery,
     get_project_service,
 )
 from app.core.cache import TTLCache
@@ -30,6 +31,7 @@ from app.schemas.health import (
 from app.services.dashboard_service import CACHE_KEY as DASHBOARD_CACHE_KEY
 from app.services.dev_server_service import DevServerService, DevServerState
 from app.services.health_service import HealthService
+from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/api/projects/{project_id}/server", tags=["server"])
@@ -66,7 +68,7 @@ def running_servers(
     )
 
 
-def _to_out(estado: DevServerState) -> DevServerOut:
+def _to_out(estado: DevServerState, undeclared: list[int] | None = None) -> DevServerOut:
     return DevServerOut(
         running=estado.running,
         pid=estado.pid,
@@ -76,6 +78,26 @@ def _to_out(estado: DevServerState) -> DevServerOut:
         started_at=estado.started_at,
         can_start=estado.can_start,
         port_warning=estado.port_warning,
+        undeclared_ports=undeclared or [],
+    )
+
+
+def _portas_sem_cadastro(project, ports) -> list[int]:  # type: ignore[no-untyped-def]
+    """Portas deste projeto que ninguém declarou.
+
+    Só com prova de dono: atribuir pela porta declarada seria circular, e
+    atribuir por palpite já custou a este projeto duas sessões de conserto.
+    """
+    if ports is None:
+        return []
+
+    declaradas = {service.port for service in project.services if service.port}
+    return sorted(
+        {
+            porta.port
+            for porta in ports.last_known().for_project(project.id)
+            if porta.strong_evidence and porta.port not in declaradas
+        }
     )
 
 
@@ -84,8 +106,10 @@ def server_status(
     project_id: str,
     projects: ProjectService = Depends(get_project_service),
     servers: DevServerService = Depends(get_dev_server_service),
+    ports: PortDiscoveryService = Depends(get_port_discovery),
 ) -> DevServerOut:
-    return _to_out(servers.status(projects.get(project_id)))
+    project = projects.get(project_id)
+    return _to_out(servers.status(project), _portas_sem_cadastro(project, ports))
 
 
 def _esquecer_estado(cache: TTLCache, health: HealthService, project_id: str) -> None:

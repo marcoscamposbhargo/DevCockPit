@@ -1,6 +1,7 @@
 import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
+import { icon } from '../lib/icons.js';
 import { actionBar } from '../lib/actions.js';
 import { powerToggle } from '../lib/power.js';
 import { loading, pageHeader, showError, statusBadge, techChip, toast } from '../lib/ui.js';
@@ -116,10 +117,44 @@ function missingBanner(project) {
   ]);
 }
 
+/** Aviso de porta ocupada, mostrado antes de alguém tentar subir.
+ *
+ * O painel já sabia disso desde o primeiro ciclo do verificador; o que faltava
+ * era dizer no lugar onde a pessoa vai clicar. Descobrir pelo erro do Compose,
+ * no meio da subida, custa a espera inteira para chegar a uma informação que
+ * já estava disponível.
+ */
+function portBanner(checagem) {
+  if (!checagem || checagem.ready || !checagem.blockers.length) return null;
+
+  return el('div', { class: 'alert', role: 'status' }, [
+    el('span', { class: 'alert__icon' }, [icon('alert', { size: 16 })]),
+    el('div', { class: 'alert__body' }, [
+      el('strong', {
+        text:
+          checagem.blockers.length === 1
+            ? 'Uma porta deste projeto já está ocupada'
+            : `${checagem.blockers.length} portas deste projeto já estão ocupadas`,
+      }),
+      ...checagem.blockers.map((bloqueio) =>
+        el('div', { class: 'field__hint' }, [
+          el('span', { class: 'mono', text: String(bloqueio.port) }),
+          ` · ${bloqueio.service_label}: ${bloqueio.occupant}`,
+          bloqueio.occupant_project_name ? `, do ${bloqueio.occupant_project_name}` : '',
+        ])
+      ),
+      el('div', { style: 'margin-top:var(--sp-2)' }, [
+        el('a', { href: '#/ports', text: 'Resolver em Ports →' }),
+      ]),
+    ]),
+  ]);
+}
+
 export async function renderProject(container, params, query) {
   mount(container, loading());
 
   let project;
+  let checagem = null;
   try {
     project = await api.getProject(params.id);
   } catch (error) {
@@ -131,6 +166,10 @@ export async function renderProject(container, params, query) {
     );
     return;
   }
+
+  // Opcional: uma falha no pré-voo não pode impedir a página do projeto de
+  // abrir — é aviso, não requisito.
+  checagem = await api.preflight(project.id).catch(() => null);
 
   const activeTab = TABS.some((tab) => tab.key === query.tab) ? query.tab : 'overview';
 
@@ -227,6 +266,7 @@ export async function renderProject(container, params, query) {
       ],
     }),
     missingBanner(project),
+    portBanner(checagem),
     tabBar,
     panel
   );

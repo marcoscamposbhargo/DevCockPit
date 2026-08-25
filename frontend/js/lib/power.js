@@ -111,8 +111,71 @@ async function esperarResposta(projectId) {
  * leva minutos e uma requisição pendurada esse tempo é a forma errada de
  * esperar. Aqui só acompanhamos o desfecho.
  */
-async function subirAmbiente(project) {
-  const aceito = await api.environmentUp(project.id);
+/** Explica o impedimento e pergunta o que fazer.
+ *
+ * Três saídas, e a ordem importa: encerrar quem está na porta resolve o caso
+ * comum (servidor largado de outra sessão); trocar a porta resolve o conflito
+ * de verdade; subir mesmo assim existe porque às vezes o painel não sabe de
+ * algo que a pessoa sabe — e aí a decisão passa a ser dela, registrada.
+ */
+async function resolverPortaOcupada(project) {
+  let checagem;
+  try {
+    checagem = await api.preflight(project.id);
+  } catch {
+    return 'cancelar';
+  }
+
+  const linhas = checagem.blockers.map((b) => {
+    const dono = b.occupant_project_name ? `, do ${b.occupant_project_name}` : '';
+    return `• ${b.port} (${b.service_label}): ${b.occupant}${dono}`;
+  });
+
+  const paravel = checagem.blockers.find((b) => b.resolvable);
+
+  const texto =
+    `${project.name} não subiu porque a porta já está ocupada:\n\n` +
+    `${linhas.join('\n')}\n\n` +
+    (paravel
+      ? `OK encerra o processo ${paravel.stoppable_pid} e sobe.\n`
+      : 'O painel não pode encerrar quem está na porta.\n') +
+    'Cancelar deixa como está — use a tela Ports para trocar a porta.';
+
+  if (!window.confirm(texto)) {
+    toast(`${project.name}: subida cancelada.`, {
+      kind: 'warning',
+      meta: 'A tela Ports mostra quem está em cada porta.',
+    });
+    return 'cancelar';
+  }
+
+  if (!paravel) return 'forcar';
+
+  try {
+    await api.stopProcess(paravel.stoppable_pid);
+    toast(`Processo ${paravel.stoppable_pid} encerrado.`, { kind: 'success' });
+    return 'repetir';
+  } catch (error) {
+    showError(error);
+    return 'cancelar';
+  }
+}
+
+async function subirAmbiente(project, { force = false } = {}) {
+  let aceito;
+  try {
+    aceito = await api.environmentUp(project.id, force);
+  } catch (error) {
+    // O pré-voo recusou antes de tentar: é informação, não falha. Descobrir
+    // pelo erro do Compose, no meio da subida, custava a espera inteira para
+    // chegar a algo que já se sabia.
+    if (error.code !== 'PORTS_BUSY') throw error;
+
+    const decisao = await resolverPortaOcupada(project);
+    if (decisao === 'cancelar') return 'off';
+    return subirAmbiente(project, { force: decisao === 'forcar' });
+  }
+
   const job = await waitJob(aceito.job_id);
 
   if (job.status !== 'SUCCESS') {

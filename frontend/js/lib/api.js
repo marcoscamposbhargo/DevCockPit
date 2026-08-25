@@ -220,7 +220,11 @@ export const api = {
   // Ambiente = Docker + aplicação, na ordem. `up` devolve 202 com job_id
   // porque a sequência pode levar minutos; `down` é imediato.
   environmentPlan: (id) => request('GET', `/projects/${encodeURIComponent(id)}/environment`),
-  environmentUp: (id) => request('POST', `/projects/${encodeURIComponent(id)}/environment/up`),
+  preflight: (id) => request('GET', `/projects/${encodeURIComponent(id)}/environment/preflight`),
+  environmentUp: (id, force = false) =>
+    request('POST', `/projects/${encodeURIComponent(id)}/environment/up`, {
+      params: { force },
+    }),
   environmentDown: (id, includeDocker = false) =>
     request('POST', `/projects/${encodeURIComponent(id)}/environment/down`, {
       params: { include_docker: includeDocker ? 'true' : 'false' },

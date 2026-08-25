@@ -219,6 +219,14 @@ class DevServerOut(BaseModel):
     #: O comando abre porta diferente da cadastrada — o painel subiria o
     #: servidor num lugar e o verificaria em outro. `None` quando concordam.
     port_warning: str | None = None
+    #: Portas que **este projeto** está usando e que nenhum serviço declara.
+    #: Vem da descoberta, com prova de dono.
+    #:
+    #: Existe para a última milha do projeto leve: ele sobe, funciona, e o
+    #: painel não mostrava estado nem oferecia "Abrir" porque a porta que o
+    #: framework escolheu (5000 do Flask, 8501 do Streamlit) nunca foi
+    #: cadastrada por ninguém.
+    undeclared_ports: list[int] = Field(default_factory=list)
 
 
 class DevServerLogs(BaseModel):
@@ -243,6 +251,34 @@ class EnvironmentPlanOut(BaseModel):
     @property
     def has_app(self) -> bool:
         return bool(self.app_command)
+
+
+class PreflightBlockerOut(BaseModel):
+    port: int
+    service_key: str
+    service_label: str
+    #: Quem está na porta, em texto pronto para a tela.
+    occupant: str
+    occupant_project_id: str | None = None
+    occupant_project_name: str | None = None
+    #: PID que o painel se dispõe a encerrar — só processo dentro de um root
+    #: permitido que a descoberta classificou como parável (defesa D4).
+    stoppable_pid: int | None = None
+    resolvable: bool = False
+
+
+class PreflightOut(BaseModel):
+    """O que impede a subida, antes de tentar."""
+
+    ready: bool
+    #: `False` antes do primeiro ciclo do poller. Sem observação, o painel não
+    #: libera por ignorância nem bloqueia por desconfiança: ele diz que não sabe.
+    observed: bool = True
+    blockers: list[PreflightBlockerOut] = Field(default_factory=list)
+    #: Portas já ocupadas por processo **deste** projeto: não impedem nada, e
+    #: explicam por que "subir" pode não mudar nada.
+    already_ours: list[int] = Field(default_factory=list)
+    message: str = ""
 
 
 class EnvironmentStopped(BaseModel):

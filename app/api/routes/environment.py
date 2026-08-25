@@ -19,15 +19,18 @@ from app.api.deps import (
     get_docker_service,
     get_environment_service,
     get_job_manager,
+    get_preflight_service,
     get_project_service,
 )
+from app.core.errors import PortsBusy
 from app.jobs.job import Job
 from app.jobs.job_manager import JobManager
-from app.schemas.health import EnvironmentPlanOut, EnvironmentStopped
+from app.schemas.health import EnvironmentPlanOut, EnvironmentStopped, PreflightOut
 from app.schemas.job import JobAccepted
 from app.services.dev_server_service import DevServerService
 from app.services.docker_service import DockerService
 from app.services.environment_service import EnvironmentService
+from app.services.preflight_service import PreflightService
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/api/projects/{project_id}/environment", tags=["environment"])
@@ -58,19 +61,56 @@ def environment_plan(
     )
 
 
+@router.get("/preflight", response_model=PreflightOut)
+def environment_preflight(
+    project_id: str,
+    projects: ProjectService = Depends(get_project_service),
+    preflight: PreflightService = Depends(get_preflight_service),
+) -> PreflightOut:
+    """O que impede este projeto de subir — antes de tentar.
+
+    Existe para a tela poder avisar no lugar certo: a porta ocupada aparece
+    quando se olha o projeto, e não no meio de um `compose up` que falha.
+    """
+    resultado = preflight.check(projects.get(project_id))
+    return PreflightOut(**resultado.to_dict(), message=resultado.message())
+
+
 @router.post("/up", response_model=JobAccepted, status_code=202)
 async def environment_up(
     project_id: str,
     projects: ProjectService = Depends(get_project_service),
     environment: EnvironmentService = Depends(get_environment_service),
+    preflight: PreflightService = Depends(get_preflight_service),
     jobs: JobManager = Depends(get_job_manager),
+    force: bool = Query(
+        default=False,
+        description="sobe mesmo com porta ocupada; a decisão passa a ser sua",
+    ),
 ) -> JobAccepted:
     """Sobe o ambiente e depois a aplicação, nessa ordem.
+
+    Antes de enfileirar, confere as portas: descobrir pelo erro do Compose, no
+    meio da subida, custa a espera inteira para chegar a uma informação que já
+    estava disponível. Com `force=true` a recusa é dispensada — a decisão passa
+    a ser de quem clicou, e fica registrada como tal.
 
     `async def` por necessidade: enfileirar job exige event loop, e rota
     síncrona roda em threadpool onde não há um.
     """
     project = projects.get(project_id, touch=True)
+
+    if not force:
+        checagem = preflight.check(project)
+        if not checagem.ready:
+            # A recusa carrega só a frase: o envelope de erro é contrato
+            # estável (`code`, `message`, `correlation_id`) e não vira saco de
+            # dados. Quem quiser o detalhe chama `GET /preflight`, que existe
+            # exatamente para isso.
+            raise PortsBusy(
+                checagem.message()
+                + " Troque a porta em Ports, encerre quem está nela, ou suba mesmo assim."
+            )
 
     async def work(job: Job) -> str:
         return await environment.up(job, project.id)

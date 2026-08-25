@@ -431,3 +431,72 @@ def test_lista_global_descarta_processo_morto(client, workspace) -> None:  # typ
         sessao.close()
 
     assert client.get("/api/servers").json()["items"] == []
+
+
+# --- porta em uso sem cadastro -------------------------------------------
+
+
+def _cadastrar(client, caminho):  # type: ignore[no-untyped-def]
+    from tests.conftest import WRITE_HEADERS
+
+    return client.post(
+        "/api/projects", json={"path": str(caminho)}, headers=WRITE_HEADERS
+    ).json()
+
+
+def _observar(client, projeto, caminho, porta: int):  # type: ignore[no-untyped-def]
+    """Coloca uma porta deste projeto na última varredura, com prova de dono."""
+    from app.adapters.system.ports import FakePortScanner, ListeningPort
+    from app.services.port_discovery_service import ProjectRef
+
+    descoberta = client.app.state.port_discovery
+    descoberta.scanner = FakePortScanner(
+        [
+            ListeningPort(
+                port=porta,
+                pid=4242,
+                process_name="python.exe",
+                cwd=str(caminho),
+                cmdline="python -m flask run",
+                addresses=frozenset({"127.0.0.1"}),
+            )
+        ]
+    )
+    descoberta.observe(
+        [ProjectRef(id=projeto["id"], name=projeto["name"], path=str(caminho))]
+    )
+
+
+def test_porta_observada_sem_servico_e_reportada(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """A última milha do projeto leve: sobe, funciona, e o painel não sabia
+    mostrar porque a porta escolhida pelo framework nunca foi cadastrada."""
+    caminho = workspace / "flask-leve"
+    caminho.mkdir()
+    (caminho / "app.py").write_text("from flask import Flask\n", encoding="utf-8")
+
+    projeto = _cadastrar(client, caminho)
+    _observar(client, projeto, caminho, 5000)
+
+    estado = client.get(f"/api/projects/{projeto['id']}/server").json()
+
+    assert estado["undeclared_ports"] == [5000]
+
+
+def test_porta_ja_cadastrada_nao_e_reportada(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    from tests.conftest import WRITE_HEADERS
+
+    caminho = workspace / "com-servico"
+    caminho.mkdir()
+    (caminho / "app.py").write_text("from flask import Flask\n", encoding="utf-8")
+    projeto = _cadastrar(client, caminho)
+
+    client.put(
+        f"/api/projects/{projeto['id']}/services",
+        json={"items": [{"key": "app", "label": "App", "port": 5000, "health_kind": "HTTP"}]},
+        headers=WRITE_HEADERS,
+    )
+    _observar(client, projeto, caminho, 5000)
+
+    estado = client.get(f"/api/projects/{projeto['id']}/server").json()
+
+    assert estado["undeclared_ports"] == []

@@ -97,6 +97,19 @@ class ActionNotAllowed(DomainError):
     default_message = "Ação não permitida."
 
 
+class PortsBusy(DomainError):
+    """Porta declarada já ocupada por outro. Recusa **antes** de tentar subir.
+
+    409 e não 422: não é dado inválido, é estado do mundo — a mesma família de
+    `OPERATION_IN_PROGRESS`. A resposta carrega quem está em cada porta, para
+    a tela poder oferecer saída em vez de só reclamar.
+    """
+
+    code = "PORTS_BUSY"
+    status_code = 409
+    default_message = "Alguma porta deste projeto já está ocupada."
+
+
 class CommandTimeout(DomainError):
     code = "COMMAND_TIMEOUT"
     status_code = 504

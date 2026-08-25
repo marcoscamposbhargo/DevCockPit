@@ -321,6 +321,34 @@ def chat_history(
     )
 
 
+@global_router.post("/ask")
+async def ask_quick(
+    payload: ChatAsk,
+    chat: ChatService = Depends(get_chat_service),
+) -> StreamingResponse:
+    """Pergunta avulsa, sem projeto: o modo "assistente de terminal".
+
+    Mesmo transporte do chat de projeto, e de propósito **sem** o Context
+    Engine: dúvida de `git reset` não precisa do README de projeto nenhum, e
+    num provedor local carregar contexto à toa triplica a espera.
+    """
+
+    def eventos():  # type: ignore[no-untyped-def]
+        try:
+            for pedaco in chat.ask_quick(payload.question, perfil=payload.model):
+                dados = json.dumps({"text": pedaco}, ensure_ascii=False)
+                yield f"event: chunk\ndata: {dados}\n\n"
+        except DomainError as erro:
+            corpo = json.dumps(
+                {"code": erro.code, "message": erro.message}, ensure_ascii=False
+            )
+            yield f"event: error\ndata: {corpo}\n\n"
+            return
+        yield "event: end\ndata: {}\n\n"
+
+    return StreamingResponse(eventos(), media_type="text/event-stream")
+
+
 @router.post("/chat")
 async def chat_ask(
     project_id: str,

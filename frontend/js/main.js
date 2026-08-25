@@ -2,6 +2,7 @@ import { api } from './lib/api.js';
 import { el, mount } from './lib/dom.js';
 import { invalidateTools, tools } from './lib/actions.js';
 import { icon } from './lib/icons.js';
+import { toggleQuickAsk, wireQuickAsk } from './lib/quick-ask.js';
 import { mountRail } from './lib/rail.js';
 import { applyShell, railHidden, sidebarCollapsed, toggleRail, toggleSidebar } from './lib/shell.js';
 import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from './lib/theme.js';
@@ -153,6 +154,18 @@ async function wireEditorButton() {
   }
 }
 
+/** Botão da pergunta rápida, ao lado do VS Code.
+ *
+ * O chat da aba IA fala *de um projeto*; este fala de nada — é a dúvida de
+ * terminal que aparece no meio do trabalho. Por isso mora na barra superior,
+ * alcançável de qualquer tela, e não dentro de um projeto.
+ */
+function wireQuickAskButton() {
+  const botao = document.getElementById('quick-ask');
+  botao.replaceChildren(icon('terminal', { size: 15 }));
+  botao.addEventListener('click', toggleQuickAsk);
+}
+
 function wireShell() {
   const sidebarBtn = document.getElementById('sidebar-toggle');
   const railBtn = document.getElementById('rail-toggle');
@@ -275,6 +288,8 @@ wireTheme();
 wireSearch();
 wireShortcuts();
 wireEditorButton();
+wireQuickAskButton();
+wireQuickAsk();
 
 // A dica mora no rodapé da lateral, ao lado do estado das ferramentas: é o
 // canto onde já se olha para saber "como está o ambiente", e o custo visual de

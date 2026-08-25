@@ -12,6 +12,7 @@ import { el, mount } from './dom.js';
 
 const ATALHOS = [
   { teclas: ['Ctrl', 'K'], o_que: 'Focar a busca' },
+  { teclas: ['Ctrl', 'Espaço'], o_que: 'Pergunta rápida (terminal, Git, Docker)' },
   { teclas: ['Ctrl', 'B'], o_que: 'Recolher ou expandir a barra lateral' },
   { teclas: ['Ctrl', 'Alt', 'B'], o_que: 'Mostrar ou ocultar os projetos ativos' },
   { teclas: ['R'], o_que: 'Recarregar a tela atual' },

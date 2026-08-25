@@ -59,6 +59,56 @@ async function request(method, path, { body, params } = {}) {
   return payload;
 }
 
+/** Pergunta com resposta em stream (SSE), compartilhada pelas duas rotas de IA.
+ *
+ * `fetch` e não `EventSource`: a pergunta vai num POST, e `EventSource` só
+ * sabe fazer GET. O parser é curto porque o formato é curto.
+ *
+ * `model` é `'default'` ou `'alt'` — a escolha entre os dois modelos que o
+ * servidor configurou, nunca o nome de um modelo.
+ */
+async function sseAsk(path, body, { onChunk, onError, model = 'default' } = {}) {
+  const resposta = await fetch(new URL(BASE + path, window.location.origin), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-DevCockpit-Client': 'web' },
+    body: JSON.stringify({ ...body, model }),
+  });
+
+  if (!resposta.ok) {
+    const payload = await resposta.json().catch(() => null);
+    const erro = payload?.error ?? {};
+    throw new ApiError({
+      code: erro.code ?? 'INTERNAL_ERROR',
+      message: erro.message ?? `Falha na requisição (${resposta.status}).`,
+      status: resposta.status,
+    });
+  }
+
+  const leitor = resposta.body.getReader();
+  const decodificador = new TextDecoder();
+  let resto = '';
+
+  for (;;) {
+    const { value, done } = await leitor.read();
+    if (done) break;
+    resto += decodificador.decode(value, { stream: true });
+
+    const blocos = resto.split('\n\n');
+    resto = blocos.pop() ?? '';
+
+    for (const bloco of blocos) {
+      const linhas = bloco.split('\n');
+      const evento = linhas.find((l) => l.startsWith('event:'))?.slice(6).trim();
+      const dados = linhas.find((l) => l.startsWith('data:'))?.slice(5).trim();
+      if (!dados) continue;
+
+      const payload = JSON.parse(dados);
+      if (evento === 'chunk') onChunk?.(payload.text ?? '');
+      else if (evento === 'error') onError?.(payload);
+    }
+  }
+}
+
 export const api = {
   health: () => request('GET', '/health'),
 
@@ -120,52 +170,15 @@ export const api = {
    * `fetch` e não `EventSource`: a pergunta vai num POST, e `EventSource` só
    * sabe fazer GET. O parser é curto porque o formato é curto.
    */
-  chatStream: async (id, question, { onChunk, onError, model = 'default' } = {}) => {
-    const resposta = await fetch(
-      new URL(`${BASE}/projects/${encodeURIComponent(id)}/chat`, window.location.origin),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-DevCockpit-Client': 'web' },
-        // `model` é 'default' ou 'alt' — a escolha entre os dois modelos que
-        // o servidor configurou, nunca o nome de um modelo.
-        body: JSON.stringify({ question, model }),
-      }
-    );
+  /** Pergunta avulsa, sem projeto: o assistente de terminal.
+   *
+   * Mesmo transporte do chat, rota diferente — e a diferença que importa está
+   * no servidor: aqui nenhum contexto de projeto é montado.
+   */
+  askQuick: (question, opcoes = {}) => sseAsk('/ai/ask', { question }, opcoes),
 
-    if (!resposta.ok) {
-      const payload = await resposta.json().catch(() => null);
-      const erro = payload?.error ?? {};
-      throw new ApiError({
-        code: erro.code ?? 'INTERNAL_ERROR',
-        message: erro.message ?? `Falha na requisição (${resposta.status}).`,
-        status: resposta.status,
-      });
-    }
-
-    const leitor = resposta.body.getReader();
-    const decodificador = new TextDecoder();
-    let resto = '';
-
-    for (;;) {
-      const { value, done } = await leitor.read();
-      if (done) break;
-      resto += decodificador.decode(value, { stream: true });
-
-      const blocos = resto.split('\n\n');
-      resto = blocos.pop() ?? '';
-
-      for (const bloco of blocos) {
-        const linhas = bloco.split('\n');
-        const evento = linhas.find((l) => l.startsWith('event:'))?.slice(6).trim();
-        const dados = linhas.find((l) => l.startsWith('data:'))?.slice(5).trim();
-        if (!dados) continue;
-
-        const payload = JSON.parse(dados);
-        if (evento === 'chunk') onChunk?.(payload.text ?? '');
-        else if (evento === 'error') onError?.(payload);
-      }
-    }
-  },
+  chatStream: (id, question, opcoes = {}) =>
+    sseAsk(`/projects/${encodeURIComponent(id)}/chat`, { question }, opcoes),
 
   globalMemory: (kind) => request('GET', '/ai/memory', { params: { kind } }),
   createGlobalMemory: (body) => request('POST', '/ai/memory', { body }),

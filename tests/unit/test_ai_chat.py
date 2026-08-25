@@ -421,3 +421,59 @@ def test_provedor_injetado_ignora_o_perfil(session: Session) -> None:
 
     assert chat._exigir_provedor("alt") is dublê
     assert chat._exigir_provedor("default") is dublê
+
+
+# --- pergunta rápida: sem projeto, sem contexto ----------------------------
+
+
+def test_pergunta_rapida_nao_manda_contexto_de_projeto(session: Session) -> None:
+    """O corpo enviado é só a pergunta.
+
+    É o que torna o modo utilizável num provedor local: o gargalo lá é ler o
+    contexto, não gerar a resposta. Se um bloco de projeto vazasse para cá, a
+    dúvida de terminal voltaria a custar o triplo — e sem motivo, porque a
+    pergunta não é sobre projeto nenhum.
+    """
+    falso = FakeProvider()
+    chat = ChatService(session, config(), provider=falso)
+
+    list(chat.ask_quick("Como desfaço um commit?"))
+
+    pedido = falso.last_request
+    assert len(pedido.messages) == 1
+    assert pedido.messages[0].content == "Como desfaço um commit?"
+    assert "memória" not in pedido.system.lower()
+
+
+def test_pergunta_rapida_conta_no_orcamento_do_dia(session: Session) -> None:
+    """Não é persistida, mas o gasto é. Teto com porta de saída não é teto."""
+    chat = ChatService(session, config(), provider=FakeProvider())
+
+    list(chat.ask_quick("O que é um health check?"))
+
+    assert chat.status()["tokens_today"] > 0
+    assert chat.status()["calls_today"] == 1
+
+
+def test_pergunta_rapida_recusa_com_ia_desligada(session: Session) -> None:
+    chat = ChatService(session, config(ai_enabled=False), provider=FakeProvider())
+
+    with pytest.raises(AiDisabled):
+        list(chat.ask_quick("qualquer coisa"))
+
+
+def test_pergunta_rapida_vazia_e_recusada(session: Session) -> None:
+    from app.core.errors import ValidationError
+
+    chat = ChatService(session, config(), provider=FakeProvider())
+
+    with pytest.raises(ValidationError):
+        list(chat.ask_quick("   "))
+
+
+def test_pergunta_rapida_respeita_o_perfil_de_modelo(session: Session) -> None:
+    """O botão "Refazer com o caprichado" troca o modelo, e nada mais."""
+    ajustes = config(ai_provider="local", ai_model="rapido", ai_model_alt="caprichado")
+    chat = ChatService(session, ajustes)
+
+    assert chat._exigir_provedor("alt").model == "caprichado"

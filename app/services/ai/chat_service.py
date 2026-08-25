@@ -56,6 +56,20 @@ PERFIL_ALTERNATIVO = "alt"
 PERFIS = (PERFIL_PADRAO, PERFIL_ALTERNATIVO)
 
 
+INSTRUCAO_RAPIDA = """Você é o assistente de terminal do DevCockpit, rodando na máquina do
+desenvolvedor. A pergunta vem sem contexto de projeto: é dúvida de linha de
+comando, Git, Docker, Python, Node ou do próprio Windows.
+
+Regras:
+- responda em português do Brasil, direto, sem preâmbulo;
+- dê o comando exato quando houver, no sistema perguntado — esta máquina é
+  Windows, com PowerShell e Git Bash;
+- se o comando for destrutivo (apaga arquivo, descarta alteração, encerra
+  processo), diga o que ele destrói **antes** do comando;
+- quando não souber, diga que não sabe. Comando inventado que parece plausível
+  é pior que resposta nenhuma, porque quem pergunta vai colar e rodar."""
+
+
 class AiDisabled(DomainError):
     code = "AI_DISABLED"
     status_code = 409
@@ -195,6 +209,51 @@ class ChatService:
                 "couberam no orçamento de tokens)_"
             )
 
+    def ask_quick(self, pergunta: str, *, perfil: str = PERFIL_PADRAO) -> Iterator[str]:
+        """Pergunta avulsa, **sem projeto e sem contexto**.
+
+        É o modo "agente de terminal": "como desfaço um commit?", "o que
+        significa esse erro do Docker?". Nada de disco é lido, nenhuma memória
+        entra, nenhum projeto é citado.
+
+        Isso não é economia de código, é o que torna o modo utilizável: num
+        provedor local o gargalo é **ler** o contexto, não gerar a resposta.
+        Medido nesta máquina, o mesmo modelo leva ~17 s numa pergunta de
+        terminal e ~45 s quando carrega o contexto de um projeto junto. Mandar
+        README e memória numa dúvida de `git reset` seria pagar o triplo por
+        informação que não tem nada a ver com a pergunta.
+
+        Não é persistido, e a razão é o esquema: `ai_message` pende de
+        `ai_session`, que pende de um projeto. Guardar uma dúvida de terminal
+        no histórico de um projeto qualquer sujaria o registro que existe para
+        responder "o que eu fiz aqui?". O **gasto**, esse é contabilizado — o
+        teto do dia não teria sentido com uma porta de saída.
+        """
+        texto = (pergunta or "").strip()
+        if not texto:
+            raise ValidationError("Faça uma pergunta.")
+
+        self._exigir_ia_ligada()
+        provedor = self._exigir_provedor(perfil)
+        self._exigir_orcamento()
+
+        pedido = AIRequest(
+            messages=[Message(role="user", content=texto)],
+            system=INSTRUCAO_RAPIDA,
+            max_output_tokens=self.settings.ai_max_output_tokens,
+        )
+
+        partes: list[str] = []
+        for pedaco in provedor.stream(pedido):
+            partes.append(pedaco)
+            yield pedaco
+
+        uso = getattr(provedor, "last_usage", None)
+        self.usage.add(
+            tokens_in=getattr(uso, "tokens_in", 0) or 0,
+            tokens_out=getattr(uso, "tokens_out", 0) or 0,
+        )
+
     def history(self, project: Project, limit: int = 50) -> list[AiMessage]:
         sessao = self.sessions.open_for(project.id) or self.sessions.last_closed(project.id)
         if sessao is None:
@@ -236,7 +295,7 @@ class ChatService:
 
     # --- guardas ---
 
-    def _exigir_liberado(self, project: Project) -> None:
+    def _exigir_ia_ligada(self) -> None:
         if not self.settings.ai_enabled:
             raise AiDisabled(
                 "O Cockpit AI está desligado. Para ligar, defina "
@@ -244,6 +303,9 @@ class ChatService:
                 "interface de propósito, porque a partir daí conteúdo dos seus "
                 "projetos passa a ser enviado ao provedor."
             )
+
+    def _exigir_liberado(self, project: Project) -> None:
+        self._exigir_ia_ligada()
         if not project.ai_enabled:
             raise AiDisabled(
                 f"{project.name} está marcado para não participar do Cockpit AI. "

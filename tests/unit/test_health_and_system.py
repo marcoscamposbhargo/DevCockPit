@@ -110,6 +110,47 @@ async def test_verificacoes_rodam_concorrentes(health: HealthService) -> None:
     assert decorrido < 2.0, f"pareceu serial: {decorrido:.2f}s"
 
 
+async def test_concorrencia_tem_teto(health: HealthService) -> None:
+    """O lote respeita `max_concurrency`, e por isso o timeout mede o serviço.
+
+    Sem teto, um ciclo com muitos projetos disparava dezenas de conexões de uma
+    vez: o event loop congestionava e o `wait_for` de 2 s estourava em porta que
+    responde em 0 ms. O histórico do painel guardou a prova do defeito —
+    latências de 3 a 6 segundos num teto de 2, impossíveis a menos que o tempo
+    tenha sido gasto na fila. Na tela, isso era serviço no ar aparecendo
+    desligado de forma intermitente.
+    """
+    health.max_concurrency = 4
+    em_voo = 0
+    pico = 0
+    original = health.check
+
+    async def espiar(alvo):  # type: ignore[no-untyped-def]
+        nonlocal em_voo, pico
+        em_voo += 1
+        pico = max(pico, em_voo)
+        try:
+            await asyncio.sleep(0.01)
+            return await original(alvo)
+        finally:
+            em_voo -= 1
+
+    health.check = espiar  # type: ignore[method-assign]
+    alvos = [target(key=f"s{i}", port=porta_livre()) for i in range(20)]
+
+    resultados = await health.check_many(alvos)
+
+    assert len(resultados) == 20
+    assert pico <= 4, f"{pico} verificações simultâneas, teto era 4"
+
+
+def test_teto_minimo_e_um() -> None:
+    """Valor inválido não desliga o teto — vira 1, que é serial mas correto."""
+    servico = HealthService(cache=TTLCache(ttl_seconds=300), max_concurrency=0)
+
+    assert servico.max_concurrency == 1
+
+
 # --- cache e STALE --------------------------------------------------------
 
 

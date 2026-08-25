@@ -73,10 +73,36 @@ class HealthService:
         cache: TTLCache,
         timeout_s: float = 2.0,
         stale_after_s: float = 90.0,
+        max_concurrency: int = 8,
     ) -> None:
         self.cache = cache
         self.timeout_s = timeout_s
         self.stale_after_s = stale_after_s
+        #: Quantas verificações correm ao mesmo tempo.
+        #:
+        #: Sem teto, `check_many` disparava tudo de uma vez. Com 25 projetos
+        #: isso vira ~40 conexões simultâneas — cada uma com duas famílias de
+        #: endereço —, o event loop satura, e o `wait_for` de 2 s estoura em
+        #: porta que responde em 0 ms. O histórico registrou a prova: latência
+        #: de 3 a 6 segundos num teto de 2, que é impossível a menos que o
+        #: tempo tenha sido gasto **na fila**, não na conexão.
+        #:
+        #: O sintoma para quem usa era o pior possível: serviço no ar aparecendo
+        #: como desligado, de forma intermitente, sem nada errado no projeto.
+        self.max_concurrency = max(1, int(max_concurrency))
+        #: Cliente HTTP único, criado na primeira verificação HTTP.
+        #:
+        #: Antes era um `AsyncClient` por verificação. O construtor monta um
+        #: contexto SSL e, no Windows, isso custa ~225 ms **síncronos, em cima
+        #: do event loop** — medido. Num ciclo com vinte serviços, o loop
+        #: ficava bloqueado segundos, e o `wait_for` de 2 s só era atendido
+        #: depois: era assim que uma verificação com teto de 2 s registrava
+        #: latência de 6 s e um serviço no ar era marcado OFFLINE.
+        #:
+        #: Um cliente só também reaproveita conexão, que é o motivo pelo qual
+        #: `AsyncClient` existe.
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
 
     # --- verificação ---
 
@@ -111,17 +137,49 @@ class HealthService:
         )
 
     async def check_many(self, targets: list[ServiceTarget]) -> list[HealthResult]:
+        """Verifica em lote, com teto de concorrência.
+
+        O teto é o que faz o timeout voltar a medir o serviço em vez da fila.
+        """
         if not targets:
             return []
-        return list(await asyncio.gather(*(self.check(target) for target in targets)))
+
+        limite = asyncio.Semaphore(self.max_concurrency)
+
+        async def com_limite(target: ServiceTarget) -> HealthResult:
+            async with limite:
+                return await self.check(target)
+
+        return list(await asyncio.gather(*(com_limite(target) for target in targets)))
+
+    async def _http_client(self) -> httpx.AsyncClient:
+        """O cliente compartilhado, construído uma vez só.
+
+        O lock evita que duas verificações simultâneas paguem o custo de
+        construção em paralelo na primeira vez.
+        """
+        if self._client is None:
+            async with self._client_lock:
+                if self._client is None:
+                    self._client = httpx.AsyncClient(
+                        timeout=self.timeout_s, follow_redirects=False
+                    )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Fecha o cliente compartilhado no desligamento da aplicação."""
+        cliente, self._client = self._client, None
+        if cliente is not None:
+            with contextlib.suppress(Exception):
+                await cliente.aclose()
 
     async def _check_http(self, target: ServiceTarget) -> HealthResult:
         url = target.health_url or target.url or ""
+        client = await self._http_client()
         started = asyncio.get_running_loop().time()
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_s, follow_redirects=False) as client:
-                response = await client.get(url)
+            response = await client.get(url)
         except httpx.ConnectError:
             return self._result(target, HealthState.OFFLINE, started, "Conexão recusada.")
         except httpx.ConnectTimeout:

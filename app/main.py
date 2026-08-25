@@ -89,6 +89,7 @@ def create_app(
             # por decisão (D-07), mas deixar processo órfão nunca é aceitável.
             await app.state.health_poller.stop()
             await app.state.job_manager.shutdown()
+            await app.state.health_service.aclose()
 
     app = FastAPI(
         title="DevCockpit",
@@ -111,6 +112,7 @@ def create_app(
         timeout_s=settings.health_timeout,
         # Dado mais velho que três ciclos do poller é marcado STALE.
         stale_after_s=settings.health_poll_interval * 3,
+        max_concurrency=settings.health_max_concurrency,
     )
     app.state.port_discovery = PortDiscoveryService(
         scanner=build_port_scanner(),

@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     cache_ttl_seconds: float = 5.0
     health_poll_interval: float = 30.0
     health_timeout: float = 2.0
+    #: Quantas verificações de saúde correm ao mesmo tempo.
+    #:
+    #: Existe porque o timeout só mede o serviço enquanto o event loop não está
+    #: congestionado. Sem teto, um ciclo com 25 projetos disparava dezenas de
+    #: conexões de uma vez e o histórico registrou latência de 3 a 6 segundos
+    #: num teto de 2 — tempo gasto na fila, não na rede. O efeito na tela era
+    #: serviço no ar aparecendo desligado, de forma intermitente.
+    health_max_concurrency: int = 8
 
     # --- timeouts de comando (segundos) ---
     timeout_git: float = 10.0

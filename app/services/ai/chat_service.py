@@ -48,6 +48,14 @@ Regras:
 - você não executa nada: quem age é a pessoa, pelos botões do painel."""
 
 
+#: Os dois perfis de modelo que a tela pode pedir. Conjunto fechado de
+#: propósito: o cliente escolhe entre opções que o servidor definiu, nunca
+#: manda o nome de um modelo (mesma doutrina da decisão D-13).
+PERFIL_PADRAO = "default"
+PERFIL_ALTERNATIVO = "alt"
+PERFIS = (PERFIL_PADRAO, PERFIL_ALTERNATIVO)
+
+
 class AiDisabled(DomainError):
     code = "AI_DISABLED"
     status_code = 409
@@ -80,6 +88,9 @@ class ChatService:
         self.session = session
         self.settings = settings
         self.provider = provider
+        #: Um provedor por perfil de modelo. Construir é barato, mas repetir a
+        #: cada pergunta desperdiçaria a conexão que o cliente HTTP reaproveita.
+        self._por_perfil: dict[str, object] = {}
         self.messages = MessageRepository(session)
         self.sessions = SessionRepository(session)
         self.usage = UsageRepository(session)
@@ -104,6 +115,9 @@ class ChatService:
             "reason": motivo,
             "provider": self.settings.ai_provider,
             "model": self.settings.ai_model,
+            # Vazio quando não há segundo modelo, e aí a tela não mostra o
+            # seletor: dois botões com o mesmo modelo atrás seriam pior que um.
+            "model_alt": self.settings.ai_model_alt,
             "tokens_today": hoje.tokens_in + hoje.tokens_out,
             "daily_budget": self.settings.ai_daily_token_budget,
             "calls_today": hoje.calls,
@@ -112,15 +126,26 @@ class ChatService:
     # --- conversa ---
 
     def ask(
-        self, project: Project, pergunta: str, *, estado: dict | None = None
+        self,
+        project: Project,
+        pergunta: str,
+        *,
+        estado: dict | None = None,
+        perfil: str = PERFIL_PADRAO,
     ) -> Iterator[str]:
-        """Pergunta e resposta em stream. Persiste no fim, com o gasto."""
+        """Pergunta e resposta em stream. Persiste no fim, com o gasto.
+
+        `perfil` é `"default"` ou `"alt"` — uma escolha de conjunto fechado, e
+        nunca o nome de um modelo. É a mesma doutrina de `open_service_url`,
+        que recebe a chave do serviço e jamais a URL (decisão D-13): o cliente
+        escolhe entre opções que o servidor definiu, em vez de ditar o valor.
+        """
         texto = (pergunta or "").strip()
         if not texto:
             raise ValidationError("Faça uma pergunta.")
 
         self._exigir_liberado(project)
-        provedor = self._exigir_provedor()
+        provedor = self._exigir_provedor(perfil)
         self._exigir_orcamento()
 
         contexto = self.context.build(project, texto, estado=estado)
@@ -225,13 +250,31 @@ class ChatService:
                 "Nada deste projeto é enviado a provedor nenhum."
             )
 
-    def _exigir_provedor(self):  # type: ignore[no-untyped-def]
+    def _exigir_provedor(self, perfil: str = PERFIL_PADRAO):  # type: ignore[no-untyped-def]
+        """O provedor do perfil pedido.
+
+        `self.provider` injetado (teste, ou provedor único) vence sempre: um
+        dublê não deve ser trocado por um cliente HTTP de verdade só porque a
+        tela pediu o outro modelo.
+        """
         if self.provider is not None:
             return self.provider
-        from app.services.ai.providers import build_provider
 
-        self.provider = build_provider(self.settings)
-        return self.provider
+        if perfil not in self._por_perfil:
+            from app.services.ai.providers import build_provider
+
+            self._por_perfil[perfil] = build_provider(self.settings, model=self._modelo(perfil))
+        return self._por_perfil[perfil]
+
+    def _modelo(self, perfil: str) -> str:
+        """Nome do modelo do perfil. Perfil desconhecido cai no padrão.
+
+        Cair no padrão, e não levantar, é deliberado: a escolha vem da tela e
+        o pior que um valor inesperado pode causar é usar o modelo de sempre.
+        """
+        if perfil == PERFIL_ALTERNATIVO and self.settings.ai_model_alt:
+            return self.settings.ai_model_alt
+        return self.settings.ai_model
 
     def _exigir_orcamento(self) -> None:
         teto = self.settings.ai_daily_token_budget

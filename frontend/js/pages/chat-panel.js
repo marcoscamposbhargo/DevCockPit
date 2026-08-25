@@ -67,6 +67,46 @@ function desligado(status) {
   ]);
 }
 
+/** Seletor entre os dois modelos configurados.
+ *
+ * Só aparece quando existe um segundo: oferecer escolha entre uma coisa só é
+ * ruído. Os rótulos dizem o **efeito** — rápido, caprichado — e o nome do
+ * modelo fica no `title`, porque é o efeito que decide o clique.
+ *
+ * A escolha fica no elemento e vai como `'default'` ou `'alt'`; o nome do
+ * modelo nunca sai daqui para o servidor.
+ */
+function seletorDeModelo(status) {
+  const caixa = el('div', { class: 'chat-modelo', role: 'group' });
+  caixa.dataset.escolha = 'default';
+
+  const opcoes = [
+    { valor: 'default', rotulo: 'Rápido', modelo: status.model },
+    { valor: 'alt', rotulo: 'Caprichado', modelo: status.model_alt },
+  ];
+
+  const botoes = opcoes.map(({ valor, rotulo, modelo }) => {
+    const botao = el('button', {
+      class: 'chat-modelo__opcao',
+      type: 'button',
+      text: rotulo,
+      title: modelo,
+      'aria-pressed': valor === 'default' ? 'true' : 'false',
+    });
+    botao.addEventListener('click', () => {
+      caixa.dataset.escolha = valor;
+      for (const outro of botoes) {
+        const ativo = outro === botao;
+        outro.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+      }
+    });
+    return botao;
+  });
+
+  caixa.append(...botoes);
+  return caixa;
+}
+
 function medidor(status) {
   const teto = status.daily_budget || 0;
   const usado = status.tokens_today || 0;
@@ -128,6 +168,8 @@ export async function renderChatPanel(container, project) {
     icon('search', { size: 14 }),
     'Perguntar',
   ]);
+  // `null` quando só há um modelo configurado.
+  const seletor = status.model_alt ? seletorDeModelo(status) : null;
 
   const perguntar = async () => {
     const pergunta = entrada.value.trim();
@@ -150,6 +192,7 @@ export async function renderChatPanel(container, project) {
       // Stream por SSE, mesmo transporte do console de job: a resposta aparece
       // conforme chega, em vez de o painel ficar mudo por dez segundos.
       await api.chatStream(project.id, pergunta, {
+        model: seletor?.dataset.escolha ?? 'default',
         onChunk: (pedaco) => {
           if (texto.textContent === '…') texto.textContent = '';
           texto.textContent += pedaco;
@@ -180,6 +223,7 @@ export async function renderChatPanel(container, project) {
     el('section', { class: 'panel' }, [
       el('header', { class: 'panel__header' }, [
         el('h2', { class: 'panel__title', text: 'Cockpit AI' }),
+        ...(seletor ? [seletor] : []),
         medidor(status),
       ]),
       el('div', { class: 'panel__body' }, [

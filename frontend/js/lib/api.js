@@ -120,13 +120,15 @@ export const api = {
    * `fetch` e não `EventSource`: a pergunta vai num POST, e `EventSource` só
    * sabe fazer GET. O parser é curto porque o formato é curto.
    */
-  chatStream: async (id, question, { onChunk, onError } = {}) => {
+  chatStream: async (id, question, { onChunk, onError, model = 'default' } = {}) => {
     const resposta = await fetch(
       new URL(`${BASE}/projects/${encodeURIComponent(id)}/chat`, window.location.origin),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-DevCockpit-Client': 'web' },
-        body: JSON.stringify({ question }),
+        // `model` é 'default' ou 'alt' — a escolha entre os dois modelos que
+        // o servidor configurou, nunca o nome de um modelo.
+        body: JSON.stringify({ question, model }),
       }
     );
 

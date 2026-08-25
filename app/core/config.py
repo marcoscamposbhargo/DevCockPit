@@ -109,6 +109,16 @@ class Settings(BaseSettings):
     #: anthropic | openai | local | fake | none
     ai_provider: str = "none"
     ai_model: str = ""
+    #: Segundo modelo, opcional: o "caprichado" ao lado do rápido.
+    #:
+    #: Existe porque num provedor local os dois eixos brigam. Um modelo de 3B
+    #: responde dúvida de terminal em segundos e erra em pergunta difícil; um
+    #: de 7B acerta mais e demora. Escolher um para sempre é escolher errado
+    #: metade das vezes.
+    #:
+    #: Vazio desliga a escolha, e a tela nem mostra o seletor — dois modelos
+    #: iguais na tela seriam pior que um.
+    ai_model_alt: str = ""
     #: Nunca gravada em banco, nunca devolvida por rota (defesa D-A5).
     ai_api_key: str = ""
     #: Endereço do provedor. Configurável para proxy, gateway corporativo e

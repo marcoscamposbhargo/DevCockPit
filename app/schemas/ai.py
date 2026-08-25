@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -166,6 +167,9 @@ class AiStatusOut(BaseModel):
     reason: str | None = None
     provider: str
     model: str
+    #: Segundo modelo configurado, ou vazio. A tela só mostra o seletor quando
+    #: existe — oferecer escolha entre uma coisa só é ruído.
+    model_alt: str = ""
     tokens_today: int = 0
     daily_budget: int = 0
     calls_today: int = 0
@@ -173,6 +177,12 @@ class AiStatusOut(BaseModel):
 
 class ChatAsk(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
+    #: Qual dos dois modelos configurados responde: `"default"` (o rápido) ou
+    #: `"alt"` (o caprichado). É uma escolha de conjunto fechado, e nunca o
+    #: nome de um modelo — o cliente escolhe entre opções que o servidor
+    #: definiu, do mesmo jeito que `OpenBrowserRequest` recebe a chave do
+    #: serviço e jamais a URL (decisão D-13).
+    model: Literal["default", "alt"] = "default"
 
 
 class ChatMessageOut(BaseModel):

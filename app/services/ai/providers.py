@@ -453,8 +453,14 @@ MODELO_PADRAO = {
 }
 
 
-def build_provider(settings) -> AIProvider:  # type: ignore[no-untyped-def]
-    """Monta o provedor a partir da configuração. Levanta se faltar peça."""
+def build_provider(settings, model: str = "") -> AIProvider:  # type: ignore[no-untyped-def]
+    """Monta o provedor a partir da configuração. Levanta se faltar peça.
+
+    `model` sobrescreve `DEVCOCKPIT_AI_MODEL` — é como o segundo modelo entra
+    sem duplicar o resto da configuração (endereço, chave, timeout são os
+    mesmos). Quem escolhe o nome é sempre o servidor, a partir das settings:
+    nada aqui aceita nome de modelo vindo do cliente.
+    """
     nome = (settings.ai_provider or "none").lower()
 
     if nome in ("none", ""):
@@ -483,7 +489,7 @@ def build_provider(settings) -> AIProvider:  # type: ignore[no-untyped-def]
 
     return classes[nome](
         api_key=chave,
-        model=settings.ai_model or MODELO_PADRAO[nome],
+        model=model or settings.ai_model or MODELO_PADRAO[nome],
         base_url=settings.ai_base_url or BASE_URL_PADRAO[nome],
         timeout_s=settings.ai_timeout,
     )

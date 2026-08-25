@@ -373,3 +373,51 @@ def test_mesmo_arquivo_em_maiuscula_e_minuscula_entra_uma_vez(
     documentos = [b for b in contexto.blocos if "arquivo do projeto" in b.rotulo]
 
     assert len(documentos) == 1
+
+
+# --- dois modelos, uma escolha de conjunto fechado -------------------------
+
+
+def test_perfil_alt_usa_o_segundo_modelo(session: Session, projeto: Project) -> None:
+    """A escolha da tela troca o modelo, e nada além dele.
+
+    Endereço, chave e timeout continuam vindo das mesmas settings: o segundo
+    modelo é um nome diferente, não um provedor diferente.
+    """
+    ajustes = config(ai_provider="local", ai_model="rapido", ai_model_alt="caprichado")
+    chat = ChatService(session, ajustes)
+
+    assert chat._modelo("default") == "rapido"
+    assert chat._modelo("alt") == "caprichado"
+    assert chat._exigir_provedor("alt").model == "caprichado"
+    assert chat._exigir_provedor("default").model == "rapido"
+
+
+def test_sem_segundo_modelo_alt_cai_no_padrao(session: Session, projeto: Project) -> None:
+    """Perfil pedido sem estar configurado não é erro: é o modelo de sempre.
+
+    A escolha vem da tela, e o pior que um valor inesperado pode causar é usar
+    o modelo padrão — recusar a pergunta por causa disso seria desproporcional.
+    """
+    chat = ChatService(session, config(ai_provider="local", ai_model="unico"))
+
+    assert chat._modelo("alt") == "unico"
+    assert chat._modelo("perfil-que-nao-existe") == "unico"
+
+
+def test_status_expoe_os_dois_modelos(session: Session) -> None:
+    """A tela precisa saber se há segundo modelo para mostrar o seletor."""
+    com_dois = ChatService(session, config(ai_model="a", ai_model_alt="b")).status()
+    com_um = ChatService(session, config(ai_model="a")).status()
+
+    assert com_dois["model"] == "a" and com_dois["model_alt"] == "b"
+    assert com_um["model_alt"] == ""
+
+
+def test_provedor_injetado_ignora_o_perfil(session: Session) -> None:
+    """Dublê de teste não é trocado por cliente HTTP real por causa do seletor."""
+    dublê = FakeProvider()
+    chat = ChatService(session, config(ai_model_alt="outro"), provider=dublê)
+
+    assert chat._exigir_provedor("alt") is dublê
+    assert chat._exigir_provedor("default") is dublê

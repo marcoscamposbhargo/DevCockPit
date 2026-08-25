@@ -2519,6 +2519,49 @@
   margin-left: auto;
 }
 
+/* --- escolha entre os dois modelos ---
+   Dois segmentos colados, no formato de quem escolhe entre poucas opções
+   mutuamente exclusivas. Os rótulos dizem o efeito ("Rápido", "Caprichado")
+   porque é o efeito que decide o clique; o nome do modelo fica no title. */
+
+.chat-modelo {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.chat-modelo + .chat-uso {
+  margin-left: var(--sp-3);
+}
+
+.chat-modelo__opcao {
+  padding: var(--sp-1) var(--sp-3);
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.chat-modelo__opcao:hover {
+  color: var(--fg-primary);
+}
+
+.chat-modelo__opcao[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) var(--tint-bg-strength), transparent);
+  color: var(--accent);
+}
+
+.chat-modelo__opcao:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: -2px;
+}
+
 .code-block {
   margin: var(--sp-3) 0;
   padding: var(--sp-3);

@@ -347,7 +347,9 @@ async def chat_ask(
 
     def eventos():  # type: ignore[no-untyped-def]
         try:
-            for pedaco in chat.ask(project, payload.question, estado=estado):
+            for pedaco in chat.ask(
+                project, payload.question, estado=estado, perfil=payload.model
+            ):
                 dados = json.dumps({"text": pedaco}, ensure_ascii=False)
                 yield f"event: chunk\ndata: {dados}\n\n"
         except DomainError as erro:

@@ -400,3 +400,174 @@ def test_fatos_guardados_sobrevivem_ao_json(session: Session, projeto: Project) 
     assert bruto["git_start"]["head_sha"] == "f00"
     assert bruto["git_end"]["head_sha"] == "bar"
     assert "duration_minutes" in bruto
+
+
+# --- tarefas --------------------------------------------------------------
+
+
+def tarefas(session: Session):  # type: ignore[no-untyped-def]
+    from app.services.task_service import TaskService
+
+    return TaskService(session)
+
+
+def test_em_curso_vem_antes_de_aberta(session: Session, projeto: Project) -> None:
+    """Tarefa começada e largada é o que mais custa lembrar."""
+    servico = tarefas(session)
+    servico.create(projeto.id, title="alta prioridade, mas parada", priority=1)
+    comecada = servico.create(projeto.id, title="já comecei esta", priority=3)
+    servico.update(comecada.id, status="DOING")
+
+    ordem = [t.title for t in servico.list(projeto.id)]
+
+    assert ordem[0] == "já comecei esta"
+
+
+def test_prioridade_ordena_o_que_esta_aberto(session: Session, projeto: Project) -> None:
+    servico = tarefas(session)
+    servico.create(projeto.id, title="baixa", priority=3)
+    servico.create(projeto.id, title="alta", priority=1)
+    servico.create(projeto.id, title="média", priority=2)
+
+    ordem = [t.title for t in servico.list(projeto.id)]
+
+    assert ordem == ["alta", "média", "baixa"]
+
+
+def test_feita_e_descartada_saem_do_topo(session: Session, projeto: Project) -> None:
+    servico = tarefas(session)
+    feita = servico.create(projeto.id, title="feita", priority=1)
+    descartada = servico.create(projeto.id, title="descartada", priority=1)
+    servico.create(projeto.id, title="ainda aberta", priority=3)
+    servico.update(feita.id, status="DONE")
+    servico.update(descartada.id, status="DROPPED")
+
+    ordem = [t.title for t in servico.list(projeto.id)]
+
+    assert ordem[0] == "ainda aberta"
+    assert servico.get(feita.id).done_at is not None
+
+
+def test_descartar_e_diferente_de_apagar(session: Session, projeto: Project) -> None:
+    """Guarda que a ideia foi considerada — evita reabrir a discussão depois."""
+    servico = tarefas(session)
+    tarefa = servico.create(projeto.id, title="usar Kafka aqui")
+
+    servico.update(tarefa.id, status="DROPPED")
+
+    assert servico.get(tarefa.id).status == "DROPPED"
+    assert not servico.get(tarefa.id).is_open
+
+
+def test_reabrir_limpa_a_data_de_conclusao(session: Session, projeto: Project) -> None:
+    servico = tarefas(session)
+    tarefa = servico.create(projeto.id, title="x")
+    servico.update(tarefa.id, status="DONE")
+
+    servico.update(tarefa.id, status="OPEN")
+
+    assert servico.get(tarefa.id).done_at is None
+
+
+def test_estado_e_prioridade_invalidos_sao_recusados(
+    session: Session, projeto: Project
+) -> None:
+    servico = tarefas(session)
+    tarefa = servico.create(projeto.id, title="x")
+
+    with pytest.raises(ValidationError, match="Estado inválido"):
+        servico.update(tarefa.id, status="QUASE")
+    with pytest.raises(ValidationError, match="Prioridade"):
+        servico.create(projeto.id, title="y", priority=9)
+
+
+def test_proxima_tarefa_de_cada_projeto_numa_consulta(session: Session) -> None:
+    session.add(Project(id="a", name="A", path="C:/tmp/a"))
+    session.add(Project(id="b", name="B", path="C:/tmp/b"))
+    session.flush()
+
+    servico = tarefas(session)
+    servico.create("a", title="a-baixa", priority=3)
+    servico.create("a", title="a-alta", priority=1)
+    servico.create("b", title="b-única", priority=2)
+
+    proximas = servico.next_for(["a", "b"])
+
+    assert proximas["a"].title == "a-alta"
+    assert proximas["b"].title == "b-única"
+    assert servico.counts_for(["a", "b"]) == {"a": 2, "b": 1}
+
+
+def test_tarefa_fechada_nao_conta_como_aberta(session: Session, projeto: Project) -> None:
+    servico = tarefas(session)
+    feita = servico.create(projeto.id, title="feita")
+    servico.update(feita.id, status="DONE")
+
+    assert servico.counts_for([projeto.id]) == {}
+    assert servico.next_for([projeto.id]) == {}
+
+
+def test_tarefa_aberta_pesa_no_briefing(session: Session) -> None:
+    """Tarefa sobrevive a sessões; próximo passo é nota que a próxima substitui."""
+    session.add(Project(id="com-tarefa", name="Com tarefa", path="C:/tmp/a"))
+    session.add(Project(id="so-passo", name="Só passo", path="C:/tmp/b"))
+    session.flush()
+
+    sessoes = SessionService(session, git=None)
+    outro = session.get(Project, "so-passo")
+    sessoes.start(outro)
+    sessoes.end(outro, next_steps="Revisar a landing")
+    tarefas(session).create("com-tarefa", title="Implementar validação", priority=1)
+    session.flush()
+
+    dados = BriefingService(session).build()
+
+    assert dados.items[0].project_id == "com-tarefa"
+    assert dados.items[0].next_task.title == "Implementar validação"
+    assert "1 tarefa(s) aberta" in dados.items[0].reason
+
+
+def test_texto_separa_em_curso_de_aberta(session: Session) -> None:
+    """Dizer "4 em curso" com uma em curso e quatro abertas é imprecisão."""
+    session.add(Project(id="p", name="P", path="C:/tmp/p"))
+    session.flush()
+    servico = tarefas(session)
+    comecada = servico.create("p", title="essa eu comecei", priority=1)
+    servico.create("p", title="outra", priority=2)
+    servico.create("p", title="mais uma", priority=2)
+    servico.update(comecada.id, status="DOING")
+
+    motivo = BriefingService(session).build().items[0].reason
+
+    assert "1 em curso de 3 aberta(s)" in motivo
+
+
+def test_tarefas_pela_api(client: TestClient, workspace) -> None:  # type: ignore[no-untyped-def]
+    path = workspace / "com-tarefas"
+    path.mkdir()
+    (path / "package.json").write_text('{"name":"x"}', encoding="utf-8")
+    projeto_id = client.post(
+        "/api/projects", json={"path": str(path)}, headers=WRITE_HEADERS
+    ).json()["id"]
+
+    criada = client.post(
+        f"/api/projects/{projeto_id}/tasks",
+        json={"title": "Escrever o README", "priority": 1},
+        headers=WRITE_HEADERS,
+    )
+    assert criada.status_code == 201
+    task_id = criada.json()["id"]
+
+    lista = client.get(f"/api/projects/{projeto_id}/tasks").json()
+    assert lista["open_count"] == 1
+
+    client.patch(f"/api/ai/tasks/{task_id}", json={"status": "DONE"}, headers=WRITE_HEADERS)
+    assert client.get(f"/api/projects/{projeto_id}/tasks").json()["open_count"] == 0
+
+    dia = client.get("/api/ai/day").json()
+    alvo = next(item for item in dia["items"] if item["project_id"] == projeto_id)
+    assert alvo["next_task"] is None, "tarefa fechada não vira próxima tarefa"
+
+    assert (
+        client.delete(f"/api/ai/tasks/{task_id}", headers=WRITE_HEADERS).status_code == 204
+    )

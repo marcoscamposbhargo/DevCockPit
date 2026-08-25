@@ -14,11 +14,13 @@ from app.models.project import (
     ProjectTechnology,
     TechnologySource,
 )
+from app.models.task import AiTask, TaskPriority, TaskStatus
 
 __all__ = [
     "ActivityLog",
     "AiMemory",
     "AiSession",
+    "AiTask",
     "ActivityStatus",
     "Base",
     "DevServer",
@@ -32,6 +34,8 @@ __all__ = [
     "ProjectService",
     "ProjectStatus",
     "ProjectTechnology",
+    "TaskPriority",
+    "TaskStatus",
     "TechnologySource",
     "create_session_factory",
     "session_scope",

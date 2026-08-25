@@ -14,6 +14,7 @@ import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
 import { icon } from '../lib/icons.js';
 import { showError, toast } from '../lib/ui.js';
+import { tasksPanel } from './tasks-panel.js';
 
 const TIPOS_DE_MEMORIA = [
   { value: 'context', label: 'Contexto' },
@@ -299,10 +300,12 @@ export async function renderSessionPanel(container, project) {
 
   let sessoes;
   let memorias;
+  let tarefas;
   try {
-    [sessoes, memorias] = await Promise.all([
+    [sessoes, memorias, tarefas] = await Promise.all([
       api.sessions(project.id),
       api.projectMemory(project.id),
+      api.tasks(project.id),
     ]);
   } catch (error) {
     showError(error);
@@ -362,6 +365,9 @@ export async function renderSessionPanel(container, project) {
     sessoes.current
       ? sessaoAberta(sessoes.current, encerrar)
       : sessaoFechada(sessoes.previous, iniciar),
+    // Tarefas antes de memória: é a lista que se consulta todo dia; memória é
+    // consulta de quando se esquece por quê.
+    tasksPanel(project, tarefas, redesenhar, sessoes.current?.id ?? null),
     memoria(memorias.items, gravar, apagar),
     historico(sessoes.items)
   );

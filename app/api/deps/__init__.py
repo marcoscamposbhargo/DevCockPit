@@ -35,6 +35,7 @@ from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 from app.services.session_service import SessionService
 from app.services.system_action_service import SystemActionService
+from app.services.task_service import TaskService
 
 
 def get_settings_dep(request: Request) -> Settings:
@@ -207,6 +208,10 @@ def get_session_service(
 
 def get_memory_service(session: Session = Depends(get_session)) -> MemoryService:
     return MemoryService(session)
+
+
+def get_task_service(session: Session = Depends(get_session)) -> TaskService:
+    return TaskService(session)
 
 
 def get_briefing_service(

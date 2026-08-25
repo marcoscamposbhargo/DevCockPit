@@ -89,6 +89,40 @@ class MemoryList(BaseModel):
     items: list[MemoryOut] = Field(default_factory=list)
 
 
+class TaskOut(BaseModel):
+    id: int
+    project_id: str
+    title: str
+    detail: str | None = None
+    status: str
+    priority: int
+    source: str
+    session_id: str | None = None
+    created_at: datetime
+    done_at: datetime | None = None
+    is_open: bool
+
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    detail: str | None = Field(default=None, max_length=4000)
+    #: 1 alta, 2 média, 3 baixa.
+    priority: int = Field(default=2, ge=1, le=3)
+    session_id: str | None = None
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    detail: str | None = Field(default=None, max_length=4000)
+    status: str | None = Field(default=None, max_length=10)
+    priority: int | None = Field(default=None, ge=1, le=3)
+
+
+class TaskList(BaseModel):
+    items: list[TaskOut] = Field(default_factory=list)
+    open_count: int = 0
+
+
 class DayItemOut(BaseModel):
     project_id: str
     name: str
@@ -101,6 +135,11 @@ class DayItemOut(BaseModel):
     open_session: bool = False
     dirty_count: int | None = None
     services_online: int = 0
+    #: A próxima tarefa aberta deste projeto, quando existir. É o que faz a
+    #: tela do dia falar de trabalho concreto, e não só do que a última sessão
+    #: deixou escrito.
+    next_task: TaskOut | None = None
+    open_tasks: int = 0
 
 
 class BriefingOut(BaseModel):

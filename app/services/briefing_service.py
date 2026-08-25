@@ -21,6 +21,7 @@ from app.models.base import utcnow
 from app.models.project import Project, ProjectStatus
 from app.repositories.ai_repository import SessionRepository
 from app.repositories.project_repository import ProjectRepository
+from app.services.task_service import TaskService
 
 #: Depois disto, um projeto que já teve sessão é "parado" — não é abandono,
 #: é só o que vale lembrar de retomar.
@@ -39,6 +40,10 @@ class ItemDoDia:
     #: explicar em vez de só ordenar.
     reason: str
     next_step: str | None = None
+    #: A próxima tarefa aberta. Diferente de `next_step`, que é uma linha solta
+    #: da última sessão, esta sobrevive a sessões e some quando alguém a fecha.
+    next_task: object | None = None
+    open_tasks: int = 0
     last_session_at: datetime | None = None
     last_summary: str | None = None
     open_session: bool = False
@@ -64,6 +69,7 @@ class BriefingService:
         #: buscado no disco por aqui: é caminho de requisição (NFR-010).
         self.cache = cache
         self.health = health
+        self.tasks = TaskService(session)
 
     def build(self) -> Briefing:
         projetos, total = self.projects.list(limit=200)
@@ -71,11 +77,16 @@ class BriefingService:
         abertas = {s.project_id: s for s in self.sessions.open_sessions()}
         agora = utcnow()
 
-        itens: list[ItemDoDia] = []
-        for project in projetos:
-            if project.status == ProjectStatus.MISSING.value:
-                continue
-            itens.append(self._avaliar(project, ultimas, abertas, agora))
+        elegiveis = [p for p in projetos if p.status != ProjectStatus.MISSING.value]
+        ids = [p.id for p in elegiveis]
+        # Duas consultas para todos os projetos, em vez de duas por projeto.
+        proximas = self.tasks.next_for(ids)
+        contagens = self.tasks.counts_for(ids)
+
+        itens = [
+            self._avaliar(project, ultimas, abertas, agora, proximas, contagens)
+            for project in elegiveis
+        ]
 
         itens.sort(key=lambda item: (-item.score, item.name))
         escolhidos = itens[:LIMITE]
@@ -88,7 +99,9 @@ class BriefingService:
             suggestion=escolhidos[0].name if escolhidos else None,
         )
 
-    def _avaliar(self, project: Project, ultimas, abertas, agora) -> ItemDoDia:  # type: ignore[no-untyped-def]
+    def _avaliar(  # type: ignore[no-untyped-def]
+        self, project: Project, ultimas, abertas, agora, proximas=None, contagens=None
+    ) -> ItemDoDia:
         sessao = ultimas.get(project.id)
         aberta = abertas.get(project.id)
         item = ItemDoDia(
@@ -99,6 +112,8 @@ class BriefingService:
             last_session_at=aberta.started_at if aberta else (sessao.ended_at if sessao else None),
             last_summary=sessao.summary if sessao else None,
             next_step=(sessao.next_steps if sessao else None),
+            next_task=(proximas or {}).get(project.id),
+            open_tasks=(contagens or {}).get(project.id, 0),
         )
 
         estado = self.cache.get(f"git.status:{project.id}") if self.cache else None
@@ -118,6 +133,18 @@ class BriefingService:
             pontos += 100
             quando = aberta.started_at.astimezone().strftime("%d/%m %H:%M")
             motivos.append(f"sessão aberta desde {quando}")
+        # Tarefa aberta pesa mais que próximo passo escrito: ela sobrevive a
+        # sessões e alguém precisa fechá-la; o próximo passo é uma nota que a
+        # sessão seguinte substitui.
+        if item.next_task is not None:
+            pontos += 60
+            # O texto precisa separar as duas contagens: dizer "4 tarefas em
+            # curso" quando uma está em curso e quatro estão abertas é o tipo
+            # de imprecisão que faz a pessoa parar de acreditar na tela.
+            if item.next_task.status == "DOING":
+                motivos.append(f"1 em curso de {item.open_tasks} aberta(s)")
+            else:
+                motivos.append(f"{item.open_tasks} tarefa(s) aberta(s)")
         if item.next_step:
             pontos += 50
             motivos.append("próximo passo já definido")

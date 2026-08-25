@@ -2384,3 +2384,29 @@
   margin-top: auto;
   padding-top: var(--sp-2);
 }
+
+/* --- tarefas --- */
+
+/* Tarefa fechada continua visível, mas recuada: some do caminho sem sumir da
+   lista. Apagar de vez perderia a informação de que aquilo foi feito. */
+.task--done {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+
+.table tr[data-done='true'] {
+  opacity: 0.65;
+}
+
+/* O próximo passo da última sessão é nota, não compromisso: fica mais discreto
+   que a tarefa logo acima dele. */
+.day-card__step {
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border);
+}
+
+.day-card__step p {
+  margin: 2px 0 0;
+  color: var(--fg-secondary);
+  font-size: var(--fs-sm);
+}

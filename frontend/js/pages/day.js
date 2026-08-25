@@ -40,9 +40,24 @@ function cartao(item, posicao) {
     // O motivo vem antes do conteúdo: é o que justifica a posição.
     el('p', { class: 'day-card__reason', text: item.reason }),
 
-    item.next_step
+    // A tarefa vem antes do próximo passo: ela sobrevive a sessões e alguém
+    // precisa fechá-la; o próximo passo é uma nota que a sessão seguinte
+    // substitui.
+    item.next_task
       ? el('div', { class: 'day-card__next' }, [
-          el('span', { class: 'field__label', text: 'Próximo passo' }),
+          el('span', { class: 'field__label' }, [
+            item.next_task.status === 'DOING' ? 'Em curso' : 'Próxima tarefa',
+            item.open_tasks > 1
+              ? el('span', { class: 'field__hint', text: ` · ${item.open_tasks} abertas` })
+              : null,
+          ]),
+          el('p', { text: item.next_task.title }),
+        ])
+      : null,
+
+    item.next_step
+      ? el('div', { class: 'day-card__step' }, [
+          el('span', { class: 'field__label', text: 'Próximo passo da última sessão' }),
           el('p', { text: item.next_step }),
         ])
       : null,
@@ -94,8 +109,8 @@ export async function renderDay(container) {
       emptyState({
         title: 'Nada para retomar ainda',
         text:
-          'Esta tela se alimenta das sessões que você encerrar. Abra um projeto, ' +
-          'inicie uma sessão e, ao terminar, registre o que ficou para depois.',
+          'Esta tela se alimenta do que você registra: tarefas abertas e sessões ' +
+          'encerradas. Abra um projeto, anote o que falta e inicie uma sessão.',
         actions: [el('a', { class: 'btn btn--primary', href: '#/projects', text: 'Ver projetos' })],
       })
     );
@@ -125,8 +140,8 @@ export async function renderDay(container) {
     el('p', {
       class: 'field__hint',
       text:
-        'A ordem sai de sessão aberta, próximo passo declarado, alteração sem ' +
-        'commit e serviço no ar — tudo medido pelo painel, sem IA.',
+        'A ordem sai de sessão aberta, tarefa em curso, próximo passo declarado, ' +
+        'alteração sem commit e serviço no ar — tudo medido pelo painel, sem IA.',
     })
   );
 }

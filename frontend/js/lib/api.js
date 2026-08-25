@@ -104,6 +104,14 @@ export const api = {
     request('GET', `/projects/${encodeURIComponent(id)}/memory`, { params: { kind } }),
   createProjectMemory: (id, body) =>
     request('POST', `/projects/${encodeURIComponent(id)}/memory`, { body }),
+  tasks: (id, includeDone = true) =>
+    request('GET', `/projects/${encodeURIComponent(id)}/tasks`, {
+      params: { include_done: includeDone },
+    }),
+  createTask: (id, body) => request('POST', `/projects/${encodeURIComponent(id)}/tasks`, { body }),
+  updateTask: (taskId, body) => request('PATCH', `/ai/tasks/${taskId}`, { body }),
+  deleteTask: (taskId) => request('DELETE', `/ai/tasks/${taskId}`),
+
   globalMemory: (kind) => request('GET', '/ai/memory', { params: { kind } }),
   createGlobalMemory: (body) => request('POST', '/ai/memory', { body }),
   confirmMemory: (memoryId) => request('POST', `/ai/memory/${memoryId}/confirm`),

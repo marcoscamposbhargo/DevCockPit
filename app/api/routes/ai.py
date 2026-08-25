@@ -16,8 +16,10 @@ from app.api.deps import (
     get_memory_service,
     get_project_service,
     get_session_service,
+    get_task_service,
 )
 from app.models.ai import AiMemory, AiSession
+from app.models.task import AiTask
 from app.schemas.ai import (
     BriefingOut,
     DayItemOut,
@@ -30,11 +32,16 @@ from app.schemas.ai import (
     SessionList,
     SessionOut,
     SessionStart,
+    TaskCreate,
+    TaskList,
+    TaskOut,
+    TaskUpdate,
 )
 from app.services.briefing_service import BriefingService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
 from app.services.session_service import SessionService
+from app.services.task_service import TaskService
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["ai"])
 #: Fora do projeto: o briefing olha todos, e a memória global não pertence a
@@ -202,6 +209,83 @@ def delete_memory(
     memory.delete(memory_id)
 
 
+# --- tarefas --------------------------------------------------------------
+
+
+def _tarefa_out(registro: AiTask) -> TaskOut:
+    return TaskOut(
+        id=registro.id,
+        project_id=registro.project_id,
+        title=registro.title,
+        detail=registro.detail,
+        status=registro.status,
+        priority=registro.priority,
+        source=registro.source,
+        session_id=registro.session_id,
+        created_at=registro.created_at,
+        done_at=registro.done_at,
+        is_open=registro.is_open,
+    )
+
+
+@router.get("/tasks", response_model=TaskList)
+def list_tasks(
+    project_id: str,
+    projects: ProjectService = Depends(get_project_service),
+    tasks: TaskService = Depends(get_task_service),
+    include_done: bool = Query(default=True),
+) -> TaskList:
+    project = projects.get(project_id)
+    itens = tasks.list(project.id, include_done=include_done)
+    return TaskList(
+        items=[_tarefa_out(t) for t in itens],
+        open_count=sum(1 for t in itens if t.is_open),
+    )
+
+
+@router.post("/tasks", response_model=TaskOut, status_code=201)
+def create_task(
+    project_id: str,
+    payload: TaskCreate,
+    projects: ProjectService = Depends(get_project_service),
+    tasks: TaskService = Depends(get_task_service),
+) -> TaskOut:
+    project = projects.get(project_id)
+    return _tarefa_out(
+        tasks.create(
+            project.id,
+            title=payload.title,
+            detail=payload.detail,
+            priority=payload.priority,
+            session_id=payload.session_id,
+        )
+    )
+
+
+@global_router.patch("/tasks/{task_id}", response_model=TaskOut)
+def update_task(
+    task_id: int,
+    payload: TaskUpdate,
+    tasks: TaskService = Depends(get_task_service),
+) -> TaskOut:
+    return _tarefa_out(
+        tasks.update(
+            task_id,
+            title=payload.title,
+            detail=payload.detail,
+            status=payload.status,
+            priority=payload.priority,
+        )
+    )
+
+
+@global_router.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int, tasks: TaskService = Depends(get_task_service)) -> None:
+    """Apagar é para engano. Desistência tem estado próprio (`DROPPED`), que
+    preserva a informação de que a ideia foi considerada e descartada."""
+    tasks.delete(task_id)
+
+
 # --- o dia ----------------------------------------------------------------
 
 
@@ -216,7 +300,14 @@ def start_my_day(briefing: BriefingService = Depends(get_briefing_service)) -> B
         # `score` fica de fora: é como a tela decide a ordem, não informação
         # para quem lê. Número de ranking exposto vira discussão sobre o número.
         items=[
-            DayItemOut(**{k: v for k, v in asdict(item).items() if k != "score"})
+            DayItemOut(
+                **{
+                    k: v
+                    for k, v in asdict(item).items()
+                    if k not in ("score", "next_task")
+                },
+                next_task=_tarefa_out(item.next_task) if item.next_task else None,
+            )
             for item in dados.items
         ],
         suggestion=dados.suggestion,

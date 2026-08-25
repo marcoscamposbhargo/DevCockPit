@@ -15,6 +15,12 @@ Um lugar só para saber o que você tem, o que está no ar, o que tem alteraçã
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
 [![Plataforma](https://img.shields.io/badge/Windows-11-0078D4?logo=windows&logoColor=white)](#plataforma)
 
+<br>
+
+<img src="docs/screenshots/dashboard.png" alt="Dashboard do DevCockpit" width="100%">
+
+<sub>O dashboard: totais do ambiente, mapa de portas com prova de dono, e o que dá para retomar agora.</sub>
+
 </div>
 
 ---
@@ -58,6 +64,31 @@ O DevCockpit executa comandos na sua máquina. Isso é o produto — e é o risc
 4. **`Host` e `Origin` validados** — é o que fecha DNS rebinding, o ataque que derrota a checagem ingênua de origem.
 
 O modelo completo, com ameaças, defesas e testes obrigatórios, está em [`docs/07-security-model.md`](docs/07-security-model.md).
+
+## As telas
+
+<table>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/projects.png" alt="Lista de projetos">
+<sub><b>Projects</b> — cada card mostra serviços no ar, Docker, stack detectada e as ações de abrir; filtros por fixado, online, Docker e alteração pendente.</sub>
+</td>
+<td width="50%">
+<img src="docs/screenshots/ports.png" alt="Mapa de portas">
+<sub><b>Ports</b> — quem declara o quê, o que está mesmo escutando, e o aviso que mais poupa tempo: <i>"o projeto responde, só que em outra porta"</i>, com o conserto a um clique.</sub>
+</td>
+</tr>
+<tr>
+<td>
+<img src="docs/screenshots/projeto.png" alt="Detalhe do projeto">
+<sub><b>Projeto</b> — Overview, Server, Git, Docker, Services e Manifest. As ações abrem VS Code, pasta, terminal e cada serviço no endereço certo.</sub>
+</td>
+<td>
+<img src="docs/screenshots/analise.png" alt="Análise e máquina">
+<sub><b>Análise</b> — atividade por dia e por hora, stack dos projetos e o estado da máquina. Gráficos em SVG à mão, sem biblioteca.</sub>
+</td>
+</tr>
+</table>
 
 ## Instalação
 

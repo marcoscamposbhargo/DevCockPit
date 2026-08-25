@@ -1710,3 +1710,584 @@ correção.
 - [ ] a branch `varredura/bugs-e-organizacao` está com 30 commits fora da `main`
 - [ ] clicar em VS Code e confirmar que a janela vem para frente (desde 21/08)
 - [ ] conferir a aba Docker com o Docker Desktop desligado (desde 21/08)
+
+---
+
+## 2026-08-23 — Sessão 9: prioridades revisadas e o painel ganha memória
+
+Duas coisas nesta sessão: reordenar o que estava pendente e atender ao pedido de
+gráficos de análise no dashboard. As duas se encontraram num ponto só — a tabela
+morta que o backlog mandava "implementar ou apagar" era exatamente a fonte de
+dado que o gráfico pedido precisava.
+
+### As prioridades
+
+A ordem passou a ser por dano, não por esforço, e está no topo do
+`PROJECT_STATUS.md`: gráficos (P0), retenção (P1), higiene de repositório (P2),
+as duas verificações manuais pendentes desde 21/08 (P3), teste de frontend e
+`git_service` (P4), o serviço `db` do SmartDash (P5).
+
+### `health_snapshot` deixa de ser schema sem escrita
+
+A tabela existia desde a Fase 4. O poller media a cada 30 s e **jogava fora**. O
+painel respondia "agora" e nunca "e antes?".
+
+A política de escrita não é gravar tudo nem gravar só mudança:
+
+* mudança de estado grava sempre — o minuto da queda vale mais que as duas horas
+  de pé que vieram antes;
+* sem mudança, grava a cada cinco minutos. Sem isso, uma semana estável teria um
+  ponto só, e o gráfico não distinguiria "de pé o tempo todo" de "ninguém olhou".
+
+Gravar todo ciclo seriam 2.880 linhas por serviço por dia para repetir a mesma
+informação 2.879 vezes.
+
+### Disponibilidade ponderada por tempo, e cobertura declarada junto
+
+Histórico de health é **amostragem**, não registro de fato. Contar amostras
+online sobre o total daria a três amostras o mesmo peso de um dia inteiro
+medido. O uptime é ponderado pelo tempo que cada amostra cobre, com teto de dez
+minutos por amostra: o que passa disso vira buraco de cobertura, não
+disponibilidade.
+
+Por isso `coverage_pct` viaja junto do número, e a tela deixa de colorir a barra
+quando a cobertura é menor que 5% do período — 0% em vermelho a partir de dez
+minutos medidos numa janela de duas semanas acusaria uma queda que ninguém
+observou. É a regra da sessão 8 aplicada a um dado novo: prova afirma, amostra
+rala sugere, ausência se cala.
+
+### O defeito que só apareceu com dado real
+
+Rodando contra a máquina, as primeiras amostras gravadas traziam
+`latency_ms: 2657` em serviços `OFFLINE`. Não era latência do serviço: era o
+tempo até o verificador desistir. Entrando na série, a latência "pioraria"
+justamente quando o serviço caísse — o gráfico mediria a paciência do
+verificador. Agora só amostra `ONLINE` alimenta latência e percentil.
+
+### Retenção, enfim
+
+`activity_retention_days` estava configurado desde a Fase 0 e nunca era lido: o
+log de auditoria crescia sem limite num banco que mora na máquina do usuário.
+Com o histórico de health passando a escrever, seriam duas tabelas assim. A poda
+roda dentro do poller, de hora em hora, com retenção separada por tabela.
+
+`timeout_scan` era a terceira configuração decorativa. Virou teto do job de
+varredura: `submit_callable` aceita `timeout_s`, e o job que estoura termina
+como `TIMEOUT` liberando a chave — antes ficaria `RUNNING` para sempre,
+recusando toda varredura seguinte com 409 até o servidor reiniciar.
+
+### Os gráficos
+
+Cinco painéis no fim do dashboard, carregando por conta própria depois da tela
+(o orçamento de 500 ms é do dashboard, não do histórico):
+
+* **Atividade** — colunas empilhadas por dia, divididas por desfecho, com dias
+  vazios presentes: omitir dia parado emendaria uma sexta-feira silenciosa na
+  segunda seguinte;
+* **Disponibilidade** — uptime por serviço, latência ao longo do tempo com os
+  buracos preservados, p95;
+* **Ações mais executadas** — volume, taxa de erro e p50/p95 de duração. A taxa
+  vem ao lado do volume que a sustenta: 100% de erro em uma execução é anedota;
+* **Horário de trabalho** — 24 células, uma por hora;
+* **Stack dos projetos** — tecnologias por número de projetos.
+
+Sem biblioteca de gráfico, como o resto do painel: SVG e HTML à mão, cores do
+tema. `charts.js` ganhou `stackedColumns`, `lineSeries` (escala própria e
+`null` que interrompe a linha) e `hourStrip`.
+
+### Verificação
+
+475 testes passando (19 novos), cobertura 89%, `ruff check` limpo. Os gráficos
+foram renderizados fora do browser contra a API real, com um DOM mínimo, para
+provar que os cinco painéis montam com dado de verdade — não substitui olhar a
+tela, mas pega erro de execução antes de você abrir.
+
+### Continua com você
+
+- [ ] **Ctrl+F5** e olhar os gráficos: a aba aberta tem o JS antigo
+- [ ] zero teste de frontend continua sendo o maior buraco, e acabou de crescer
+      cinco painéis
+- [ ] `git_service` a 47%, o menor do projeto
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] as três edições no SmartDash não commitadas
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`
+- [ ] clicar em VS Code e confirmar que a janela vem para frente (desde 21/08)
+- [ ] conferir a aba Docker com o Docker Desktop desligado (desde 21/08)
+
+---
+
+## 2026-08-23 — Sessão 10: o DevCockpit vira programa
+
+Pedido: "vamos fazer um executável". Três escolhas definiram o resto — pasta
+com `.exe` (não arquivo único), dados ao lado do executável (não em
+`%LOCALAPPDATA%`), console visível abrindo o navegador.
+
+### O que o executável precisa fazer que o repositório não precisava
+
+`uvicorn app.main:app` pressupõe repositório clonado, ambiente virtual, `.env`
+copiado, `alembic upgrade head` rodado à mão e `configs/roots.yml` editado. Um
+programa aberto com dois cliques não tem nada disso. `app/launcher.py` faz cada
+um desses passos, nesta ordem: descobre a pasta de dados, semeia a
+configuração, migra, escolhe a porta, sobe e abre o navegador.
+
+Dois pontos mereceram cuidado:
+
+* **os recursos e os dados moram em lugares diferentes.** Congelado, o código
+  roda de um diretório temporário (`sys._MEIPASS`) que some ao fechar; frontend
+  e migrações vivem lá, e banco, log e configuração precisam viver ao lado do
+  `.exe`. `PROJECT_ROOT` passou a apontar para os recursos, e o launcher
+  entrega os caminhos de dados por variável de ambiente, absolutos, com
+  `setdefault` — quem já configurou continua mandando;
+* **`roots.yml` não pode ser cópia.** O arquivo do repositório aponta para o
+  Desktop de quem desenvolveu. Ele é escrito a partir do perfil de quem está
+  executando, e só com as pastas que existem: allowlist para diretório
+  inexistente produz erro de varredura em vez de lista vazia honesta.
+
+### O defeito que o teste pegou, e que ninguém veria na primeira tela
+
+A porta 8765 pode estar ocupada, então o launcher pega a próxima livre. Só que
+a porta não é apenas onde o servidor escuta: ela entra na lista de origens
+aceitas em requisição que altera estado (defesa D5). Subindo em 8801 com as
+`Settings` ainda dizendo 8765, a tela carregava perfeitamente e **todo botão
+devolvia 403** — o pior jeito de quebrar, porque parece que funciona.
+
+Achado com um POST contra o executável recém-gerado, não lendo código. A
+correção é uma linha (`DEVCOCKPIT_PORT` antes de qualquer leitura de settings)
+e tem teste que falha sem ela.
+
+### Detalhes que só aparecem rodando
+
+* console do Windows herda codepage 850/1252, e "migrações" saía com
+  caracteres trocados. `SetConsoleOutputCP(65001)` mais reconfiguração dos
+  fluxos;
+* falha na subida fecharia a janela antes de a mensagem ser lida — em erro, e
+  só quando há alguém do outro lado, o launcher espera um Enter;
+* o build apaga `data/`, `logs/` e `configs/` de dentro de `dist` antes de
+  empacotar: um banco esquecido ali viajaria com os projetos da minha máquina
+  para quem recebesse a pasta.
+
+### Medições
+
+Pacote de 39,7 MB. Primeira abertura em pasta nova: 3,4 s (inclui migração e a
+varredura do antivírus nos arquivos novos). Aberturas seguintes: 1,4 s. Testado
+copiando a pasta para fora do repositório e subindo de lá — cadastro de projeto
+funcionando, detecção de stack correta, `/api/analytics` respondendo.
+
+483 testes passando (8 novos), `ruff check` limpo.
+
+### Continua com você
+
+- [ ] abrir `dist/DevCockpit/DevCockpit.exe` com dois cliques e conferir o
+      caminho completo: navegador abre sozinho, painel carrega, um botão que
+      escreve (fixar projeto, por exemplo) funciona
+- [ ] decidir se `dist/` fica fora do Git (está, hoje) ou se as versões viram
+      release versionada
+- [ ] zero teste de frontend continua sendo o maior buraco
+- [ ] `git_service` a 47%
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`
+- [ ] clicar em VS Code e confirmar que a janela vem para frente (desde 21/08)
+- [ ] conferir a aba Docker com o Docker Desktop desligado (desde 21/08)
+
+---
+
+## 2026-08-23 — Sessão 10, continuação: três ajustes depois de usar
+
+Nada aqui foi planejado; os três vieram de olhar a tela com o que tinha acabado
+de ser construído.
+
+### "Falha na requisição (404)" no painel de análise
+
+O arquivo novo estava no disco e a rota existia. O servidor no ar tinha subido
+às 23:20 — antes de `/api/analytics` ser escrita — e seguia com o código antigo
+em memória. Reiniciar resolveu.
+
+O que ficou do episódio não é a correção, é a mensagem. `Falha na requisição
+(404)` mandava procurar no lugar errado: sugere dado ausente, quando o problema
+é processo desatualizado. Recarregar a página não resolve, e é a primeira coisa
+que qualquer um tenta. O painel agora distingue o 404 e diz o que fazer —
+reiniciar o servidor, não recarregar a aba.
+
+Vale como padrão: **erro de rota inexistente num painel novo quase sempre é
+servidor velho.** É o modo de falhar mais provável de qualquer feature nova
+neste projeto, porque o servidor é de vida longa por decisão (`serve.ps1`).
+
+### Dois painéis saíram do dashboard
+
+A pedido: "Disponibilidade" e "Ações mais executadas". Ficaram três — Atividade,
+Horário de trabalho e Stack dos projetos.
+
+Junto foram as funções que só existiam para eles (`disponibilidade`, `acoes`,
+o helper `duracao`), o gráfico `lineSeries` de `charts.js` e o CSS `.serie`.
+Sobrariam como código morto, e este projeto já tem um item de backlog inteiro
+sobre o custo de manter o que ninguém usa.
+
+O que **não** saiu, de propósito: o backend continua calculando `uptime` e
+`actions`, e o poller continua gravando `health_snapshot`. Parar a gravação
+devolveria a tabela ao estado que a sessão anterior corrigiu — schema sem
+escrita — e sem histórico acumulado o painel não teria como voltar.
+
+### O executável estava velho
+
+Empacotado antes da remoção dos painéis. Reempacotado e conferido a partir de
+uma cópia fora do repositório: `/api/health`, a página e `/api/analytics`
+respondendo 200, e o JS servido pelo `.exe` sem vestígio dos painéis retirados.
+
+A lição é operacional e vale anotar: **o executável não se atualiza sozinho.**
+Toda alteração de código exige `scripts/build_exe.ps1` de novo, senão a pasta
+`dist` mostra uma versão do painel que não existe mais no repositório.
+
+### Continua com você
+
+- [ ] Ctrl+F5 na aba aberta e conferir os três painéis que sobraram
+- [ ] abrir `dist/DevCockpit/DevCockpit.exe` com dois cliques: navegador abre
+      sozinho, painel carrega, um botão que escreve funciona
+- [ ] decidir se `dist/` fica fora do Git (está) ou vira release versionada
+- [ ] zero teste de frontend continua sendo o maior buraco
+- [ ] `git_service` a 47%
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`
+- [ ] clicar em VS Code e confirmar que a janela vem para frente (desde 21/08)
+- [ ] conferir a aba Docker com o Docker Desktop desligado (desde 21/08)
+
+---
+
+## 2026-08-23 (manhã) — Sessão 11: a porta que o Docker levou
+
+O painel não subia. O log dizia tudo, e nada:
+
+```
+ERROR: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8765)
+```
+
+Quem estava escutando na 8765 era o `com.docker.backend.exe`. Ele tomou a porta
+durante a noite, com o DevCockpit parado — nenhuma configuração mudou de lado
+nenhum. Foi o mesmo padrão de sempre neste projeto: a máquina é compartilhada, e
+o que estava livre ontem pode não estar hoje.
+
+### O defeito que apareceu enquanto eu contornava
+
+Subi em 8766 para destravar. A tela carregou, e o primeiro POST devolveu **403
+`Origin não autorizado`**.
+
+`serve.ps1 -Port` passava a porta ao uvicorn e não às `Settings`. A porta não é
+só onde o servidor escuta: ela compõe a lista de origens aceitas em requisição
+que altera estado (defesa D5). Subir em 8766 com as `Settings` dizendo 8765
+carrega a tela inteira e recusa todo botão.
+
+É **exatamente** o mesmo defeito que o executável teve ontem, corrigido ontem,
+no arquivo ao lado. Eu consertei o launcher e não olhei para os dois scripts que
+faziam a mesma coisa. Anotado como padrão: quando a correção for "propagar a
+porta escolhida", procurar todos os pontos que escolhem porta — hoje são três.
+
+### Ceder em vez de disputar
+
+Decisão sua: fallback automático nos dois scripts. `serve.ps1` e `dev.ps1`
+procuram a primeira porta livre a partir da 8765, exportam `DEVCOCKPIT_PORT` e
+imprimem qual usaram.
+
+Um efeito colateral precisou de conserto junto: `Get-ServerProcesses` casava por
+`--port 8765` na linha de comando. Com fallback, o servidor podendo estar em
+8766 faria `-Status` responder PARADO e `-Stop` não parar nada — com o painel de
+pé o tempo todo. A busca passou a ignorar a porta, e a porta real é lida da
+linha de comando do processo encontrado.
+
+Verificado: `-Status` achou o servidor em 8766 sem receber a porta, `-Stop`
+parou, a subida sem argumento caiu sozinha na 8766 avisando, e o POST que antes
+dava 403 devolveu 409 `PROJECT_ALREADY_EXISTS` — passou pelo guard.
+
+### Continua com você
+
+- [ ] o painel de hoje está em **http://127.0.0.1:8766** (8765 é do Docker)
+- [ ] Ctrl+F5 e conferir os três painéis de análise
+- [ ] abrir `dist/DevCockpit/DevCockpit.exe` com dois cliques
+- [ ] decidir se a porta padrão muda de vez (hoje: 8765 com fallback)
+- [ ] zero teste de frontend continua sendo o maior buraco
+- [ ] `git_service` a 47%
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`
+- [ ] clicar em VS Code e confirmar que a janela vem para frente (desde 21/08)
+- [ ] conferir a aba Docker com o Docker Desktop desligado (desde 21/08)
+
+---
+
+## 2026-08-23 (manhã, parte 2) — Sessão 12: o painel vira aplicativo
+
+Três pedidos numa linha: atalho no Desktop, porta estável e "uma janela
+flutuante, como um sistema interno mesmo". O terceiro mudou o que o executável é.
+
+### Antes de tudo: tirar o programa de dentro de `dist`
+
+Você estava rodando o executável de `dist/DevCockpit`, e o banco com os 36
+projetos varridos vivia lá dentro. `build_exe.ps1 -Clean` apaga essa pasta.
+Um rebuild teria levado o cadastro inteiro junto, sem aviso.
+
+O programa foi para `%USERPROFILE%\DevCockpit`, e o script ganhou `-Install`:
+substitui só o `.exe` e o `_internal/`, nunca `data/`, `logs/` e `configs/`.
+Atualizar não pode custar o que o usuário cadastrou.
+
+### Dois painéis, dois bancos
+
+A tela de Ports que você mandou não era do servidor de desenvolvimento: era do
+executável, com 36 projetos. O do repositório tinha 3. Consequência direta de
+"dados ao lado do executável" — desenho correto, efeito confuso quando os dois
+rodam ao mesmo tempo. Ficou um só de pé: o instalado, na 8790.
+
+### Janela nativa
+
+WebView2 via `pywebview`. Sem barra de endereço, sem abas, ícone próprio na
+barra de tarefas, título "DevCockpit". Fechar a janela encerra o servidor — um
+programa que continua rodando invisível depois de fechado é a receita da segunda
+instância brigando pela porta, que é exatamente o problema que passamos a manhã
+resolvendo.
+
+O servidor mudou de thread: o laço de mensagens do Windows exige a thread
+principal para a janela, então o uvicorn foi para uma secundária, com
+`install_signal_handlers` desligado (`signal.signal` só funciona na principal).
+
+### O preço do console, cobrado na hora
+
+Empacotei com `console=False` e o app subiu... sem servidor. Janela abrindo
+contra o nada, e **nenhuma mensagem em lugar nenhum**.
+
+Causa: sem console, `sys.stdout` é `None`, e a configuração de log padrão do
+uvicorn monta um `StreamHandler` sobre `ext://sys.stdout`. Ela levanta antes de
+a porta abrir, a thread morre, e a exceção não tinha para onde ir.
+
+Três correções, e as três são sobre o mesmo tema — não trocar visibilidade por
+aparência:
+
+* `log_config=None` quando não há `stdout` (o log da aplicação já vai para
+  arquivo, ao lado do executável);
+* a thread do servidor guarda a exceção que a matou, em vez de morrer calada;
+* `_falhar()` mostra caixa de diálogo do Windows quando não há console, e
+  `_dizer()` não escreve em `stdout` inexistente — um `print` solto derrubaria a
+  subida por causa da mensagem, não do trabalho.
+
+Eu tinha escrito, ontem, que o console visível era proposital porque "é onde
+aparece o motivo quando o servidor não sobe". Trocar isso por uma janela exigia
+repor a visibilidade por outro caminho. Custou uma reconstrução para lembrar.
+
+### Ícone
+
+Gerado por código (`scripts/make_icon.py`, Pillow) e não versionado como binário
+opaco: arco de gauge nas cores dos tokens do tema, com o ponto verde de "no ar".
+Trocar a identidade é trocar duas constantes e rodar de novo.
+
+### Verificado
+
+Atalho no Desktop apontando para `%USERPROFILE%\DevCockpit\DevCockpit.exe
+--port 8790`, ícone próprio. Aberto pelo atalho: `health` 200, janela com título
+"DevCockpit", 19 processos do WebView2. Fechando a janela: processo encerrado e
+porta liberada. 483 testes passando, `ruff` limpo.
+
+### Continua com você
+
+- [ ] abrir pelo atalho e dizer se a janela está no tamanho certo (1360x880)
+- [ ] o cadastro do próprio DevCockpit agora aponta para a 8790
+- [ ] os 5 "conflitos" de porta da tela Ports são portas padrão declaradas por
+      vários projetos; só doem entre projetos que sobem juntos. Decidir se vale
+      renumerar (mexe no arquivo de cada projeto, não só no cadastro)
+- [ ] zero teste de frontend continua sendo o maior buraco
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`
+
+---
+
+## 2026-08-23 (tarde) — Sessão 13: a tela que fugia e as portas sem lastro
+
+### A tela pulando para Ports
+
+Relato: "a página atualiza e vai direto pro módulo de Ports". Bug meu, e do tipo
+que a arquitetura convidava.
+
+O `<main id="view">` é o **mesmo elemento** em todas as rotas — só o conteúdo
+dele é trocado. A tela Ports protegia seu timer de recarga com
+`container.isConnected`, que por isso nunca é falso. O timer sobrevivia à
+navegação e, a cada seis segundos, redesenhava Ports por cima da tela aberta.
+A assinatura estava no log do painel: 146 chamadas a `/api/services/ports`.
+
+Corrigido no roteador, não na página: `aoSairDaRota()` registra o que precisa
+parar, e o roteador limpa antes de renderizar a próxima rota. A página que sabia
+o que criar não tinha como saber que a rota mudou; quem sabe é quem troca.
+
+Vale como regra para esta base: **`isConnected` não é sinal de tela ativa quando
+o container é reaproveitado.** Qualquer timer, observador ou relógio de página
+passa pelo roteador.
+
+### "Dificuldade de abrir o ambiente"
+
+O ambiente estava inteiro no ar. O painel é que olhava para as portas erradas.
+
+No PLATAFORMA DE INGRESSOS: `db` cadastrado em 3010 e `web` em 3019, enquanto o
+projeto declara 5434 e 8000 no `docker-compose.yml` e no `.env`. O painel subiu
+o Django certo em 3002, e ainda assim mostrava o projeto meio desligado — com o
+"Abrir" do web levando a uma porta onde nunca houve nada.
+
+A varredura geral achou o mesmo padrão em mais cinco serviços, todos na faixa
+3007–3018 — a assinatura do "Sugerir livre" antigo, corrigido na sessão 6, cujos
+números errados continuaram gravados:
+
+```
+kiteasy            app        3018 -> 3000
+ZapCRM             zap-crm    3015 -> 5000
+MonitorHub System  postgres   3013 -> 5433
+ZAPBOT             db         3012 -> 5433
+Dashboard-contabil dashboard  3007 -> 8000
+```
+
+Mais um serviço duplicado: `kiteasy` tinha `app` e `frontend` na mesma 3000, e o
+painel contava isso como conflito de porta — tecnicamente certo, praticamente
+ruído, porque era o mesmo projeto consigo mesmo.
+
+Depois da correção: zero divergência entre cadastro e arquivo, zero divergência
+entre cadastro e o que está escutando, e três conflitos que são reais e
+esperados (5000, 5433 e 8000 declarados por dois projetos cada — só doem se os
+dois subirem juntos).
+
+### A lição
+
+Um defeito corrigido no código não desfaz o que ele gravou. O "Sugerir livre"
+parou de errar em 21/08; os números que ele errou ficaram no banco por dois
+dias, e apareceram como "não consigo abrir o ambiente". **Correção de bug de
+escrita pede varredura do que já foi escrito.**
+
+### Continua com você
+
+- [ ] abrir o painel e confirmar que a tela não pula mais para Ports
+- [ ] os três conflitos restantes (5000, 5433, 8000) são reais: decidir se
+      renumera algum, lembrando que isso mexe no arquivo do projeto
+- [ ] zero teste de frontend — este bug seria pego por um teste de rota
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`
+
+---
+
+## 2026-08-23 (tarde, parte 2) — Sessão 14: "quem está nessa porta?"
+
+Relato: "subiu 3 projetos ativos sem eu pedir" e "não quer desligar".
+
+Primeiro o que **não** aconteceu: nada subiu. Os processos vivos eram o Django
+que você mesmo ligou às 11:43 e os containers da PLATAFORMA, de pé desde as
+08:03. O que mudou foi o painel passar a **enxergar** — e a enxergar errado.
+
+Foi a minha varredura de portas que expôs isso. Ao alinhar os cadastros aos
+arquivos dos projetos, três serviços passaram a declarar portas que outra coisa
+já ocupava: 8000 (container da PLATAFORMA) e 5433 (Postgres nativo). A
+verificação de saúde abre um socket e pergunta "tem alguém aí?" — nunca soube
+perguntar "quem?". Resultado: MonitorHub, ZAPBOT e Dashboard-contabil apareceram
+rodando sem nunca terem subido.
+
+Troquei um sinal errado por outro. O primeiro dizia "desligado" com o projeto de
+pé; o segundo dizia "ligado" com o projeto parado. O segundo é pior: leva a
+pessoa a tentar desligar o que nunca ligou — e nada acontece, porque não há o
+que parar.
+
+### A causa de fundo, e o conserto
+
+A atribuição de porta de container era um palpite: *se um único projeto declara
+este número, é dele*. A regra se cala exatamente quando dois projetos declaram a
+mesma porta padrão — 8000, 3000, 5432 —, que é o caso comum.
+
+O Compose grava o diretório do projeto em cada container
+(`com.docker.compose.project.working_dir`). Perguntar ao Docker troca palpite
+por fato:
+
+* `ContainerPortsService` lê `docker ps --format '{{json .}}'` uma vez a cada
+  vinte segundos e monta `porta publicada -> diretório do projeto`;
+* a descoberta ganhou `matched_by="container-label"`, que conta como **prova**
+  — diferente de `container`, que segue sendo dedução pelo número;
+* o poller alimenta a descoberta com esse mapa.
+
+E o dashboard deixou de afirmar o que não sabe: cada serviço que responde vem
+com `proven` e, quando não há prova, com a explicação de quem está na porta. A
+contagem "Rodando" conta só os provados; o card do projeto e o trilho lateral
+seguem a mesma regra; a linha da tabela mostra "porta ocupada" no lugar do
+selo verde.
+
+Na máquina real, depois do conserto: **1 rodando** em vez de 5, com
+"Dashboard-contabil: quem ocupa a porta é wslrelay.exe, do PLATAFORMA DE
+INGRESSOS" escrito na tela em vez de um selo verde mentindo.
+
+### O outro "não desliga"
+
+Ligar e desligar mudavam o banco e o processo, mas não o cache do dashboard, que
+dura mais que a paciência de quem clicou: o botão respondia sucesso e a tela
+seguia dizendo o contrário. Agora `start`, `stop` e `restart` invalidam o cache
+do dashboard e o health do projeto.
+
+### A lição
+
+A sessão 8 estabeleceu a regra — prova afirma, inferência sugere, ausência se
+cala — e a aplicou na tela de Ports e na de Serviços. O dashboard ficou de fora,
+e foi por ali que o mesmo defeito voltou dois dias depois. **Regra aplicada em
+três telas de quatro é regra que ainda não existe.**
+
+### Continua com você
+
+- [ ] o painel foi reempacotado e reaberto na 8790; confira o dashboard
+- [ ] os projetos com "porta ocupada" continuam listados de propósito: o painel
+      não finge que a porta está muda, só para de dizer que é sua
+- [ ] zero teste de frontend — a tela que fugia para Ports seria pega por um
+      teste de rota
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`
+
+---
+
+## 2026-08-23 (fim de tarde) — Sessão 15: desligar de verdade, e o frontend ganha teste
+
+Você escolheu três frentes e, no meio, cortou uma: o dashboard fica como está.
+Sobraram ligar/desligar e teste de frontend.
+
+### O "não desliga" que sobrou
+
+Com o dashboard já corrigido para não inventar projetos no ar, restava o caso
+real: **servidor deste projeto iniciado fora do painel**. `servers.status()` só
+conhece o que nasceu daqui — a tabela `dev_server` —, então um `npm run dev`
+iniciado no terminal deixava o botão sem alvo. Ele respondia sucesso e o
+processo seguia atendendo.
+
+`EnvironmentService.down` passou a olhar a última varredura de portas e encerrar
+os processos que a descoberta classificou como **não gerenciados deste
+projeto**. Quem valida é a descoberta, com a defesa D4 de sempre: só processo
+dentro de um root permitido, e só o que ela mesma classificou — o PID não vem do
+cliente. O desfecho novo é `stopped: "external"`, e a mensagem diz o que
+aconteceu: "parei o servidor que estava rodando fora do painel".
+
+Junto foi outro detalhe que incomodava: com Shift (derrubar tudo), a aplicação
+local não parava — só os containers. Agora para as duas coisas.
+
+### Teste de frontend: de zero a existir
+
+Era o maior buraco do projeto: ~5.500 linhas de JavaScript, zero teste, e os
+defeitos de interface sendo a maioria dos achados de toda sessão.
+
+A escolha foi manter a doutrina do ADR-005 — o frontend não tem build nem
+`node_modules`. Nada de jsdom: `tests/frontend/dom.mjs` é um DOM mínimo escrito
+à mão, com o que os módulos realmente usam (`createElement`, `dataset`,
+eventos, `append`), mais um relógio falso que conta timers armados. O runner é o
+do próprio Node (`node --test`).
+
+Dez testes, cobrindo exatamente o que quebrou hoje:
+
+* o roteador limpa o que a tela deixou de pé ao trocar de rota — o bug do timer
+  de Ports redesenhando por cima do Dashboard;
+* limpeza roda uma vez só, e uma que falha não impede a próxima tela;
+* o dashboard mostra no máximo sete portas, conflito primeiro;
+* dia sem atividade continua na grade do gráfico.
+
+`tests/unit/test_frontend_suite.py` roda a suíte de dentro do `pytest`, para o
+comando único continuar sendo `pytest -q`. Sem Node instalado ela é **pulada**,
+não falha.
+
+Total: 496 testes.
+
+### Continua com você
+
+- [ ] testar o "Desligar" num projeto que você subiu pelo terminal: deve dizer
+      que parou o servidor de fora do painel
+- [ ] a suíte de frontend cobre roteador e dashboard; Ports, projects e o
+      painel de análise ainda não têm teste
+- [ ] `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- [ ] a branch `varredura/bugs-e-organizacao` acumula commits fora da `main`

@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-22 (polimento de layout: lateral recolhível, trilho de ativos, liga/desliga e tela de portas)
+**Última atualização:** 2026-08-23 (aplicativo com janela própria; portas com prova de dono; frontend ganha teste)
 
 ---
 
@@ -61,12 +61,117 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
       tela **Ports**, com o mapa das portas declaradas, o conflito marcado e a
       troca do número na própria linha, com sugestão de porta livre. Ela edita
       o registro do DevCockpit, nunca o arquivo do projeto (D-55, D-56).
+- [x] (2026-08-23) "Subiu 3 projetos ativos sem eu pedir": nada subiu — o
+      painel é que afirmava "no ar" só porque a porta respondia. A atribuição
+      de porta de container passou a vir do rótulo do Compose (fato, não
+      palpite), e o dashboard separa "no ar, deste projeto" de "porta ocupada".
+      "Rodando" caiu de 5 para 1, que era o número certo.
+- [x] (2026-08-23) "Não quer desligar": servidor iniciado fora do painel ficava
+      fora do alcance do botão. `down()` agora encerra processo não gerenciado
+      do próprio projeto, com a mesma defesa D4 de sempre.
+- [x] (2026-08-23) "A página vai direto pro módulo de Ports": o timer da tela
+      se protegia com `container.isConnected`, e o `<main id="view">` nunca sai
+      do DOM. O roteador ganhou `aoSairDaRota()`.
+- [x] (2026-08-23) Varredura geral de portas: 6 serviços com número que nenhum
+      projeto declarava (resíduo do "Sugerir livre" antigo) e 1 serviço
+      duplicado. Zero divergência entre cadastro e arquivo depois disso.
+- [x] (2026-08-23) Primeiro teste de frontend do projeto: DOM mínimo escrito à
+      mão, runner do Node, dez casos cobrindo roteador e dashboard. Sem build e
+      sem `node_modules`, como manda o ADR-005.
+- [x] (2026-08-23) Dashboard: painéis "Disponibilidade" e "Ações mais
+      executadas" retirados a pedido. Sobraram Atividade, Horário de trabalho e
+      Stack. O backend segue calculando e gravando o histórico — parar isso
+      devolveria `health_snapshot` a schema sem escrita, e sem histórico
+      acumulado o painel não teria como voltar.
+- [x] (2026-08-23) "Falha na requisição (404)" no painel de análise: o servidor
+      no ar era anterior à rota. O painel passa a distinguir esse 404 e mandar
+      reiniciar, em vez de sugerir dado ausente.
+- [x] (2026-08-23) "Vamos fazer um executável": `scripts/build_exe.ps1` gera
+      `dist/DevCockpit` (~40 MB) com `DevCockpit.exe`. A pasta é autocontida e
+      portátil — banco, log e `configs/` nascem ao lado do executável na
+      primeira execução. Defeito achado ao testar o pacote: a porta escolhida
+      não chegava às `Settings`, e subir fora da 8765 dava 403 em todo botão
+      com a tela carregando normal.
+- [x] (2026-08-23) "Vamos melhorar o dashboard, preciso de gráficos de
+      análise": cinco painéis no fim do dashboard, alimentados por
+      `activity_log` (já havia dado) e por `health_snapshot`, que existia desde
+      a Fase 4 sem ninguém escrever nela. Junto vieram a retenção das duas
+      tabelas e o teto do job de varredura — três configurações que estavam no
+      arquivo sem serem lidas.
 - [x] (2026-08-22) Defeito achado ao testar a troca de porta no browser:
       `PUT /api/projects/{id}/services` respondia **200 e não gravava**. O
       `clear()` seguido de `append()` fazia o SQLAlchemy emitir os INSERT antes
       dos DELETE na mesma descarga; `UNIQUE(project_id, key)` estourava depois
       da resposta e a transação era desfeita em silêncio. Um `flush()` entre os
       dois resolve; há teste de regressão que falha sem ele.
+
+## Prioridades (revisadas em 2026-08-22)
+
+Ordem de execução acordada. O critério não é esforço, é dano: primeiro o que
+faz o painel mentir ou crescer sem limite, depois o que ainda não existe,
+depois o que protege o que já existe.
+
+### ~~P0 — Gráficos de análise no dashboard~~ — entregue em 2026-08-23
+
+O dashboard hoje responde "agora": quantos online, quais portas em conflito.
+Não responde "e antes?" — que é a pergunta que separa rotina de aviso. Duas
+fontes já estão no banco:
+
+- `activity_log` tem ação, status, duração e horário de tudo que o painel
+  executou. Dá volume por dia, taxa de erro por ação e duração típica **sem
+  escrever uma linha de coleta** — os dados já estão lá.
+- `health_snapshot` tem a forma certa para uptime e latência por serviço, mas
+  **nada escreve nela**. O poller já mede; falta gravar.
+
+Por isso este item absorve a pendência das tabelas mortas: gravar
+`health_snapshot` deixa de ser dívida e vira a fonte do gráfico.
+
+1. ~~Gráficos sobre `activity_log`~~ — atividade por dia, por hora e por ação,
+   com taxa de erro e p50/p95 de duração
+2. ~~Persistir `health_snapshot` no poller~~ — grava na mudança de estado e, sem
+   mudança, a cada cinco minutos
+3. ~~Gráficos de uptime e latência por serviço~~ — uptime ponderado por tempo,
+   com `coverage_pct` ao lado: amostragem não afirma o que não mediu
+
+### ~~P1 — Retenção do log de atividade~~ — entregue em 2026-08-23
+
+`RetentionService` roda dentro do poller, de hora em hora, com retenção separada
+por tabela (`activity_retention_days`, `health_snapshot_retention_days`).
+`timeout_scan` virou teto do job de varredura — job que estoura termina como
+`TIMEOUT` e libera a chave, em vez de ficar `RUNNING` recusando 409 para sempre.
+
+### P1b — Empacotamento — entregue em 2026-08-23
+
+`scripts/build_exe.ps1` gera `dist/DevCockpit`. O que sobra aqui: decidir se as
+versões viram release versionada, e se um ícone próprio vale o trabalho.
+
+### P2 — Higiene de repositório (risco de perder trabalho)
+
+- `Dockerfile`, `docker-compose.yml` e `.dockerignore` untracked na raiz
+- branch `varredura/bugs-e-organizacao` com 30 commits fora da `main`
+- três edições no SmartDash (compose, Dockerfile, cadastro) não commitadas,
+  dentro de um repo maior com 24 arquivos de outros projetos modificados
+
+### P3 — Verificações manuais pendentes desde 21/08
+
+Baratas e desbloqueiam afirmações que o painel faz hoje sem confirmação:
+
+- clicar em VS Code e confirmar que a janela vem para frente (D-46)
+- conferir a aba Docker com o Docker Desktop desligado
+
+### P2b — Teste
+
+- ~~zero teste de frontend~~ — a base existe desde 2026-08-23 (`tests/frontend`,
+  dez casos). Falta cobrir Ports, projects e o painel de análise, que são
+  justamente as telas onde os defeitos apareceram
+- `git_service` a 47% de cobertura, o menor do projeto (total em 89%)
+
+### P5 — Dúvida de modelagem, sem urgência
+
+- o SmartDash usa SQLite no `.env` local e sobe um Postgres no Compose que a
+  aplicação ignora — o serviço `db` cadastrado pode ser ruído
+
+---
 
 ## 🏁 MVP COMPLETO
 
@@ -220,7 +325,8 @@ teste removidos.
 
 ## Em andamento
 
-Nada. Fase 4 fechada.
+Nada. P0, P1 e o executável entregues em 2026-08-23; a fila segue em
+**Prioridades**, no topo.
 
 ---
 
@@ -469,8 +575,8 @@ Falta, porque depende de você:
 | Fase | **MVP completo + pontas fechadas** | 4 de 4 |
 | Pontos entregues | 131 | 131 |
 | Documentos | 14 + 8 ADRs | — |
-| Cobertura de testes | 92% | >= 70% |
-| Testes | 316 passando, 1 pulado | — |
+| Cobertura de testes | 89% | >= 70% |
+| Testes | 496 passando (10 de frontend), 1 pulado | — |
 
 ---
 
@@ -488,3 +594,6 @@ Falta, porque depende de você:
 | Rodada no browser | 2026-08-21 | 2026-08-21 | 4 defeitos corrigidos, ferramentas no card; 302 testes |
 | Frontend (B2) | 2026-08-22 | 2026-08-22 | card com sinais, dashboard denso, busca única; 313 testes |
 | Layout e portas | 2026-08-22 | 2026-08-22 | lateral recolhível, trilho de ativos, liga/desliga, tela Ports; 316 testes |
+| Análise e retenção | 2026-08-23 | 2026-08-23 | gráficos no dashboard, histórico de health gravado e podado; 475 testes |
+| Executável | 2026-08-23 | 2026-08-23 | pasta autocontida de 39,7 MB, abre em 1,4 s; 483 testes |
+| Aplicativo e portas | 2026-08-23 | 2026-08-23 | janela nativa, ícone, prova de dono de porta, teste de frontend; 496 testes |

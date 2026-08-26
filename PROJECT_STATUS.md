@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-25 (HyperBrain MVP 2: o mapa passa a responder)
+**Última atualização:** 2026-08-25 (HyperBrain: MVP 2, o 3D revertido e o núcleo batendo)
 
 ---
 
@@ -23,6 +23,15 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
+- [x] (2026-08-25) HyperBrain: rótulos deixaram de se atropelar (0 pares
+      sobrepostos, medido na tela), tecnologias com matiz própria e o núcleo com
+      batimento — o ritmo diz o estado da IA, e parado significa desligada.
+- [x] (2026-08-25) HyperBrain em 3D com three.js: **implementado e revertido**
+      a pedido, depois de travar na máquina. A causa não era o WebGL: era medir
+      `offsetWidth` por quadro e testar oclusão com raio contra triângulo. Os
+      commits seguem no histórico (66a6b3c, e5f87e2), recuperáveis com um revert
+      do revert. Achado de plataforma: WebGL emulado na CPU (SwiftShader) trava
+      em vez de ficar lento, e ter contexto não prova aceleração.
 - [x] (2026-08-25) HyperBrain, MVP 2 entregue: barra "Ask HyperBrain" dentro do
       palco. Filtro de visão resolvido no navegador, sem IA nenhuma ("mostre os
       projetos em python" destaca em milissegundos e funciona com o Cockpit AI
@@ -351,9 +360,10 @@ teste removidos.
 Nada. Do Cockpit AI, as Fases 1, 2, 3.1 e 3.4 estão entregues (`docs/ai/`);
 faltam 3.2, 3.3, 3.5 e 3.6.
 
-Do HyperBrain (`docs/ai/HYPERBRAIN.md`), os MVPs 1 e 2 estão entregues. O MVP 3
-— tarefas, sessões, decisões e serviços como nós, com expansão progressiva —
-espera uso real da tela antes de começar.
+Do HyperBrain (`docs/ai/HYPERBRAIN.md`), os MVPs 1 e 2 estão entregues, em 2D. O
+MVP 3 — tarefas, sessões, decisões e serviços como nós — espera **uso real da
+tela** antes de começar: a sessão 24 mostrou o custo de empilhar camada visual
+sem esse teste.
 
 ---
 

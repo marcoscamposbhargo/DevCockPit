@@ -24,11 +24,12 @@ import {
   tecnologiasExclusivas,
   vizinhos,
 } from '../lib/graph/adapter.js';
-import { criarNucleo } from '../lib/graph/core.js';
+import { criarNucleo, ESTADOS } from '../lib/graph/core.js';
 import { ligarInteracao } from '../lib/graph/interaction.js';
 import { criarLayout } from '../lib/graph/layout.js';
 import {
   ajustarRotulos,
+  iluminar,
   aplicarDestaque,
   aplicarPosicoes,
   criarPalco,
@@ -46,20 +47,62 @@ import { aoSairDaRota } from '../router.js';
 //: é onde o custo por quadro começa a aparecer em máquina modesta.
 const NOS_PARA_MODO_DENSO = 150;
 
+const CHAVE_MODO = 'devcockpit:hyperbrain:modo';
+
+/** A máquina desenha em WebGL? Sem isso, não há 3D possível. */
+function suportaWebgl() {
+  try {
+    const tela = document.createElement('canvas');
+    return Boolean(tela.getContext('webgl2') || tela.getContext('webgl'));
+  } catch {
+    return false;
+  }
+}
+
+/** `3d` por padrão; `2d` quando a pessoa escolhe, ou quando não há WebGL.
+ *
+ * O mapa em SVG não foi aposentado: ele é a saída quando o WebGL falta — e ele
+ * é o único dos dois onde cada nó é um elemento real, alcançável por `Tab`.
+ */
+function modoEscolhido() {
+  if (!suportaWebgl()) return '2d';
+  try {
+    return window.localStorage.getItem(CHAVE_MODO) === '2d' ? '2d' : '3d';
+  } catch {
+    return '3d';
+  }
+}
+
+function guardarModo(modo) {
+  try {
+    window.localStorage.setItem(CHAVE_MODO, modo);
+  } catch {
+    // Preferência que não persiste ainda vale para esta sessão.
+  }
+}
+
 const LEGENDA = [
   ['core', 'núcleo'],
   ['projeto', 'projeto'],
   ['tecnologia', 'tecnologia compartilhada'],
 ];
 
-function botao(rotulo, nomeIcone, aoClicar, { titulo = rotulo } = {}) {
+/** Controle do mapa: ícone, sem rótulo.
+ *
+ * Cinco botões com texto comiam metade da largura do topo e competiam com o
+ * título. Num mapa, zoom e enquadramento são gesto conhecido — o ícone basta,
+ * e o nome vive no `title` e no `aria-label`, onde o teclado e o leitor de tela
+ * também o alcançam.
+ */
+function controle(titulo, nomeIcone, aoClicar, { pressionado = null } = {}) {
   return el('button', {
-    class: 'btn btn--sm hb-tool',
+    class: 'hb-ctl',
     type: 'button',
     title: titulo,
     'aria-label': titulo,
+    'aria-pressed': pressionado === null ? null : String(pressionado),
     onClick: aoClicar,
-  }, [icon(nomeIcone, { size: 14 }), el('span', { class: 'hb-tool__label', text: rotulo })]);
+  }, [icon(nomeIcone, { size: 15 })]);
 }
 
 /** Painel lateral de um projeto. Contexto e dois caminhos — não um dashboard. */
@@ -298,41 +341,135 @@ export async function renderHyperbrain(container) {
 
   const grafo = montarGrafo(projetos);
   const estado = criarEstado();
-  const palco = criarPalco();
-  const layout = criarLayout(grafo.nos, grafo.arestas);
-
-  const elementosDeNo = new Map();
-  const elementosDeAresta = new Map();
-
-  for (const aresta of grafo.arestas) {
-    const linha = desenharAresta(aresta);
-    elementosDeAresta.set(aresta.id, linha);
-    palco.arestas.append(linha);
-  }
-
-  const nucleo = criarNucleo();
-  elementosDeNo.set('core', nucleo.no);
-  palco.nos.append(nucleo.no);
-
-  for (const no of grafo.nos) {
-    if (no.tipo === 'core') continue;
-    const elemento = desenharNo(no);
-    elementosDeNo.set(no.id, elemento);
-    palco.nos.append(elemento);
-  }
-
-  nucleo.definirEstado(statusIa?.enabled && statusIa?.configured ? 'idle' : 'desligado');
-
-  const alvos = { elementosDeNo, elementosDeAresta, arestas: grafo.arestas };
   const denso = grafo.nos.length > NOS_PARA_MODO_DENSO;
   let movimentoCurto = movimentoReduzido();
 
-  palco.svg.dataset.denso = String(denso);
-  palco.svg.dataset.movimento = movimentoCurto ? 'reduzido' : 'completo';
+  const modo = modoEscolhido();
+  // A profundidade precisa existir na simulação, não só na câmera: um grafo
+  // resolvido no plano e girado depois continua sendo um desenho plano visto
+  // de lado.
+  const layout = criarLayout(grafo.nos, grafo.arestas, { dimensoes: modo === '3d' ? 3 : 2 });
+
+  const moldura = el('div', { class: 'hb-stage-wrap', dataset: { modo } });
+
+  //: Os dois desenhos — SVG e WebGL — vivem atrás da mesma interface, e o
+  //: resto da tela não sabe qual está montado. É o que permite trocar de modo
+  //: sem duplicar a conversa, o filtro, o painel e os atalhos.
+  const visual = modo === '3d' ? await montarEmTresDimensoes() : montarEmSvg();
+
+  async function montarEmTresDimensoes() {
+    // Importação dinâmica: quem fica no modo 2D não baixa 1,3 MB de three.js.
+    const { criarCena3D } = await import('../lib/graph/scene3d.js');
+
+    const cena = criarCena3D({
+      container: moldura,
+      grafo,
+      layout,
+      aoSelecionar: (id) => estado.definir({ selecionado: id ?? null }),
+    });
+
+    if (movimentoCurto) cena.definirGiro(false);
+
+    return {
+      tipo: '3d',
+      desenhar: () => cena.desenhar({ girarSozinho: !movimentoCurto }),
+      assentar: () => cena.enquadrar(),
+      enquadrar: () => cena.enquadrar(),
+      ampliar: () => cena.aproximar(1 / 1.2),
+      reduzir: () => cena.aproximar(1.2),
+      reorganizar: () => {
+        for (const no of grafo.nos) if (!no.fixo) layout.soltar(no.id);
+        layout.reaquecer(1);
+        cena.definirGiro(!movimentoCurto);
+      },
+      destacar: (situacao) => cena.aplicarDestaque(situacao),
+      acender: (projetoId) => cena.acender(projetoId ? `core->p:${projetoId}` : null),
+      nucleo: (nome, texto) => cena.definirEstadoNucleo(nome, texto),
+      movimento: (reduzido) => cena.definirGiro(!reduzido),
+      //: Em WebGL a câmera vive: enquanto ela gira, cada quadro é um desenho
+      //: novo, mesmo com o grafo parado.
+      continuo: () => !movimentoCurto || !layout.energia,
+      reler: () => cena.reler(),
+      destruir: () => cena.destruir(),
+    };
+  }
+
+  function montarEmSvg() {
+    const palco = criarPalco();
+    const elementosDeNo = new Map();
+    const elementosDeAresta = new Map();
+
+    for (const aresta of grafo.arestas) {
+      const linha = desenharAresta(aresta);
+      elementosDeAresta.set(aresta.id, linha);
+      palco.arestas.append(linha);
+    }
+
+    const nucleo = criarNucleo();
+    elementosDeNo.set('core', nucleo.no);
+    palco.nos.append(nucleo.no);
+
+    let ordemDeEntrada = 0;
+    for (const no of grafo.nos) {
+      if (no.tipo === 'core') continue;
+      const elemento = desenharNo(no, ordemDeEntrada++);
+      elementosDeNo.set(no.id, elemento);
+      palco.nos.append(elemento);
+    }
+
+    const alvos = { elementosDeNo, elementosDeAresta, arestas: grafo.arestas };
+    palco.svg.dataset.denso = String(denso);
+    palco.svg.dataset.movimento = movimentoCurto ? 'reduzido' : 'completo';
+    moldura.append(palco.svg);
+
+    const interacao = ligarInteracao(
+      { svg: palco.svg, viewport: palco.viewport, layout, palco: palco.svg },
+      {
+        aoSelecionar: (id) => estado.definir({ selecionado: id ?? null }),
+        aoMover: () => acordar(),
+        aoReenquadrar: () => interacao.enquadrar(layout.posicoes()),
+      }
+    );
+
+    return {
+      tipo: '2d',
+      desenhar: () => aplicarPosicoes(layout.posicoes(), alvos),
+      assentar: () => {
+        const posicoes = layout.posicoes();
+        ajustarRotulos(posicoes, { elementosDeNo, nos: grafo.nos }, posicionarRotulos);
+        iluminar(posicoes, { elementosDeNo });
+        interacao.enquadrar(posicoes);
+      },
+      enquadrar: () => interacao.enquadrar(layout.posicoes()),
+      ampliar: () => interacao.ampliar(),
+      reduzir: () => interacao.reduzir(),
+      reorganizar: () => interacao.reorganizar(grafo.nos),
+      destacar: (situacao) => aplicarDestaque(alvos, situacao),
+      acender: (projetoId) => {
+        for (const linha of elementosDeAresta.values()) delete linha.dataset.ativa;
+        if (!projetoId) return;
+        const linha = elementosDeAresta.get(`core->p:${projetoId}`);
+        if (linha) linha.dataset.ativa = 'true';
+      },
+      nucleo: (nome) => nucleo.definirEstado(nome),
+      movimento: (reduzido) => {
+        palco.svg.dataset.movimento = reduzido ? 'reduzido' : 'completo';
+      },
+      continuo: () => false,
+      reler: () => {},
+      destruir: () => interacao.destruir(),
+      //: Só o SVG tem elemento por nó; o estado do projeto é atributo dele.
+      atualizarEstado: (projetoId, estadoNovo) => {
+        const elemento = elementosDeNo.get(`p:${projetoId}`);
+        if (elemento) elemento.dataset.estado = estadoNovo;
+      },
+    };
+  }
 
   // --- painel lateral -----------------------------------------------------
 
   const painel = el('div', { class: 'hb-side' });
+  const corpo = el('div', { class: 'hb-body', dataset: { painel: 'vazio' } });
 
   //: Cartão que a conversa produziu — filtro, ação proposta ou resposta. Fica
   //: **acima** do contexto do nó, e não no lugar dele: perguntar sobre um
@@ -366,7 +503,11 @@ export async function renderHyperbrain(container) {
   }
 
   function redesenharPainel() {
-    mount(painel, cartao, painelDoNo());
+    const conteudo = painelDoNo();
+    mount(painel, cartao, conteudo);
+    // Sem nada selecionado, a coluna encolhe e devolve a largura ao mapa —
+    // que é o conteúdo desta tela, não o painel.
+    corpo.dataset.painel = cartao || estado.get('selecionado') ? 'cheio' : 'vazio';
   }
 
   function mostrarCartao(node) {
@@ -381,7 +522,7 @@ export async function renderHyperbrain(container) {
 
   function redesenharDestaque() {
     const foco = estado.get('foco');
-    aplicarDestaque(alvos, {
+    visual.destacar({
       foco,
       proximos: foco ? vizinhos(grafo, foco) : new Set(),
       destacados: estado.get('destacados'),
@@ -417,8 +558,7 @@ export async function renderHyperbrain(container) {
     for (const projeto of novos) {
       const no = grafo.nos.find((n) => n.id === `p:${projeto.id}`);
       if (no) no.projeto = projeto;
-      const elemento = elementosDeNo.get(`p:${projeto.id}`);
-      if (elemento) elemento.dataset.estado = estadoDoProjeto(projeto);
+      visual.atualizarEstado?.(projeto.id, estadoDoProjeto(projeto));
     }
   }
 
@@ -429,14 +569,11 @@ export async function renderHyperbrain(container) {
    * qualquer outro motivo seria a tela afirmando uma consulta que não houve.
    */
   function acender(projetoId) {
-    apagar();
-    if (!projetoId) return;
-    const linha = elementosDeAresta.get(`core->p:${projetoId}`);
-    if (linha) linha.dataset.ativa = 'true';
+    visual.acender(projetoId ?? null);
   }
 
   function apagar() {
-    for (const linha of elementosDeAresta.values()) delete linha.dataset.ativa;
+    visual.acender(null);
   }
 
   /** Estado do núcleo.
@@ -457,7 +594,8 @@ export async function renderHyperbrain(container) {
       window.clearTimeout(voltaAoRepouso);
       voltaAoRepouso = null;
     }
-    nucleo.definirEstado(iaLigada || nome === 'desligado' ? nome : 'desligado');
+    const efetivo = iaLigada || nome === 'desligado' ? nome : 'desligado';
+    visual.nucleo(efetivo, ESTADOS[efetivo] ?? '');
     if (PASSAGEIROS.has(nome)) {
       voltaAoRepouso = window.setTimeout(() => cerebro('idle'), 2600);
     }
@@ -666,12 +804,13 @@ export async function renderHyperbrain(container) {
   let enquadrarAoParar = true;
 
   function desenharUmaVez() {
-    aplicarPosicoes(layout.posicoes(), alvos);
+    visual.desenhar();
   }
 
-  /** Acomoda os rótulos. Só quando o grafo parou — medir texto custa layout. */
+  /** O que só vale a pena fazer com o grafo parado: acomodar rótulo (que
+   *  custa medir texto) e enquadrar a câmera. */
   function acomodarRotulos() {
-    ajustarRotulos(layout.posicoes(), { elementosDeNo, nos: grafo.nos }, posicionarRotulos);
+    visual.assentar();
   }
 
   function laco() {
@@ -690,12 +829,15 @@ export async function renderHyperbrain(container) {
       return;
     }
 
-    acomodarRotulos();
-
     if (enquadrarAoParar) {
       enquadrarAoParar = false;
-      interacao.enquadrar(layout.posicoes());
+      acomodarRotulos();
     }
+
+    // Em WebGL a câmera continua viva depois de o grafo parar: enquanto ela
+    // gira, cada quadro é um desenho novo. No SVG o laço encerra aqui, e a
+    // tela deixa de custar quadro nenhum.
+    if (visual.continuo()) quadro = window.requestAnimationFrame(laco);
   }
 
   function acordar() {
@@ -708,6 +850,17 @@ export async function renderHyperbrain(container) {
   }
 
   document.addEventListener('visibilitychange', aoTrocarVisibilidade);
+
+  // O tema é trocado fora desta tela, e em WebGL a cor não vem do CSS: sem
+  // ouvir a troca, o mapa ficaria com a paleta do tema anterior até recarregar.
+  const observadorDeTema = new MutationObserver(() => {
+    visual.reler();
+    if (!visual.continuo()) desenharUmaVez();
+  });
+  observadorDeTema.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
 
   // Esc vive no documento, e não no palco: sair do foco costuma ser pedido
   // logo depois de clicar no botão do painel lateral — e aí o foco do teclado
@@ -729,37 +882,16 @@ export async function renderHyperbrain(container) {
 
   // --- montagem -----------------------------------------------------------
 
-  const interacao = ligarInteracao(
-    { svg: palco.svg, viewport: palco.viewport, layout, palco: palco.svg },
-    {
-      aoSelecionar: (id) => estado.definir({ selecionado: id ?? null }),
-      aoMover: () => {
-        if (movimentoCurto) {
-          layout.estabilizar(60);
-          desenharUmaVez();
-          acomodarRotulos();
-        } else acordar();
-      },
-      aoReenquadrar: () => {
-        if (movimentoCurto) {
-          layout.estabilizar();
-          desenharUmaVez();
-          acomodarRotulos();
-          interacao.enquadrar(layout.posicoes());
-        } else enquadrarAoParar = true;
-      },
-    }
-  );
-
   function alternarMovimento() {
     movimentoCurto = !movimentoCurto;
     definirMovimento(movimentoCurto);
-    palco.svg.dataset.movimento = movimentoCurto ? 'reduzido' : 'completo';
+    visual.movimento(movimentoCurto);
     if (movimentoCurto) {
       if (quadro !== null) window.cancelAnimationFrame(quadro);
       quadro = null;
       layout.estabilizar();
       desenharUmaVez();
+      acomodarRotulos();
     } else {
       layout.reaquecer(0.5);
       acordar();
@@ -775,56 +907,72 @@ export async function renderHyperbrain(container) {
       el('div', { class: 'hb-bar__titulo' }, [
         el('h1', { text: 'HyperBrain' }),
         el('p', {
-          class: 'field__hint',
+          class: 'hb-bar__meta',
           text: `${projetos.length} projetos · ${grafo.nos.length} nós · ${grafo.arestas.length} conexões`,
         }),
       ]),
-      el('div', { class: 'hb-bar__acoes' }, [
-        botao('Aproximar', 'plus', () => interacao.ampliar()),
-        botao('Afastar', 'chevron', () => interacao.reduzir(), { titulo: 'Afastar' }),
-        botao('Enquadrar', 'grid', () => interacao.enquadrar(layout.posicoes()), {
-          titulo: 'Enquadrar o grafo inteiro na tela',
+      el('div', { class: 'hb-bar__acoes', role: 'group', 'aria-label': 'Controles do mapa' }, [
+        controle('Aproximar', 'plus', () => visual.ampliar()),
+        controle('Afastar', 'minus', () => visual.reduzir()),
+        controle('Enquadrar o grafo inteiro na tela', 'grid', () => visual.enquadrar()),
+        controle('Reorganizar: solta os nós presos e refaz o arranjo', 'refresh', () => {
+          visual.reorganizar();
+          enquadrarAoParar = true;
+          acordar();
         }),
-        botao('Reorganizar', 'refresh', () => interacao.reorganizar(grafo.nos)),
-        botao(movimentoCurto ? 'Movimento: reduzido' : 'Movimento: completo', 'pulse', alternarMovimento, {
-          titulo: 'Alternar animação do grafo',
-        }),
+        controle(
+          modo === '3d' ? 'Ver o mapa em duas dimensões' : 'Ver o mapa em três dimensões',
+          'graph',
+          () => {
+            guardarModo(modo === '3d' ? '2d' : '3d');
+            // Recarregar a rota é o caminho honesto: trocar de motor de desenho
+            // no meio da vida da tela deixaria metade do estado no anterior.
+            window.location.reload();
+          },
+          { pressionado: modo === '3d' }
+        ),
+        controle(
+          movimentoCurto ? 'Movimento reduzido — ligar animação' : 'Reduzir o movimento do mapa',
+          'pulse',
+          alternarMovimento,
+          { pressionado: movimentoCurto }
+        ),
       ])
     );
   }
 
   montarBarra();
 
+  moldura.append(
+    formulario,
+    el(
+      'ul',
+      { class: 'hb-legend', 'aria-label': 'Tipos de nó' },
+      LEGENDA.map(([tipo, rotulo]) =>
+        el('li', { class: 'hb-legend__item', dataset: { tipo } }, [
+          el('span', { class: 'hb-legend__mark', 'aria-hidden': 'true' }),
+          rotulo,
+        ])
+      )
+    )
+  );
+
+  mount(corpo, moldura, painel);
+
   mount(
     container,
     el('div', { class: 'hb', dataset: { movimento: movimentoCurto ? 'reduzido' : 'completo' } }, [
       barra,
-      el('div', { class: 'hb-body' }, [
-        el('div', { class: 'hb-stage-wrap' }, [
-          palco.svg,
-          formulario,
-          el(
-            'ul',
-            { class: 'hb-legend', 'aria-label': 'Tipos de nó' },
-            LEGENDA.map(([tipo, rotulo]) =>
-              el('li', { class: 'hb-legend__item', dataset: { tipo } }, [
-                el('span', { class: 'hb-legend__mark', 'aria-hidden': 'true' }),
-                rotulo,
-              ])
-            )
-          ),
-        ]),
-        painel,
-      ]),
+      corpo,
     ])
   );
 
   redesenharPainel();
   redesenharDestaque();
 
-  // A câmera só pode ser centralizada depois da montagem: antes disso o SVG
+  // O enquadramento só é possível depois da montagem: antes disso a moldura
   // não tem tamanho, e dividir por zero deixaria tudo no canto.
-  interacao.centralizar();
+  cerebro(iaLigada ? 'idle' : 'desligado');
 
   if (movimentoCurto) {
     // Sem animação: estabiliza de uma vez e desenha o resultado. A tela
@@ -832,7 +980,6 @@ export async function renderHyperbrain(container) {
     layout.estabilizar();
     desenharUmaVez();
     acomodarRotulos();
-    interacao.enquadrar(layout.posicoes());
     enquadrarAoParar = false;
   } else {
     acordar();
@@ -845,6 +992,7 @@ export async function renderHyperbrain(container) {
     if (voltaAoRepouso) window.clearTimeout(voltaAoRepouso);
     document.removeEventListener('visibilitychange', aoTrocarVisibilidade);
     document.removeEventListener('keydown', aoTeclarNoDocumento);
-    interacao.destruir();
+    observadorDeTema.disconnect();
+    visual.destruir();
   });
 }

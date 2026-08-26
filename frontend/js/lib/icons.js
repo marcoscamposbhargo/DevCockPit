@@ -122,6 +122,7 @@ const PATHS = {
     ['path', { d: 'M4 13h4l1.5 3h5L16 13h4' }],
     ['path', { d: 'M5.5 5h13l1.5 8v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4l1.5-8Z' }],
   ],
+  minus: [['path', { d: 'M5 12h14' }]],
   // Núcleo com três satélites: o desenho do HyperBrain reduzido a 24px.
   graph: [
     ['path', { d: 'm10.4 10.4-3.6-3.6M13.6 10.4l3.6-3.6M12 14.6V19' }],

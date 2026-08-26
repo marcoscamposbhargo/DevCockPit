@@ -60,6 +60,23 @@ export function encurtar(texto, limite = LIMITE_DO_ROTULO) {
   return limpo.length <= limite ? limpo : `${limpo.slice(0, limite - 1)}…`;
 }
 
+/** Uma ou duas letras que representam o projeto dentro do círculo.
+ *
+ * Círculo vazio não tem identidade: com dezenove deles na tela, o nó só existe
+ * enquanto o rótulo estiver visível. A inicial sobrevive ao zoom de longe, ao
+ * rótulo escondido por falta de espaço e ao olhar de relance.
+ */
+export function iniciais(nome) {
+  const palavras = String(nome ?? '')
+    .trim()
+    .split(/[\s\-_.]+/)
+    .filter(Boolean);
+
+  if (!palavras.length) return '?';
+  if (palavras.length === 1) return palavras[0].slice(0, 2).toUpperCase();
+  return (palavras[0][0] + palavras[1][0]).toUpperCase();
+}
+
 function forma(no) {
   if (no.tipo === 'tecnologia') {
     // Triângulo: a forma diferencia o tipo sem depender de cor, que é o
@@ -78,8 +95,12 @@ function forma(no) {
   return svgEl('circle', { class: 'hb-node__shape', r: no.tamanho });
 }
 
-/** Um nó: forma, rótulo e o mínimo de semântica para o teclado alcançá-lo. */
-export function desenharNo(no) {
+/** Um nó: forma, rótulo e o mínimo de semântica para o teclado alcançá-lo.
+ *
+ * `indice` só serve para escalonar a entrada: o mapa se abre do centro para
+ * fora, em vez de aparecer inteiro de uma vez.
+ */
+export function desenharNo(no, indice = 0) {
   const descricao =
     no.tipo === 'tecnologia'
       ? `${no.rotulo}, tecnologia usada por ${no.contagem} projetos`
@@ -92,7 +113,7 @@ export function desenharNo(no) {
       dataset: { id: no.id, tipo: no.tipo, estado: no.estado ?? '', fixado: no.fixado ?? false },
       // A matiz é um número, não uma cor: o CSS a aplica como rotação sobre o
       // token. Cor literal continua morando só em `tokens.css`.
-      style: no.matiz === undefined ? null : `--matiz:${no.matiz}deg`,
+      style: `--indice:${indice}${no.matiz === undefined ? '' : `;--matiz:${no.matiz}deg`}`,
       tabindex: '0',
       role: 'button',
       'aria-label': descricao,
@@ -102,6 +123,15 @@ export function desenharNo(no) {
       // demais para o mouse, e muito mais para o toque.
       svgEl('circle', { class: 'hb-node__hit', r: Math.max(no.tamanho + 12, 26) }),
       forma(no),
+      no.tipo === 'projeto'
+        ? svgEl('text', {
+            class: 'hb-node__inicial',
+            y: no.tamanho * 0.34,
+            'text-anchor': 'middle',
+            'font-size': (no.tamanho * 0.86).toFixed(1),
+            text: iniciais(no.rotulo),
+          })
+        : null,
       svgEl('text', {
         class: 'hb-node__label',
         y: no.tamanho + 16,
@@ -127,6 +157,30 @@ export function desenharAresta(aresta) {
  * calcular layout, e fazer isso a cada quadro custaria mais que a simulação
  * inteira. Enquanto os nós se acomodam, o rótulo acompanha embaixo, como antes.
  */
+/** Distância até o núcleo, normalizada, aplicada como "luz" em cada nó.
+ *
+ * É o que dá profundidade sem 3D: o que está perto do núcleo recebe mais luz e
+ * vem para a frente; o que está longe recua. A conta é geométrica — não é um
+ * degradê pintado por cima —, então arrastar um nó muda a luz dele de verdade.
+ */
+export function iluminar(posicoes, { elementosDeNo }) {
+  const centro = posicoes.get('core') ?? { x: 0, y: 0 };
+  let maior = 1;
+
+  for (const [id, ponto] of posicoes) {
+    if (id === 'core') continue;
+    maior = Math.max(maior, Math.hypot(ponto.x - centro.x, ponto.y - centro.y));
+  }
+
+  for (const [id, ponto] of posicoes) {
+    const elemento = elementosDeNo.get(id);
+    if (!elemento || id === 'core') continue;
+    const distancia = Math.hypot(ponto.x - centro.x, ponto.y - centro.y) / maior;
+    // 1 encostado no núcleo, 0 na borda do grafo.
+    elemento.style.setProperty('--luz', (1 - distancia).toFixed(3));
+  }
+}
+
 export function ajustarRotulos(posicoes, { elementosDeNo, nos }, posicionar) {
   const medidos = [];
 

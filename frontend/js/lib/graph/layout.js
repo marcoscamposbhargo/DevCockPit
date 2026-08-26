@@ -46,12 +46,28 @@ export function semente(texto) {
   return h;
 }
 
-/** Posição inicial de um nó, derivada só do id: mesma entrada, mesmo lugar. */
-export function posicaoInicial(id, { centroX = 0, centroY = 0 } = {}) {
+/** Posição inicial de um nó, derivada só do id: mesma entrada, mesmo lugar.
+ *
+ * Em três dimensões a distribuição sai do ângulo de inclinação derivado do
+ * mesmo hash: espalha sobre a esfera sem os amontoados que uma escolha ingênua
+ * de latitude produz nos polos.
+ */
+export function posicaoInicial(id, { centroX = 0, centroY = 0, dimensoes = 2 } = {}) {
   const h = semente(id);
   const angulo = ((h % 997) / 997) * Math.PI * 2;
   const raio = 150 + ((h >>> 10) % 130);
-  return { x: centroX + Math.cos(angulo) * raio, y: centroY + Math.sin(angulo) * raio };
+
+  if (dimensoes < 3) {
+    return { x: centroX + Math.cos(angulo) * raio, y: centroY + Math.sin(angulo) * raio, z: 0 };
+  }
+
+  const u = ((h >>> 3) % 1000) / 1000;
+  const inclinacao = Math.acos(1 - 2 * u);
+  return {
+    x: centroX + Math.sin(inclinacao) * Math.cos(angulo) * raio,
+    y: centroY + Math.sin(inclinacao) * Math.sin(angulo) * raio,
+    z: Math.cos(inclinacao) * raio,
+  };
 }
 
 /**
@@ -60,18 +76,20 @@ export function posicaoInicial(id, { centroX = 0, centroY = 0 } = {}) {
  * @param {Array} nos      objetos com `id` e, opcionalmente, `fixo`
  * @param {Array} arestas  objetos com `de`, `para` e `kind`
  */
-export function criarLayout(nos, arestas, { centroX = 0, centroY = 0 } = {}) {
+export function criarLayout(nos, arestas, { centroX = 0, centroY = 0, dimensoes = 2 } = {}) {
   const corpos = new Map();
+  const emTresDimensoes = dimensoes >= 3;
 
   for (const no of nos) {
     const inicial = no.fixo
-      ? { x: centroX, y: centroY }
-      : posicaoInicial(no.id, { centroX, centroY });
+      ? { x: centroX, y: centroY, z: 0 }
+      : posicaoInicial(no.id, { centroX, centroY, dimensoes });
     corpos.set(no.id, {
       id: no.id,
       ...inicial,
       vx: 0,
       vy: 0,
+      vz: 0,
       fixo: Boolean(no.fixo),
       //: 1 é o nó de projeto comum. O adaptador pode declarar `peso` quando o
       //: espaço que o nó precisa não é o mesmo que ele ocupa desenhado;
@@ -94,6 +112,7 @@ export function criarLayout(nos, arestas, { centroX = 0, centroY = 0 } = {}) {
     for (const corpo of lista) {
       corpo.fx = 0;
       corpo.fy = 0;
+      corpo.fz = 0;
     }
 
     // Repulsão entre todos os pares. O(n²) e assumido: com ~200 nós são 20 mil
@@ -105,7 +124,8 @@ export function criarLayout(nos, arestas, { centroX = 0, centroY = 0 } = {}) {
         const b = lista[j];
         let dx = b.x - a.x;
         let dy = b.y - a.y;
-        let dist2 = dx * dx + dy * dy;
+        let dz = emTresDimensoes ? b.z - a.z : 0;
+        let dist2 = dx * dx + dy * dy + dz * dz;
 
         // Dois nós exatamente sobrepostos dividiriam por zero. O desempate sai
         // do hash do id, não de um sorteio: determinismo vale mais aqui.
@@ -113,18 +133,22 @@ export function criarLayout(nos, arestas, { centroX = 0, centroY = 0 } = {}) {
           const h = semente(a.id + b.id);
           dx = ((h % 100) - 50) / 50;
           dy = (((h >>> 8) % 100) - 50) / 50;
-          dist2 = dx * dx + dy * dy || 1;
+          dz = emTresDimensoes ? (((h >>> 16) % 100) - 50) / 50 : 0;
+          dist2 = dx * dx + dy * dy + dz * dz || 1;
         }
 
         const dist = Math.sqrt(dist2);
         const forca = (REPULSAO * a.peso * b.peso) / dist2;
         const ux = dx / dist;
         const uy = dy / dist;
+        const uz = dz / dist;
 
         a.fx -= ux * forca;
         a.fy -= uy * forca;
+        a.fz -= uz * forca;
         b.fx += ux * forca;
         b.fy += uy * forca;
+        b.fz += uz * forca;
       }
     }
 
@@ -134,16 +158,20 @@ export function criarLayout(nos, arestas, { centroX = 0, centroY = 0 } = {}) {
       const b = corpos.get(ligacao.para);
       const dx = b.x - a.x;
       const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const dz = emTresDimensoes ? b.z - a.z : 0;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
       const alvo = COMPRIMENTO[ligacao.kind] ?? COMPRIMENTO.padrao;
       const forca = (dist - alvo) * RIGIDEZ;
       const ux = dx / dist;
       const uy = dy / dist;
+      const uz = dz / dist;
 
       a.fx += ux * forca;
       a.fy += uy * forca;
+      a.fz += uz * forca;
       b.fx -= ux * forca;
       b.fy -= uy * forca;
+      b.fz -= uz * forca;
     }
 
     let maiorVelocidade = 0;
@@ -152,18 +180,30 @@ export function criarLayout(nos, arestas, { centroX = 0, centroY = 0 } = {}) {
       if (corpo.fixo) {
         corpo.vx = 0;
         corpo.vy = 0;
+        corpo.vz = 0;
         continue;
       }
 
       corpo.fx += (centroX - corpo.x) * GRAVIDADE;
       corpo.fy += (centroY - corpo.y) * GRAVIDADE;
+      corpo.fz += (0 - corpo.z) * GRAVIDADE;
 
       corpo.vx = (corpo.vx + corpo.fx) * ATRITO;
       corpo.vy = (corpo.vy + corpo.fy) * ATRITO;
       corpo.x += corpo.vx * energia;
       corpo.y += corpo.vy * energia;
 
-      maiorVelocidade = Math.max(maiorVelocidade, Math.abs(corpo.vx), Math.abs(corpo.vy));
+      if (emTresDimensoes) {
+        corpo.vz = (corpo.vz + corpo.fz) * ATRITO;
+        corpo.z += corpo.vz * energia;
+      }
+
+      maiorVelocidade = Math.max(
+        maiorVelocidade,
+        Math.abs(corpo.vx),
+        Math.abs(corpo.vy),
+        emTresDimensoes ? Math.abs(corpo.vz) : 0
+      );
     }
 
     energia *= DECAIMENTO;
@@ -186,19 +226,21 @@ export function criarLayout(nos, arestas, { centroX = 0, centroY = 0 } = {}) {
     },
     posicao(id) {
       const corpo = corpos.get(id);
-      return corpo ? { x: corpo.x, y: corpo.y } : null;
+      return corpo ? { x: corpo.x, y: corpo.y, z: corpo.z } : null;
     },
     posicoes() {
-      return new Map([...corpos].map(([id, c]) => [id, { x: c.x, y: c.y }]));
+      return new Map([...corpos].map(([id, c]) => [id, { x: c.x, y: c.y, z: c.z }]));
     },
     /** Prende um nó onde a pessoa o soltou. */
-    fixar(id, x, y) {
+    fixar(id, x, y, z = null) {
       const corpo = corpos.get(id);
       if (!corpo) return;
       corpo.x = x;
       corpo.y = y;
+      if (z !== null) corpo.z = z;
       corpo.vx = 0;
       corpo.vy = 0;
+      corpo.vz = 0;
       corpo.fixo = true;
     },
     soltar(id) {

@@ -53,7 +53,7 @@ export function ligarInteracao({ svg, viewport, layout, palco }, acoes = {}) {
    * precisa descobrir sozinha que aquilo se arrasta. Enquadrar é o gesto que
    * um mapa faz por quem o abre.
    */
-  function enquadrar(posicoes, { margem = 72 } = {}) {
+  function enquadrar(posicoes, { margem = 56 } = {}) {
     const pontos = [...posicoes.values()];
     if (!pontos.length) return;
 
@@ -74,9 +74,10 @@ export function ligarInteracao({ svg, viewport, layout, palco }, acoes = {}) {
         Math.min(
           (largura - margem * 2) / Math.max(maxX - minX, 1),
           (altura - margem * 2) / Math.max(maxY - minY, 1),
-          // Nunca amplia além do tamanho natural: um grafo de três nós
-          // ocupando a tela inteira parece defeito, não destaque.
-          1
+          // Amplia um pouco além do natural quando sobra espaço: um grafo de
+          // cinco nós perdido no meio de um palco vazio parece erro de
+          // carregamento. Acima de 1,25 as formas começam a parecer infladas.
+          1.25
         )
       )
     );

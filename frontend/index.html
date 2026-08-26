@@ -111,6 +111,16 @@
 
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
+  <!-- Mapa de importacao: `three` resolve para o arquivo servido pelo proprio
+       painel. Sem npm, sem bundler e sem CDN - o executavel precisa funcionar
+       offline, e uma dependencia de rede quebraria isso. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/js/vendor/three.module.js"
+      }
+    }
+  </script>
   <script type="module" src="/js/main.js"></script>
 </body>
 </html>

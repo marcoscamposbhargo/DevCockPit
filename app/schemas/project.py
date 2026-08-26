@@ -87,6 +87,10 @@ class ProjectUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     is_pinned: bool | None = None
     detection_locked: bool | None = None
+    #: Tirar um projeto do Cockpit AI é decisão da pessoa, projeto a projeto
+    #: (defesa D-A1) — mas até aqui a coluna existia no banco sem nenhum
+    #: caminho para mudá-la. Um interruptor sem interruptor.
+    ai_enabled: bool | None = None
 
 
 class ProjectSummary(BaseModel):
@@ -97,6 +101,12 @@ class ProjectSummary(BaseModel):
     path: str
     status: ProjectStatus
     is_pinned: bool
+    #: O projeto participa do Cockpit AI. Está aqui — e não só no detalhe —
+    #: porque telas que mostram todos os projetos de uma vez precisam sinalizar
+    #: quais estão fora antes de qualquer requisição de IA: no HyperBrain, o nó
+    #: diz isso na tela, e perguntar sobre ele nunca monta contexto do projeto
+    #: (defesa D-A1).
+    ai_enabled: bool = True
     technologies: list[str] = Field(default_factory=list)
     #: Quantos serviços o projeto declara. O **estado** de cada um não vem
     #: daqui: listar projetos não pode disparar verificação de rede (NFR-010).

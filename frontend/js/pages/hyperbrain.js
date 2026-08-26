@@ -18,11 +18,25 @@
 import { api } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
-import { montarGrafo, tecnologiasExclusivas, vizinhos } from '../lib/graph/adapter.js';
+import {
+  estadoDoProjeto,
+  montarGrafo,
+  tecnologiasExclusivas,
+  vizinhos,
+} from '../lib/graph/adapter.js';
 import { criarNucleo } from '../lib/graph/core.js';
 import { ligarInteracao } from '../lib/graph/interaction.js';
 import { criarLayout } from '../lib/graph/layout.js';
-import { aplicarDestaque, aplicarPosicoes, criarPalco, desenharAresta, desenharNo } from '../lib/graph/render.js';
+import {
+  ajustarRotulos,
+  aplicarDestaque,
+  aplicarPosicoes,
+  criarPalco,
+  desenharAresta,
+  desenharNo,
+} from '../lib/graph/render.js';
+import { posicionarRotulos } from '../lib/graph/labels.js';
+import { interpretar, pareceOrdem } from '../lib/graph/intent.js';
 import { criarEstado, definirMovimento, movimentoReduzido } from '../lib/graph/state.js';
 import { icon } from '../lib/icons.js';
 import { emptyState, loading, showError, statusBadge, techChip } from '../lib/ui.js';
@@ -175,6 +189,76 @@ function painelDoNucleo(status) {
   ]);
 }
 
+/** O que o filtro local encontrou. Sem IA, sem token, sem espera. */
+function cartaoDeFiltro(resultado, { aoLimpar }) {
+  return el('aside', { class: 'hb-panel hb-panel--filtro' }, [
+    el('header', { class: 'hb-panel__head' }, [
+      el('h2', { class: 'hb-panel__name', text: resultado.rotulo }),
+      el('button', {
+        class: 'btn btn--sm',
+        type: 'button',
+        text: 'Limpar',
+        onClick: aoLimpar,
+      }),
+    ]),
+    el('p', {
+      text:
+        resultado.total === 0
+          ? 'Nenhum projeto atende a isso.'
+          : `${resultado.total} projeto(s) em destaque.`,
+    }),
+    el('p', {
+      class: 'field__hint',
+      text: 'Filtro resolvido no navegador, sobre o que o painel já sabia. Nenhum modelo foi consultado.',
+    }),
+  ]);
+}
+
+/** Cartão de confirmação de uma ação proposta.
+ *
+ * A IA escolhe um nome do registro fechado; o servidor valida; **a pessoa
+ * confirma**; e a execução vai pela rota que o botão equivalente já usava
+ * (defesa D-A3). O mesmo desenho da pergunta rápida, na tela do grafo.
+ */
+function cartaoDeAcao(proposta, { aoFechar, aoExecutar }) {
+  const corpo = el('div', { class: 'hb-panel__bloco' });
+
+  const cartao = el('aside', { class: 'hb-panel hb-panel--acao' }, [
+    el('header', { class: 'hb-panel__head' }, [
+      el('h2', { class: 'hb-panel__name', text: proposta.label }),
+      proposta.project_name
+        ? el('span', { class: 'tech-chip', text: proposta.project_name })
+        : null,
+    ]),
+    el('p', { text: proposta.describe }),
+    proposta.reason ? el('p', { class: 'field__hint', text: proposta.reason }) : null,
+    corpo,
+    el('div', { class: 'hb-panel__acoes' }, [
+      el('button', {
+        class: 'btn btn--sm btn--primary',
+        type: 'button',
+        text: 'Confirmar',
+        onClick: async (evento) => {
+          const botao = evento.currentTarget;
+          botao.disabled = true;
+          try {
+            await aoExecutar();
+            mount(corpo, el('p', { class: 'field__hint', text: `${proposta.label} — feito.` }));
+          } catch (erro) {
+            showError(erro);
+            mount(corpo, el('p', { class: 'field__hint', text: erro.message }));
+          } finally {
+            botao.disabled = false;
+          }
+        },
+      }),
+      el('button', { class: 'btn btn--sm', type: 'button', text: 'Cancelar', onClick: aoFechar }),
+    ]),
+  ]);
+
+  return cartao;
+}
+
 export async function renderHyperbrain(container) {
   mount(container, loading('Montando o mapa…'));
 
@@ -250,39 +334,49 @@ export async function renderHyperbrain(container) {
 
   const painel = el('div', { class: 'hb-side' });
 
-  function redesenharPainel() {
+  //: Cartão que a conversa produziu — filtro, ação proposta ou resposta. Fica
+  //: **acima** do contexto do nó, e não no lugar dele: perguntar sobre um
+  //: projeto não deveria apagar da tela o projeto sobre o qual se perguntou.
+  let cartao = null;
+
+  function painelDoNo() {
     const id = estado.get('selecionado');
+
     if (!id) {
-      mount(
-        painel,
-        el('aside', { class: 'hb-panel hb-panel--vazio' }, [
-          el('p', { text: 'Selecione um nó para ver o contexto dele.' }),
-          el('p', {
-            class: 'field__hint',
-            text: 'Arraste para organizar, role para aproximar, Esc sai do foco.',
-          }),
-        ])
-      );
-      return;
+      return el('aside', { class: 'hb-panel hb-panel--vazio' }, [
+        el('p', { text: 'Selecione um nó para ver o contexto dele.' }),
+        el('p', {
+          class: 'field__hint',
+          text: 'Arraste para organizar, role para aproximar, Esc limpa foco e destaque.',
+        }),
+      ]);
     }
 
-    if (id === 'core') {
-      mount(painel, painelDoNucleo(statusIa));
-      return;
-    }
+    if (id === 'core') return painelDoNucleo(statusIa);
 
     const no = grafo.nos.find((n) => n.id === id);
-    if (!no) return;
+    if (!no) return null;
 
     const emFoco = estado.get('foco') === id;
     const alternarFoco = () => estado.definir({ foco: emFoco ? null : id });
 
-    mount(
-      painel,
-      no.tipo === 'tecnologia'
-        ? painelDeTecnologia(no, grafo, { aoFocar: alternarFoco, emFoco })
-        : painelDeProjeto(no, grafo, { aoFocar: alternarFoco, emFoco })
-    );
+    return no.tipo === 'tecnologia'
+      ? painelDeTecnologia(no, grafo, { aoFocar: alternarFoco, emFoco })
+      : painelDeProjeto(no, grafo, { aoFocar: alternarFoco, emFoco });
+  }
+
+  function redesenharPainel() {
+    mount(painel, cartao, painelDoNo());
+  }
+
+  function mostrarCartao(node) {
+    cartao = node;
+    redesenharPainel();
+  }
+
+  function limparCartao() {
+    cartao = null;
+    redesenharPainel();
   }
 
   function redesenharDestaque() {
@@ -300,6 +394,269 @@ export async function renderHyperbrain(container) {
     redesenharDestaque();
   });
 
+  // --- a conversa ---------------------------------------------------------
+
+  const iaLigada = Boolean(statusIa?.enabled && statusIa?.configured);
+
+  /** Relê o que o painel mede, sem refazer o layout.
+   *
+   * Depois de uma ação confirmada, o estado do projeto pode ter mudado. O que
+   * **não** muda é a posição dos nós: recalcular o layout aqui faria o mapa
+   * inteiro se reorganizar por causa de um botão, e quem apertou o botão perde
+   * a referência de onde estava olhando.
+   */
+  async function recarregarEstados() {
+    let novos;
+    try {
+      novos = (await api.listProjects({ limit: 200 })).items;
+    } catch {
+      return;
+    }
+
+    projetos = novos;
+    for (const projeto of novos) {
+      const no = grafo.nos.find((n) => n.id === `p:${projeto.id}`);
+      if (no) no.projeto = projeto;
+      const elemento = elementosDeNo.get(`p:${projeto.id}`);
+      if (elemento) elemento.dataset.estado = estadoDoProjeto(projeto);
+    }
+  }
+
+  /** Acende a aresta do núcleo até um projeto — **só com fato por trás**.
+   *
+   * Os três fatos que autorizam: a proposta resolveu aquele projeto, o chat
+   * montou contexto dele, ou ele é o projeto em foco na pergunta. Acender por
+   * qualquer outro motivo seria a tela afirmando uma consulta que não houve.
+   */
+  function acender(projetoId) {
+    apagar();
+    if (!projetoId) return;
+    const linha = elementosDeAresta.get(`core->p:${projetoId}`);
+    if (linha) linha.dataset.ativa = 'true';
+  }
+
+  function apagar() {
+    for (const linha of elementosDeAresta.values()) delete linha.dataset.ativa;
+  }
+
+  /** Estado do núcleo.
+   *
+   * De propósito **fora** do estado observável da tela: o núcleo é um elemento
+   * só, e mandar cada mudança dele redesenhar o painel lateral criava uma
+   * corrida real — o `blur` do campo de pergunta chegava junto com o clique no
+   * cartão, o painel era remontado no meio do gesto, e o clique se perdia. Quem
+   * ia confirmar uma ação apertava Cancelar e não acontecia nada.
+   */
+  //: Estados de fim de curso não são um lugar onde ficar: "feito" pendurado na
+  //: tela por meia hora vira enfeite, e depois mentira.
+  const PASSAGEIROS = new Set(['success', 'warning', 'error']);
+  let voltaAoRepouso = null;
+
+  function cerebro(nome) {
+    if (voltaAoRepouso) {
+      window.clearTimeout(voltaAoRepouso);
+      voltaAoRepouso = null;
+    }
+    nucleo.definirEstado(iaLigada || nome === 'desligado' ? nome : 'desligado');
+    if (PASSAGEIROS.has(nome)) {
+      voltaAoRepouso = window.setTimeout(() => cerebro('idle'), 2600);
+    }
+  }
+
+  /** O projeto sobre o qual se está falando, se houver um. */
+  function projetoEmPauta() {
+    const id = estado.get('foco') ?? estado.get('selecionado');
+    const no = id ? grafo.nos.find((n) => n.id === id) : null;
+    return no?.tipo === 'projeto' ? no.projeto : null;
+  }
+
+  function cartaoDeResposta(titulo, { projeto, aviso }) {
+    const corpo = el('p', { class: 'hb-resposta__texto', text: '' });
+
+    mostrarCartao(
+      el('aside', { class: 'hb-panel hb-panel--resposta' }, [
+        el('header', { class: 'hb-panel__head' }, [
+          el('h2', { class: 'hb-panel__name', text: titulo }),
+          el('button', { class: 'btn btn--sm', type: 'button', text: 'Fechar', onClick: limparCartao }),
+        ]),
+        aviso ? el('p', { class: 'field__hint', text: aviso }) : null,
+        corpo,
+        el('p', {
+          class: 'field__hint',
+          text: projeto
+            ? `Respondido com o contexto de ${projeto.name}.`
+            : 'Pergunta avulsa: nenhum contexto de projeto foi enviado.',
+        }),
+      ])
+    );
+
+    return corpo;
+  }
+
+  async function perguntar(texto) {
+    const frase = texto.trim();
+    if (!frase) return;
+
+    // 1. Filtro de visão. Regra local, sem rede e sem modelo — funciona com o
+    //    Cockpit AI desligado, e responde antes de a mão sair do teclado.
+    const filtro = interpretar(frase, projetos);
+    if (filtro) {
+      estado.definir({ destacados: filtro.ids, foco: null });
+      apagar();
+      mostrarCartao(
+        cartaoDeFiltro(filtro, {
+          aoLimpar: () => {
+            estado.definir({ destacados: null });
+            limparCartao();
+          },
+        })
+      );
+      cerebro('success');
+      return;
+    }
+
+    // 2. Ação — só quando a frase soa como ordem. A regra do servidor decide a
+    //    maioria em milissegundos, mas quando ela não decide o modelo entra, e
+    //    num provedor local isso são 15 a 40 segundos. Fazer toda pergunta
+    //    pagar esse pedágio antes de virar pergunta é o que separa uma tela
+    //    que se usa de uma que se abandona.
+    cerebro('thinking');
+    let proposta = null;
+    let recado = '';
+    if (pareceOrdem(frase)) {
+      try {
+        const resultado = await api.proposeAction(frase);
+        proposta = resultado.proposal;
+        recado = resultado.message ?? '';
+      } catch (erro) {
+        recado = erro.message;
+      }
+    }
+
+    if (proposta) {
+      estado.definir({ destacados: null });
+      if (proposta.project_id) {
+        acender(proposta.project_id);
+        estado.definir({ selecionado: `p:${proposta.project_id}` });
+      }
+      cerebro('executing');
+      mostrarCartao(
+        cartaoDeAcao(proposta, {
+          aoFechar: () => {
+            apagar();
+            limparCartao();
+            cerebro('idle');
+          },
+          aoExecutar: async () => {
+            await api.runProposal(proposta);
+            cerebro('success');
+            apagar();
+            // `environment.up` responde 202 e segue em job: reler agora pode
+            // mostrar o estado de antes, e isso é o certo — a tela diz o que
+            // mediu, não o que espera que aconteça.
+            await recarregarEstados();
+          },
+        })
+      );
+      return;
+    }
+
+    // Ordem que o servidor recusou não vira pergunta. "faz o deploy em
+    // produção" não existe no registro fechado, e a resposta certa é a recusa
+    // — não trinta segundos de modelo explicando o que ele acha que faria.
+    if (pareceOrdem(frase) && recado) {
+      cerebro('warning');
+      mostrarCartao(
+        el('aside', { class: 'hb-panel hb-panel--recusa' }, [
+          el('header', { class: 'hb-panel__head' }, [
+            el('h2', { class: 'hb-panel__name', text: 'Sem ação para isso' }),
+            el('button', { class: 'btn btn--sm', type: 'button', text: 'Fechar', onClick: limparCartao }),
+          ]),
+          el('p', { text: recado }),
+          el('p', {
+            class: 'field__hint',
+            text: 'O painel só propõe o que ele já faz por botão. Reformule como pergunta se quiser conversar sobre isso.',
+          }),
+        ])
+      );
+      return;
+    }
+
+    // 3. Pergunta. Daqui para baixo é IA de verdade — e sem ela, para aqui.
+    if (!iaLigada) {
+      cerebro('desligado');
+      mostrarCartao(
+        el('aside', { class: 'hb-panel hb-panel--resposta' }, [
+          el('header', { class: 'hb-panel__head' }, [
+            el('h2', { class: 'hb-panel__name', text: 'Cockpit AI desligado' }),
+            el('button', { class: 'btn btn--sm', type: 'button', text: 'Fechar', onClick: limparCartao }),
+          ]),
+          el('p', { text: recado || statusIa?.reason || 'Ligue o Cockpit AI para perguntar.' }),
+          el('p', {
+            class: 'field__hint',
+            text: 'Destacar, focar e navegar continuam funcionando sem IA nenhuma.',
+          }),
+        ])
+      );
+      return;
+    }
+
+    const projeto = projetoEmPauta();
+    // Projeto fora do Cockpit AI não vira contexto — nem por engano, nem por
+    // conveniência (defesa D-A1). A pergunta segue sem ele, e a tela diz isso.
+    const usaContexto = Boolean(projeto && projeto.ai_enabled !== false);
+
+    const corpo = cartaoDeResposta(usaContexto ? projeto.name : 'Pergunta', {
+      projeto: usaContexto ? projeto : null,
+      aviso:
+        projeto && !usaContexto
+          ? `${projeto.name} está fora do Cockpit AI: perguntei sem o contexto dele.`
+          : null,
+    });
+
+    cerebro(usaContexto ? 'accessing' : 'thinking');
+    if (usaContexto) acender(projeto.id);
+
+    const escrever = (pedaco) => {
+      corpo.textContent += pedaco;
+    };
+
+    try {
+      if (usaContexto) await api.chatStream(projeto.id, frase, { onChunk: escrever });
+      else await api.askQuick(frase, { onChunk: escrever });
+      cerebro('success');
+    } catch (erro) {
+      showError(erro);
+      corpo.textContent = erro.message;
+      cerebro('error');
+    } finally {
+      apagar();
+    }
+  }
+
+  const campo = el('input', {
+    class: 'hb-ask__campo',
+    type: 'text',
+    placeholder: 'Ask HyperBrain…',
+    'aria-label': 'Perguntar ao HyperBrain',
+    onFocus: () => cerebro('listening'),
+    onBlur: () => cerebro('idle'),
+  });
+
+  const formulario = el(
+    'form',
+    {
+      class: 'hb-ask',
+      onSubmit: async (evento) => {
+        evento.preventDefault();
+        const texto = campo.value;
+        campo.value = '';
+        await perguntar(texto);
+      },
+    },
+    [campo, el('button', { class: 'btn btn--sm btn--primary', type: 'submit', text: 'Perguntar' })]
+  );
+
   // --- laço de desenho ----------------------------------------------------
 
   let quadro = null;
@@ -310,6 +667,11 @@ export async function renderHyperbrain(container) {
 
   function desenharUmaVez() {
     aplicarPosicoes(layout.posicoes(), alvos);
+  }
+
+  /** Acomoda os rótulos. Só quando o grafo parou — medir texto custa layout. */
+  function acomodarRotulos() {
+    ajustarRotulos(layout.posicoes(), { elementosDeNo, nos: grafo.nos }, posicionarRotulos);
   }
 
   function laco() {
@@ -327,6 +689,8 @@ export async function renderHyperbrain(container) {
       quadro = window.requestAnimationFrame(laco);
       return;
     }
+
+    acomodarRotulos();
 
     if (enquadrarAoParar) {
       enquadrarAoParar = false;
@@ -352,8 +716,13 @@ export async function renderHyperbrain(container) {
   // precisa dele.
   function aoTeclarNoDocumento(evento) {
     if (evento.key !== 'Escape') return;
-    if (!estado.get('foco') && !estado.get('selecionado')) return;
-    estado.definir({ foco: null, selecionado: null });
+    const temAlgo =
+      estado.get('foco') || estado.get('selecionado') || estado.get('destacados') || cartao;
+    if (!temAlgo) return;
+    cartao = null;
+    apagar();
+    estado.definir({ foco: null, selecionado: null, destacados: null });
+    redesenharPainel();
   }
 
   document.addEventListener('keydown', aoTeclarNoDocumento);
@@ -368,12 +737,14 @@ export async function renderHyperbrain(container) {
         if (movimentoCurto) {
           layout.estabilizar(60);
           desenharUmaVez();
+          acomodarRotulos();
         } else acordar();
       },
       aoReenquadrar: () => {
         if (movimentoCurto) {
           layout.estabilizar();
           desenharUmaVez();
+          acomodarRotulos();
           interacao.enquadrar(layout.posicoes());
         } else enquadrarAoParar = true;
       },
@@ -431,6 +802,7 @@ export async function renderHyperbrain(container) {
       el('div', { class: 'hb-body' }, [
         el('div', { class: 'hb-stage-wrap' }, [
           palco.svg,
+          formulario,
           el(
             'ul',
             { class: 'hb-legend', 'aria-label': 'Tipos de nó' },
@@ -459,6 +831,7 @@ export async function renderHyperbrain(container) {
     // continua inteira — o que se perde é só o caminho até ela.
     layout.estabilizar();
     desenharUmaVez();
+    acomodarRotulos();
     interacao.enquadrar(layout.posicoes());
     enquadrarAoParar = false;
   } else {
@@ -469,6 +842,7 @@ export async function renderHyperbrain(container) {
     vivo = false;
     if (quadro !== null) window.cancelAnimationFrame(quadro);
     quadro = null;
+    if (voltaAoRepouso) window.clearTimeout(voltaAoRepouso);
     document.removeEventListener('visibilitychange', aoTrocarVisibilidade);
     document.removeEventListener('keydown', aoTeclarNoDocumento);
     interacao.destruir();

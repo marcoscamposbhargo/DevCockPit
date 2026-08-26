@@ -88,6 +88,16 @@
 
 .hb-edge[data-kind='core'] {
   stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+  stroke-dasharray: 1 14;
+  /* Circulação lenta e quase invisível: o mapa parece ter corrente passando,
+     sem nenhuma linha piscando na cara de quem só quer ler os nomes. */
+  animation: hb-circula 9s linear infinite;
+}
+
+@keyframes hb-circula {
+  to {
+    stroke-dashoffset: -30;
+  }
 }
 
 .hb-edge[data-kind='tech'] {
@@ -118,28 +128,69 @@
 }
 
 .hb-node__label {
-  fill: var(--fg-secondary);
+  fill: var(--fg-primary);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   pointer-events: none;
+  /* Contorno na cor do fundo, desenhado **atrás** do preenchimento: é o que
+     separa o nome das arestas que passam por baixo dele. Sem `paint-order`, o
+     contorno cobriria a própria letra. */
+  paint-order: stroke fill;
+  stroke: color-mix(in srgb, var(--bg-base) 88%, transparent);
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+  transition: opacity var(--dur-med) var(--ease-out);
 }
 
+/* Rótulo que não achou lugar livre some — e volta quando o nó recebe atenção.
+   Nome ilegível por cima de outro informa menos que nenhum nome. */
+.hb-node__label[data-oculto='true'] {
+  opacity: 0;
+}
+
+.hb-node:hover .hb-node__label[data-oculto='true'],
+.hb-node:focus-visible .hb-node__label[data-oculto='true'],
+.hb-node[data-selecionado='true'] .hb-node__label[data-oculto='true'],
+.hb-node[data-foco='true'] .hb-node__label[data-oculto='true'] {
+  opacity: 1;
+}
+
+/* Cada tecnologia com sua matiz, girada a partir do token — nenhuma cor
+   literal entra aqui. Com doze satélites na tela, é o que permite reconhecer
+   "aquele é o Docker" sem ler o nome. */
 .hb-node[data-tipo='tecnologia'] .hb-node__shape {
-  fill: color-mix(in srgb, var(--status-unknown) 22%, var(--bg-surface));
-  stroke: color-mix(in srgb, var(--status-unknown) 55%, var(--border-strong));
+  fill: color-mix(in srgb, var(--status-unknown) 30%, var(--bg-surface));
+  stroke: color-mix(in srgb, var(--status-unknown) 70%, var(--border-strong));
+  filter: hue-rotate(var(--matiz, 0deg));
 }
 
 .hb-node[data-tipo='tecnologia'] .hb-node__label {
-  fill: var(--fg-muted);
+  fill: var(--fg-secondary);
   font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
 }
 
 /* Estado do projeto: cor **e** anel, porque cor sozinha não serve a quem não
    distingue as duas. */
+/* Projeto no ar **respira**. É o único estado que se move sozinho, e por isso
+   o movimento carrega informação em vez de enfeitar: o que pulsa está rodando
+   agora. */
 .hb-node[data-estado='no-ar'] .hb-node__shape {
   fill: color-mix(in srgb, var(--status-running) 30%, var(--bg-surface));
   stroke: var(--status-running);
   stroke-width: 2.5;
+  animation: hb-vive 3.4s var(--ease-out) infinite;
+}
+
+@keyframes hb-vive {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--status-running) 70%, transparent));
+  }
 }
 
 .hb-node[data-estado='erro'] .hb-node__shape {
@@ -191,13 +242,49 @@
 /* --- núcleo --- */
 
 .hb-core__halo {
-  fill: color-mix(in srgb, var(--accent) 8%, transparent);
+  fill: color-mix(in srgb, var(--accent) 10%, transparent);
   stroke: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  /* A respiração de fundo: lenta o bastante para não chamar atenção, presente
+     o bastante para a tela não parecer congelada. */
+  animation: hb-respiro 7s ease-in-out infinite;
+}
+
+/* Segundo anel, girando ao contrário e mais devagar: duas velocidades dão
+   profundidade que uma só não dá. */
+.hb-core__ring--externo {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 22%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 1 9;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hb-gira 74s linear infinite reverse;
+}
+
+/* As partículas orbitam de verdade, além de cintilar. */
+.hb-core__dust {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hb-gira 96s linear infinite;
+}
+
+@keyframes hb-respiro {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
 }
 
 .hb-core__ring {
   fill: none;
-  stroke: color-mix(in srgb, var(--accent) 35%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 45%, transparent);
   stroke-width: 1;
   stroke-dasharray: 2 6;
   /* `transform-box: fill-box` é obrigatório aqui: sem ele, `center` num
@@ -223,6 +310,10 @@
   transform-box: fill-box;
   transform-origin: center;
   animation: hb-respira 5.5s var(--ease-out) infinite;
+}
+
+.hb-core__pulse--tardio {
+  animation-delay: 2.75s;
 }
 
 .hb-core__name {
@@ -319,16 +410,25 @@
 }
 
 .hb-stage[data-movimento='reduzido'] .hb-core__pulse,
-.hb-stage[data-movimento='reduzido'] .hb-core__ring {
+.hb-stage[data-movimento='reduzido'] .hb-core__ring,
+.hb-stage[data-movimento='reduzido'] .hb-core__ring--externo,
+.hb-stage[data-movimento='reduzido'] .hb-core__halo,
+.hb-stage[data-movimento='reduzido'] .hb-core__dust,
+.hb-stage[data-movimento='reduzido'] .hb-edge,
+.hb-stage[data-movimento='reduzido'] .hb-node__shape,
+.hb-stage[data-denso='true'] .hb-edge[data-kind='core'],
+.hb-stage[data-denso='true'] .hb-node__shape {
   animation: none;
 }
 
 /* --- legenda --- */
 
+/* No alto, e não no rodapé: embaixo ela disputava espaço com a barra de
+   pergunta, e as duas se sobrepunham em tela estreita. */
 .hb-legend {
   position: absolute;
   left: var(--sp-3);
-  bottom: var(--sp-3);
+  top: var(--sp-3);
   display: flex;
   gap: var(--sp-4);
   margin: 0;
@@ -455,4 +555,96 @@
   .hb-legend {
     display: none;
   }
+}
+
+/* --- a conversa ---
+   A barra fica dentro do palco, não acima dele: o campo é parte do mapa, e
+   colocá-lo fora empurraria o grafo para cima a cada abertura de painel. */
+
+.hb-ask {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-4);
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--sp-2);
+  width: min(620px, calc(100% - var(--sp-6)));
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(6px);
+}
+
+.hb-ask__campo {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+}
+
+.hb-ask__campo::placeholder {
+  color: var(--fg-muted);
+}
+
+.hb-ask__campo:focus {
+  outline: none;
+}
+
+.hb-ask:focus-within {
+  border-color: var(--accent);
+}
+
+/* A legenda cede espaço para a barra em tela estreita. */
+@media (max-width: 720px) {
+  .hb-ask {
+    width: calc(100% - var(--sp-4));
+  }
+}
+
+/* Aresta em consulta. Só acende com fato por trás — proposta resolvida,
+   contexto montado ou projeto em foco. */
+.hb-edge[data-ativa='true'] {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  animation: hb-corre 1.1s linear infinite;
+  opacity: 1;
+}
+
+.hb-stage[data-movimento='reduzido'] .hb-edge[data-ativa='true'] {
+  animation: none;
+}
+
+@keyframes hb-corre {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.hb-panel--filtro,
+.hb-panel--acao,
+.hb-panel--resposta {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+/* Recusa não é erro nem sucesso: é o painel dizendo que aquilo não está no
+   registro fechado de ações. Cor de aviso, e não de falha. */
+.hb-panel--recusa {
+  border-color: color-mix(in srgb, var(--status-warning) 55%, var(--border));
+}
+
+.hb-resposta__texto {
+  margin: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
 }

@@ -11,9 +11,9 @@
 import { semente } from './layout.js';
 import { svgEl } from './render.js';
 
-//: Poucas e discretas. O teto do documento é 40; 24 já dá a sensação de
-//: atividade sem virar tela de proteção.
-const PARTICULAS = 24;
+//: Poucas e discretas. O teto do documento é 40; 30 dá a sensação de atividade
+//: sem virar tela de proteção — e elas orbitam, além de cintilar.
+const PARTICULAS = 30;
 
 export const ESTADOS = {
   desligado: 'IA desligada',
@@ -68,11 +68,15 @@ export function criarNucleo(raio = 46) {
       'aria-label': 'HyperBrain, núcleo',
     },
     [
-      particulas(raio),
       svgEl('circle', { class: 'hb-core__halo', r: raio * 1.9 }),
+      particulas(raio),
+      svgEl('circle', { class: 'hb-core__ring hb-core__ring--externo', r: raio * 1.72 }),
       svgEl('circle', { class: 'hb-core__ring', r: raio * 1.32 }),
       svgEl('circle', { class: 'hb-core__disc', r: raio }),
       svgEl('circle', { class: 'hb-core__pulse', r: raio }),
+      // Dois pulsos defasados: a onda solitária tem um vazio longo entre
+      // batidas, e nesse vazio o núcleo parece desligado.
+      svgEl('circle', { class: 'hb-core__pulse hb-core__pulse--tardio', r: raio }),
       svgEl('text', {
         class: 'hb-core__name',
         y: 4,

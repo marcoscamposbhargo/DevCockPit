@@ -38,6 +38,7 @@ def _to_summary(
         path=project.path,
         status=project.status,  # type: ignore[arg-type]
         is_pinned=project.is_pinned,
+        ai_enabled=project.ai_enabled,
         technologies=[tech.name for tech in project.technologies],
         services_total=len(project.services),
         last_accessed_at=project.last_accessed_at,

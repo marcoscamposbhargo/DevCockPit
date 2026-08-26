@@ -15,6 +15,12 @@ const { criarLayout, posicaoInicial } = await import(
 const { encurtar } = await import(
   new URL('../../frontend/js/lib/graph/render.js', import.meta.url).href
 );
+const { interpretar, pareceOrdem } = await import(
+  new URL('../../frontend/js/lib/graph/intent.js', import.meta.url).href
+);
+const { posicionarRotulos } = await import(
+  new URL('../../frontend/js/lib/graph/labels.js', import.meta.url).href
+);
 
 function projeto(id, extras = {}) {
   return {
@@ -195,4 +201,165 @@ test('aresta apontando para nó inexistente não quebra a simulação', () => {
 
   assert.doesNotThrow(() => layout.estabilizar());
   assert.ok(Number.isFinite(layout.posicao('p:a').x));
+});
+
+// --- filtro de visão ------------------------------------------------------
+//
+// A regra decide sozinha o que é destaque, e **se recusa** a decidir o resto:
+// verbo de ação vai para o orquestrador do servidor, pergunta vai para a IA.
+
+const FROTA = [
+  projeto('alpha', { technologies: ['Python', 'docker', 'docker-compose'], app_running: true }),
+  projeto('beta', { technologies: ['node', 'docker'], is_pinned: true }),
+  projeto('gama', { technologies: ['node'], ai_enabled: false }),
+];
+
+test('filtra por tecnologia, e destaca o nó dela junto', () => {
+  const r = interpretar('mostre os projetos em python', FROTA);
+
+  assert.equal(r.total, 1);
+  assert.ok(r.ids.has('p:alpha'));
+  assert.ok(r.ids.has('t:python'));
+  assert.ok(!r.ids.has('p:beta'));
+});
+
+test('verbo de ação nunca vira filtro', () => {
+  // "sobe o alpha" tem nome de projeto e casaria por nome. Se virasse
+  // destaque, a tela mostraria um nó em vez de propor a ação — o oposto do
+  // pedido. Isto é do orquestrador do servidor.
+  assert.equal(interpretar('sobe o alpha', FROTA), null);
+  assert.equal(interpretar('abre o beta no vscode', FROTA), null);
+});
+
+test('pergunta de verdade nunca vira filtro', () => {
+  assert.equal(interpretar('por que o python do alpha está lento?', FROTA), null);
+  assert.equal(interpretar('como faço deploy de node?', FROTA), null);
+});
+
+test('filtra por estado medido, não por status declarado', () => {
+  assert.equal(interpretar('o que está no ar', FROTA).total, 1);
+  assert.equal(interpretar('projetos parados', FROTA).total, 2);
+  assert.equal(interpretar('fixados', FROTA).total, 1);
+});
+
+test('critérios se somam', () => {
+  const r = interpretar('quais projetos em node estão parados', FROTA);
+
+  assert.equal(r.total, 2);
+  assert.ok(r.rotulo.includes('node'));
+  assert.ok(r.rotulo.includes('parados'));
+});
+
+test('o nome mais longo ganha do que está contido nele', () => {
+  const r = interpretar('quem usa docker-compose', FROTA);
+
+  assert.equal(r.rotulo, 'docker-compose');
+  assert.equal(r.total, 1);
+});
+
+test('frase sem critério nenhum devolve null, e não um filtro aproximado', () => {
+  assert.equal(interpretar('onde paramos ontem?', FROTA), null);
+  assert.equal(interpretar('', FROTA), null);
+});
+
+test('dá para ver quem está fora do Cockpit AI', () => {
+  const r = interpretar('quais estão fora da ia', FROTA);
+
+  assert.equal(r.total, 1);
+  assert.ok(r.ids.has('p:gama'));
+});
+
+test('verbo destrutivo vai para o servidor, para voltar como recusa', () => {
+  // Nenhum destes existe no registro fechado — e é por isso que eles precisam
+  // ser mandados para lá. A resposta certa para "apaga o banco" é "não faço
+  // isso", não um modelo divagando sobre como apagar um banco.
+  assert.equal(pareceOrdem('apaga o banco do devcockpit'), true);
+  assert.equal(pareceOrdem('deleta o projeto alpha'), true);
+  assert.equal(pareceOrdem('publica em produção'), true);
+});
+
+test('só frase que soa como ordem paga o pedágio da proposta', () => {
+  // Pedir proposta custa 0,2 s quando a regra do servidor decide, e de 15 a
+  // 40 s quando cai no modelo local. Pergunta não deveria pagar isso.
+  assert.equal(pareceOrdem('sobe o kiteasy'), true);
+  assert.equal(pareceOrdem('abre o smartdash no vscode'), true);
+  assert.equal(pareceOrdem('onde paramos ontem?'), false);
+  assert.equal(pareceOrdem('o que esse projeto faz?'), false);
+});
+
+// --- rótulos sem colisão --------------------------------------------------
+
+function rotulo(id, x, y, largura, extras = {}) {
+  return { id, x, y, largura, altura: 12, raio: 19, prioridade: 19, ...extras };
+}
+
+test('rótulo que cabe embaixo fica embaixo', () => {
+  const posicoes = posicionarRotulos([rotulo('a', 0, 0, 60)]);
+
+  assert.equal(posicoes.get('a').anchor, 'middle');
+  assert.ok(posicoes.get('a').dy > 0, 'abaixo do nó');
+  assert.equal(posicoes.get('a').oculto, false);
+});
+
+test('rótulo que colidiria embaixo procura outro lado', () => {
+  // Dois nós empilhados na vertical: o de baixo ocupa o lugar do rótulo do de
+  // cima, então um dos dois precisa sair do padrão.
+  const posicoes = posicionarRotulos([
+    rotulo('cima', 0, 0, 120),
+    rotulo('baixo', 0, 48, 120),
+  ]);
+
+  const lados = [posicoes.get('cima'), posicoes.get('baixo')].map((p) => p.anchor);
+  assert.ok(lados.some((lado) => lado !== 'middle'), `saiu do padrão: ${lados}`);
+});
+
+test('quem tem prioridade maior fica com o lugar bom', () => {
+  // Lado a lado, com nomes largos: os dois rótulos disputam a mesma faixa
+  // embaixo. Quem tem prioridade escolhe primeiro; o outro se vira.
+  const posicoes = posicionarRotulos([
+    rotulo('pequeno', 120, 0, 200, { prioridade: 1, raio: 11 }),
+    rotulo('grande', 0, 0, 200, { prioridade: 26 }),
+  ]);
+
+  assert.equal(posicoes.get('grande').anchor, 'middle');
+  assert.ok(posicoes.get('grande').dy > 0, 'ficou embaixo, que é o lugar bom');
+  assert.notEqual(posicoes.get('pequeno').anchor, 'middle');
+});
+
+test('sem lugar nenhum, o rótulo some em vez de atropelar o vizinho', () => {
+  // Quatro nós cercando um: nenhum dos quatro lados do rótulo do meio sobra.
+  const cerco = [
+    rotulo('meio', 0, 0, 300),
+    rotulo('n', 0, -40, 300),
+    rotulo('s', 0, 40, 300),
+    rotulo('l', 60, 0, 300),
+    rotulo('o', -60, 0, 300),
+  ];
+
+  const posicoes = posicionarRotulos(cerco);
+
+  assert.ok([...posicoes.values()].some((p) => p.oculto), 'alguém ficou escondido');
+});
+
+test('nó sem rótulo entra como obstáculo, e não recebe posição', () => {
+  // É o caso do núcleo: nada para acomodar, mas um buraco grande no meio.
+  const posicoes = posicionarRotulos([
+    { id: 'nucleo', x: 0, y: 0, raio: 87, largura: 0, altura: 0, prioridade: 99 },
+    rotulo('vizinho', 0, 60, 100),
+  ]);
+
+  assert.equal(posicoes.has('nucleo'), false, 'o núcleo não recebe rótulo');
+  // Cercado pelo núcleo por todos os lados, o vizinho não tem para onde ir: o
+  // rótulo some, e volta no hover. Melhor que ilegível por cima do núcleo.
+  assert.equal(posicoes.get('vizinho').oculto, true);
+});
+
+test('o arranjo não depende da ordem em que os nós chegam', () => {
+  const entrada = [rotulo('a', 0, 0, 120), rotulo('b', 0, 44, 120), rotulo('c', 90, 20, 120)];
+  const direto = posicionarRotulos(entrada);
+  const invertido = posicionarRotulos([...entrada].reverse());
+
+  for (const [id, escolha] of direto) {
+    assert.deepEqual(invertido.get(id), escolha, `${id} mudou de lugar`);
+  }
 });

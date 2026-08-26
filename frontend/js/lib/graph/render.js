@@ -90,6 +90,9 @@ export function desenharNo(no) {
     {
       class: 'hb-node',
       dataset: { id: no.id, tipo: no.tipo, estado: no.estado ?? '', fixado: no.fixado ?? false },
+      // A matiz é um número, não uma cor: o CSS a aplica como rotação sobre o
+      // token. Cor literal continua morando só em `tokens.css`.
+      style: no.matiz === undefined ? null : `--matiz:${no.matiz}deg`,
       tabindex: '0',
       role: 'button',
       'aria-label': descricao,
@@ -116,6 +119,71 @@ export function desenharAresta(aresta) {
     class: 'hb-edge',
     dataset: { id: aresta.id, kind: aresta.kind },
   });
+}
+
+/** Mede e reposiciona os rótulos para nenhum atravessar outro.
+ *
+ * Roda **só quando o grafo para de se mexer**: medir texto obriga o navegador a
+ * calcular layout, e fazer isso a cada quadro custaria mais que a simulação
+ * inteira. Enquanto os nós se acomodam, o rótulo acompanha embaixo, como antes.
+ */
+export function ajustarRotulos(posicoes, { elementosDeNo, nos }, posicionar) {
+  const medidos = [];
+
+  for (const no of nos) {
+    const elemento = elementosDeNo.get(no.id);
+    const ponto = posicoes.get(no.id);
+    if (!elemento || !ponto) continue;
+
+    const texto = elemento.querySelector('.hb-node__label');
+
+    // Nó sem rótulo — o núcleo — entra mesmo assim, como obstáculo: ele ocupa
+    // o maior buraco da tela e nenhum nome deveria pousar ali.
+    if (!texto) {
+      medidos.push({
+        id: no.id,
+        x: ponto.x,
+        y: ponto.y,
+        // 1,45 e não 1,9: o halo externo é quase transparente, e reservar o
+        // círculo inteiro dele escondia rótulo que era perfeitamente legível.
+        // O que precisa ficar limpo é o disco, os anéis e o texto de estado.
+        raio: no.tamanho * 1.45,
+        largura: 0,
+        altura: 0,
+        prioridade: Number.MAX_SAFE_INTEGER,
+      });
+      continue;
+    }
+
+    // `getComputedTextLength` é a largura real da fonte renderizada; estimar
+    // por número de caracteres erra feio em nome com maiúsculas.
+    const largura = texto.getComputedTextLength?.() ?? no.rotulo.length * 7;
+    const altura = no.tipo === 'tecnologia' ? 11 : 12;
+
+    medidos.push({
+      id: no.id,
+      x: ponto.x,
+      y: ponto.y,
+      raio: no.tamanho,
+      largura,
+      altura,
+      //: Quem some primeiro é o satélite, não o projeto — e entre projetos,
+      //: some antes o que está parado há mais tempo.
+      prioridade: no.tipo === 'projeto' ? no.tamanho : 1,
+      elemento: texto,
+    });
+  }
+
+  const posicoesDeRotulo = posicionar(medidos);
+
+  for (const item of medidos) {
+    const escolha = posicoesDeRotulo.get(item.id);
+    if (!escolha || !item.elemento) continue;
+    item.elemento.setAttribute('x', escolha.dx.toFixed(1));
+    item.elemento.setAttribute('y', escolha.dy.toFixed(1));
+    item.elemento.setAttribute('text-anchor', escolha.anchor);
+    item.elemento.dataset.oculto = String(escolha.oculto);
+  }
 }
 
 /** Aplica as posições calculadas. Roda a cada quadro, então é só atributo. */

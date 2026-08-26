@@ -83,6 +83,24 @@ def test_lista_com_total_e_filtro_de_busca(client: TestClient, workspace: Path) 
     assert filtrado["items"][0]["name"] == "beta"
 
 
+def test_lista_diz_quem_esta_fora_do_cockpit_ai(client: TestClient, workspace: Path) -> None:
+    """Sem este campo, uma tela que mostra todos os projetos de uma vez não tem
+    como sinalizar quem está fora da IA **antes** de a pessoa perguntar."""
+    pasta = workspace / "confidencial"
+    pasta.mkdir()
+    criado = _create(client, pasta)
+
+    lista = client.get("/api/projects").json()
+    assert lista["items"][0]["ai_enabled"] is True
+
+    client.patch(
+        f"/api/projects/{criado['id']}", json={"ai_enabled": False}, headers=WRITE_HEADERS
+    )
+
+    lista = client.get("/api/projects").json()
+    assert lista["items"][0]["ai_enabled"] is False
+
+
 def test_detalhe_atualiza_ultimo_acesso(client: TestClient, sample_project: Path) -> None:
     criado = _create(client, sample_project)
     assert criado["last_accessed_at"] is None

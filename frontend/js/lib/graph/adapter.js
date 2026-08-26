@@ -7,6 +7,8 @@
 // Nada aqui inventa relação. Duas coisas só se ligam quando o painel já sabia
 // que estavam ligadas.
 
+import { semente } from './layout.js';
+
 //: Tecnologia usada por um projeto só **não vira nó**. Ela não relaciona nada
 //: — só empurraria para a tela um satélite por projeto, e o nome dela já
 //: aparece no painel lateral. Nó de tecnologia existe para responder "quem
@@ -21,6 +23,18 @@ const TAMANHO = { core: 46, projeto: 19, projetoAtivo: 26, projetoFixado: 23, te
 
 function chaveTecnologia(nome) {
   return nome.trim().toLowerCase();
+}
+
+/** Matiz da tecnologia, derivada do nome.
+ *
+ * Não é enfeite: com doze satélites na tela, cor é o que deixa reconhecer
+ * "aquele ali é o Docker" sem ler. Sai do hash do nome, então é estável entre
+ * sessões e entre máquinas, e é aplicada como **rotação** sobre a cor do token
+ * — nenhuma cor literal entra aqui (a regra do `tokens.css` vale para o JS
+ * também).
+ */
+export function matizDaTecnologia(nome) {
+  return semente(chaveTecnologia(nome)) % 360;
 }
 
 /** Estado do nó de projeto, na mesma doutrina do resto do painel.
@@ -101,6 +115,7 @@ export function montarGrafo(projetos, { agora = Date.now() } = {}) {
       tipo: 'tecnologia',
       rotulo: tecnologia.rotulo,
       tamanho: TAMANHO.tecnologia,
+      matiz: matizDaTecnologia(tecnologia.rotulo),
       // Desenhado pequeno, mas pesado no layout: a tecnologia é o nó com mais
       // ligações e o rótulo mais largo em relação à própria forma. Com peso
       // proporcional ao desenho, os satélites se amontoavam no meio e os

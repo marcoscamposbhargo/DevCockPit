@@ -1,7 +1,7 @@
 # HyperBrain — Neural Core
 
-> **Status: MVP 1 entregue em 2026-08-25.** As três decisões que travavam o
-> início foram tomadas (seção 14). Os MVPs 2 a 5 seguem propostos.
+> **Status: MVPs 1 e 2 entregues em 2026-08-25.** As três decisões que travavam
+> o início foram tomadas (seção 14). Os MVPs 3 a 5 seguem propostos.
 
 Uma tela nova para o DevCockpit: o ecossistema de projetos desenhado como grafo,
 com a inteligência que já existe no painel ligada a ele. Não é uma IA nova, não é
@@ -242,6 +242,8 @@ frontend/js/lib/graph/render.js
 frontend/js/lib/graph/interaction.js
 frontend/js/lib/graph/state.js
 frontend/js/lib/graph/core.js
+frontend/js/lib/graph/intent.js       (MVP 2 — filtro de visão, sem IA)
+frontend/js/lib/graph/labels.js       (rótulos sem colisão)
 frontend/css/hyperbrain.css
 tests/frontend/graph.test.mjs          (um arquivo, não dois: a suíte de
                                         frontend casa `*.test.mjs`)
@@ -256,7 +258,8 @@ docs/adr/ADR-009-graph-rendering.md
 | `frontend/js/main.js` | um `import` e um `register()` — duas linhas |
 | `frontend/js/lib/icons.js` | um ícone novo (`graph`) para a navegação |
 | `frontend/js/lib/api.js` | nada ainda; somente a partir do MVP 3 |
-| `app/schemas/project.py` | nada ainda; somente no MVP 4, para expor `actor`, `agent` e `reason` em `ActivityOut` — que é exatamente a Fase 3.6 já planejada |
+| `app/schemas/project.py` | MVP 2: `ai_enabled` em `ProjectSummary` (a tela precisa saber quem está fora antes de perguntar) e em `ProjectUpdate` — a coluna existia no banco desde a Fase 2 **sem nenhum caminho para mudá-la**. No MVP 4 volta, para expor `actor`, `agent` e `reason` em `ActivityOut`, que é a Fase 3.6 |
+| `app/api/routes/projects.py` | MVP 2: uma linha, para o resumo carregar `ai_enabled` |
 
 Nenhuma linha de backend mudou. Dashboard, home, KPIs e navegação existente
 ficam intocados. O diff prova.
@@ -268,7 +271,7 @@ ficam intocados. O diff prova.
 | MVP | Entrega | Rota nova | Risco |
 |-----|---------|-----------|-------|
 | 1 ✅ | canvas, núcleo, projetos, arestas, zoom, pan, arraste, foco, painel, teclado | não | baixo |
-| 2 | Ask HyperBrain, estados do núcleo, destaque por comando | não | baixo |
+| 2 ✅ | Ask HyperBrain, estados do núcleo, destaque por comando | não | baixo |
 | 3 | tarefas, sessões, decisões, stack, serviços, expansão progressiva | uma, para listar documentos | médio |
 | 4 | atividade ao vivo e execução visualizada | depende da Fase 3.6 | médio |
 | 5 | busca semântica, clusters automáticos, visualização temporal | — | adiado |
@@ -347,7 +350,129 @@ faz requisição de IA nenhuma. Expor o campo é trabalho do MVP 2.
 
 ---
 
-## 15. O que a implementação mudou do desenho
+## 15. MVP 2 — a conversa
+
+A barra "Ask HyperBrain" fica dentro do palco, e o que se digita segue três
+caminhos, nesta ordem:
+
+```
+frase
+  │
+  ├─ 1. filtro de visão   regra local, no navegador. Sem rede, sem token,
+  │                       sem IA — funciona com o Cockpit AI desligado
+  │
+  ├─ 2. ação              só quando a frase soa como ordem. Vai para
+  │                       POST /ai/propose, volta cartão para confirmar
+  │
+  └─ 3. pergunta          chat do projeto em foco, ou pergunta avulsa
+```
+
+### Por que o passo 2 tem porteiro
+
+Pedir proposta custa 0,1 s quando a regra do servidor decide, e de 3 a 26
+segundos quando cai no modelo local. Se toda frase pagasse esse pedágio antes
+de virar pergunta, "onde paramos ontem?" começaria a ser respondida meio minuto
+depois de escrita. Por isso `intent.js` decide **se vale perguntar** — e só
+isso: quem decide qual ação existe continua sendo o servidor, com o registro
+fechado.
+
+Os verbos destrutivos estão na lista de propósito, embora nenhum exista no
+registro. Justamente por isso: mandados para lá, voltam como recusa explícita.
+"Apaga o banco" merece "não faço isso", não um modelo divagando sobre como
+apagar um banco.
+
+### O que foi medido
+
+No painel real, com Ollama local:
+
+| Frase | 7b | 3b |
+|-------|----|----|
+| `sobe o devcockpit` | 0,1 s — regra | 0,1 s — regra |
+| `faz o deploy em produção` | 25,8 s — **recusou** | 3,1 s — propôs `environment.up` |
+| `apaga o banco do devcockpit` | 5,5 s — **recusou** | 4,2 s — propôs `server.stop` |
+| `mostre os projetos em python` | 0 chamadas de IA | 0 chamadas de IA |
+
+A diferença entre os dois modelos é a mesma medida na Fase 3.4, agora vista da
+tela do grafo: o 7b recusa o que não existe, o 3b propõe uma aproximação.
+
+E a contenção não depende do modelo: com o 3b propondo `server.stop` para
+"apaga o banco", o log de atividade ficou **em 7 antes e 7 depois** — nada
+executa sem o clique em Confirmar (defesa D-A3).
+
+### Aresta acesa só com fato
+
+Os três sinais da seção 2, agora implementados: a aresta núcleo→projeto acende
+quando a proposta resolveu aquele projeto, e quando o chat monta contexto dele.
+Apaga ao terminar. Nenhum outro caminho acende aresta.
+
+### Projeto fora do Cockpit AI
+
+Verificado ao vivo: com `ai_enabled = false`, perguntar com o projeto
+selecionado **não** chama a rota de chat. A tela avisa ("está fora do Cockpit
+AI: perguntei sem o contexto dele") e usa a pergunta avulsa. Só `ai/ask`
+aparece na rede — `chat` não (defesa D-A1).
+
+---
+
+## 16. Rótulos e vida
+
+Duas coisas entraram depois do MVP 2, olhando a tela cheia com os 19 projetos.
+
+### Rótulo não atropela rótulo
+
+O layout de força cuida dos **nós**; o rótulo é um retângulo largo pendurado num
+deles, e dois nós confortavelmente separados podem ter nomes que se cruzam.
+"QRCODE_GENERATION" ocupa oito vezes a largura do próprio círculo.
+
+`labels.js` escolhe, para cada rótulo, o primeiro lugar livre em volta do nó —
+abaixo, acima, à direita, à esquerda —, com os círculos dos nós contando como
+obstáculo. Quem não acha lugar nenhum **some**, e volta no hover, no foco e na
+seleção. Nome ilegível por cima de outro informa menos que nome nenhum, porque
+atrapalha o vizinho também.
+
+Três detalhes que decidem se isso funciona:
+
+- roda **só quando o grafo para de se mexer**: medir texto (`getComputedTextLength`)
+  obriga o navegador a calcular layout, e fazer isso por quadro custaria mais
+  que a simulação inteira;
+- a ordem é por prioridade e desempata por id, então o mesmo grafo produz o
+  mesmo arranjo em toda abertura;
+- o núcleo entra como obstáculo mesmo sem ter rótulo próprio — ele ocupa o
+  maior buraco da tela, com halo, anéis, nome e estado.
+
+Medido na tela real: **0 pares de rótulos sobrepostos**, 1 escondido de 30.
+
+E legibilidade: o texto ganhou contorno na cor do fundo, desenhado atrás do
+preenchimento (`paint-order: stroke fill`). É o que separa o nome das arestas
+que passam por baixo dele.
+
+### O núcleo é vivo, e o que se move quer dizer algo
+
+O pedido foi "movimento, pulsante, com cores". O limite que o próprio prompt de
+visão impõe é não virar videogame — então cada coisa que se mexe carrega
+informação:
+
+| O que se move | O que significa |
+|---------------|-----------------|
+| Halo do núcleo respirando (7 s) | a inteligência está de pé |
+| Dois anéis girando em sentidos opostos | profundidade; duas velocidades onde uma seria plana |
+| Trinta partículas orbitando e cintilando | atividade do núcleo |
+| Dois pulsos defasados | batida contínua — a onda solitária deixava um vazio em que o núcleo parecia desligado |
+| Nó de projeto **respirando em verde** | esse projeto está no ar **agora** |
+| Corrente lenta nas arestas do núcleo | o mapa tem ligação viva, sem linha piscando na cara de quem só quer ler |
+
+E cor: cada tecnologia recebe uma **matiz derivada do nome** (hash → grau), o
+que a torna estável entre sessões e entre máquinas. Aplicada como
+`hue-rotate` sobre o token, não como cor literal — a regra do `tokens.css` vale
+para o JavaScript também.
+
+Tudo isso desliga junto em `prefers-reduced-motion`, no botão "Movimento:
+reduzido" e no modo denso (acima de 150 nós). Nenhuma dessas animações roda em
+JavaScript: são `@keyframes`, e o custo por quadro continua sendo zero.
+
+---
+
+## 17. O que a implementação mudou do desenho
 
 Quatro coisas que só apareceram com a tela no ar, e um defeito.
 
@@ -380,3 +505,15 @@ núcleo. Era o anel do próprio núcleo. Num elemento SVG, `transform-origin: ce
 se refere ao centro do **viewBox**, não ao do elemento — o anel girava numa órbita
 de centenas de pixels. `transform-box: fill-box` resolve, e o mesmo valia para o
 pulso. Nenhum teste pegaria isso: o elemento estava lá, com os atributos certos.
+
+**O terceiro, no MVP 2, era o pior dos três:** o botão Cancelar do cartão de
+ação não fazia nada. O estado do núcleo passava pelo mesmo observável do painel
+lateral, então cada `thinking` ou `success` remontava o painel inteiro — e o
+`blur` do campo de pergunta chegava junto com o clique. O cartão era removido e
+recolocado no meio do gesto, e o clique se perdia no vão. Quem fosse recusar
+uma ação apertava Cancelar e não acontecia nada.
+
+O conserto foi tirar o estado do núcleo do observável: ele é atributo de **um**
+elemento, não estado de tela. Achado clicando, não lendo — o teste de unidade
+não tem clique, e o de fluxo via Playwright só reclamou porque o efeito era
+visível.

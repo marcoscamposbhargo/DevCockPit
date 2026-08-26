@@ -1,12 +1,16 @@
 // Estado visual do grafo — e só o visual.
 //
-// Nó selecionado, nó em foco, destaque, estado do núcleo: tudo isto morre com
-// a tela e **nunca** vai para o banco. Estado de visualização virando dado
+// Nó selecionado, nó em foco, destaque: tudo isto morre com a tela e **nunca**
+// vai para o banco. Estado de visualização virando dado
 // persistido é como um grafo vira, sem ninguém decidir, um segundo gerenciador
 // de projetos ao lado do que já existe.
 //
 // A única exceção é a preferência de movimento, que é escolha da pessoa e não
 // do grafo — e por isso vive no `localStorage`, junto do tema.
+//
+// O estado do núcleo (`idle`, `thinking`, `accessing`…) **não** mora aqui: ele
+// é atributo de um elemento só, e passá-lo por este observável fazia o painel
+// lateral ser remontado a cada mudança — inclusive no meio de um clique.
 
 const CHAVE_MOVIMENTO = 'devcockpit:hyperbrain:movimento';
 
@@ -38,8 +42,6 @@ export function criarEstado() {
     foco: null,
     //: Conjunto de ids em destaque, ou `null` quando não há filtro ativo.
     destacados: null,
-    //: idle | listening | thinking | accessing | executing | success | warning | error
-    cerebro: 'idle',
   };
 
   const ouvintes = new Set();

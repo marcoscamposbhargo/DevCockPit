@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-25 (HyperBrain MVP 1: o ecossistema vira grafo)
+**Última atualização:** 2026-08-25 (HyperBrain MVP 2: o mapa passa a responder)
 
 ---
 
@@ -23,6 +23,12 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
+- [x] (2026-08-25) HyperBrain, MVP 2 entregue: barra "Ask HyperBrain" dentro do
+      palco. Filtro de visão resolvido no navegador, sem IA nenhuma ("mostre os
+      projetos em python" destaca em milissegundos e funciona com o Cockpit AI
+      desligado); ordem vira cartão de confirmação pela rota de sempre; o resto
+      é pergunta. Aresta só acende com fato. `ai_enabled` finalmente tem um
+      caminho para ser mudado — a coluna existia desde a Fase 2 sem interruptor.
 - [x] (2026-08-25) HyperBrain, MVP 1 entregue: tela nova em `#/hyperbrain` com
       o ecossistema como grafo — núcleo, os 19 projetos e as 12 tecnologias que
       ligam projeto a projeto. SVG à mão, sem biblioteca nenhuma (ADR-009);
@@ -345,8 +351,8 @@ teste removidos.
 Nada. Do Cockpit AI, as Fases 1, 2, 3.1 e 3.4 estão entregues (`docs/ai/`);
 faltam 3.2, 3.3, 3.5 e 3.6.
 
-Do HyperBrain (`docs/ai/HYPERBRAIN.md`), o MVP 1 está entregue e o MVP 2 — o
-"Ask HyperBrain" ligado à IA que já existe, com destaque de nós por comando —
+Do HyperBrain (`docs/ai/HYPERBRAIN.md`), os MVPs 1 e 2 estão entregues. O MVP 3
+— tarefas, sessões, decisões e serviços como nós, com expansão progressiva —
 espera uso real da tela antes de começar.
 
 ---

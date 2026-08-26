@@ -167,6 +167,15 @@ class ActivityOut(BaseModel):
     exit_code: int | None
     message: str | None
     correlation_id: str | None
+    #: Quem pediu: `user` (o botão) ou `ai` (proposta confirmada). O campo
+    #: existia na tabela desde a Fase 2 e não saía por rota nenhuma — ou seja,
+    #: a auditoria sabia a resposta e não contava.
+    actor: str = "user"
+    #: Perfil de especialista, quando houver.
+    agent: str | None = None
+    #: Por que a IA propôs. Sem isto, auditoria de IA é lista de comandos sem
+    #: motivo — inútil justamente quando se quer entender o que houve.
+    reason: str | None = None
     created_at: datetime
 
 

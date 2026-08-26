@@ -50,6 +50,7 @@ from app.schemas.ai import (
 )
 from app.services.ai.chat_service import ChatService
 from app.services.ai.orchestrator import Orchestrator
+from app.services.ai.propostas import REGISTRO
 from app.services.briefing_service import BriefingService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
@@ -365,7 +366,19 @@ def propose_action(
             message="Não encontrei nenhuma ação do painel que sirva para isso."
         )
 
-    return ProposeOut(proposal=ProposalOut(**proposta.to_dict()))
+    # O bilhete é emitido aqui, e é o que permitirá à auditoria dizer "foi a
+    # IA" sem acreditar em nada que o cliente afirme (Fase 3.6).
+    dados = proposta.to_dict()
+    pendente = REGISTRO.registrar(
+        action=dados["action"],
+        method=dados["method"],
+        path=dados["path"],
+        project_id=dados["project_id"],
+        reason=dados["reason"],
+        origem=dados["origem"],
+    )
+
+    return ProposeOut(proposal=ProposalOut(**dados, id=pendente.id))
 
 
 @global_router.post("/ask")

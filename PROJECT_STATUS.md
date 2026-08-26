@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-25 (HyperBrain: MVP 2, o 3D revertido e o núcleo batendo)
+**Última atualização:** 2026-08-26 (Fase 3.6: a auditoria diz quem pediu a ação)
 
 ---
 
@@ -23,6 +23,12 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
+- [x] (2026-08-26) Fase 3.6 entregue: a ação que a IA propôs e você confirmou
+      deixa de ser gravada como ação sua. O servidor emite um bilhete ao propor
+      e só reconhece autoria se ele voltar para a mesma rota — o cliente não
+      afirma autoria, apresenta o bilhete. Filtro "Feito pela IA" na tela de
+      Activity. Achado: ação de leitura não gera auditoria nenhuma no painel,
+      então "o que o agente leu?" continua sem resposta.
 - [x] (2026-08-26) `Dockerfile`, `docker-compose.yml` e `.dockerignore`
       versionados, com aviso no topo: são **experimentais**. Dentro de um
       container o painel perde abrir editor/pasta/terminal, varredura e
@@ -363,8 +369,8 @@ teste removidos.
 
 ## Em andamento
 
-Nada. Do Cockpit AI, as Fases 1, 2, 3.1 e 3.4 estão entregues (`docs/ai/`);
-faltam 3.2, 3.3, 3.5 e 3.6.
+Nada. Do Cockpit AI, as Fases 1, 2, 3.1, 3.4 e 3.6 estão entregues (`docs/ai/`);
+faltam 3.2, 3.3 e 3.5.
 
 Do HyperBrain (`docs/ai/HYPERBRAIN.md`), os MVPs 1 e 2 estão entregues, em 2D. O
 MVP 3 — tarefas, sessões, decisões e serviços como nós — espera **uso real da

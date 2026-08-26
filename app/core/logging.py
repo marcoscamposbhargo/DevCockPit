@@ -11,6 +11,15 @@ from pathlib import Path
 
 _correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
+#: Quem pediu a ação desta requisição: `None` (a pessoa, pelo botão) ou a tripla
+#: `(agente, motivo, origem)` quando o servidor reconheceu uma proposta sua.
+#:
+#: Vive num `ContextVar` pelo mesmo motivo do `correlation_id`: quem grava a
+#: auditoria é o serviço, lá no fundo, e passar autoria por parâmetro obrigaria
+#: a atravessar rota, serviço, adapter e runner com um argumento que só a
+#: última linha usa.
+_autoria: ContextVar[tuple[str, str, str] | None] = ContextVar("autoria", default=None)
+
 # Chaves cujo valor nunca é gravado (NFR-103 / defesa D8).
 SENSITIVE_HINTS = ("token", "secret", "password", "passwd", "authorization", "api_key")
 
@@ -27,6 +36,15 @@ def set_correlation_id(value: str | None) -> str:
 
 def get_correlation_id() -> str | None:
     return _correlation_id.get()
+
+
+def set_autoria(valor: tuple[str, str, str] | None) -> None:
+    """Marca a requisição atual como vinda de uma proposta da IA."""
+    _autoria.set(valor)
+
+
+def get_autoria() -> tuple[str, str, str] | None:
+    return _autoria.get()
 
 
 def redact(value: str) -> str:

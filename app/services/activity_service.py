@@ -6,7 +6,7 @@ import json
 
 from sqlalchemy.orm import Session
 
-from app.core.logging import get_correlation_id, redact_argv
+from app.core.logging import get_autoria, get_correlation_id, redact_argv
 from app.models.project import ActivityLog, ActivityStatus
 from app.repositories.activity_repository import ActivityRepository
 
@@ -26,6 +26,13 @@ class ActivityService:
         argv: list[str] | None = None,
         message: str | None = None,
     ) -> ActivityLog:
+        # Autoria não é parâmetro: vem do contexto da requisição, posto pelo
+        # middleware quando o servidor reconhece uma proposta que ele mesmo
+        # emitiu. Assim toda ação executada por confirmação fica marcada, sem
+        # cada rota precisar lembrar de marcar.
+        autoria = get_autoria()
+        agente, motivo, origem = autoria if autoria else (None, None, None)
+
         entry = ActivityLog(
             project_id=project_id,
             action=action,
@@ -35,6 +42,9 @@ class ActivityService:
             argv=json.dumps(redact_argv(argv), ensure_ascii=False) if argv else None,
             message=message,
             correlation_id=get_correlation_id(),
+            actor="ai" if autoria else "user",
+            agent=agente,
+            reason=f"{motivo} (decidido por {origem})" if autoria else None,
         )
         return self.repo.add(entry)
 
@@ -57,6 +67,7 @@ class ActivityService:
         project_id: str | None = None,
         action: str | None = None,
         status: str | None = None,
+        actor: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ActivityLog], int]:
@@ -64,6 +75,7 @@ class ActivityService:
             project_id=project_id,
             action=action,
             status=status,
+            actor=actor,
             limit=limit,
             offset=offset,
         )

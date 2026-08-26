@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from app.adapters.docker.adapter import DockerAdapter
 from app.adapters.system.ports import build_port_scanner
 from app.api.middleware import (
+    AutoriaMiddleware,
     CorrelationIdMiddleware,
     HostGuardMiddleware,
     OriginGuardMiddleware,
@@ -153,6 +154,7 @@ def create_app(
 
     # Ordem de execução: o último adicionado roda primeiro.
     # Host precisa ser validado antes de tudo (defesa D10).
+    app.add_middleware(AutoriaMiddleware)
     app.add_middleware(OriginGuardMiddleware, settings=settings)
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(HostGuardMiddleware, settings=settings)

@@ -95,7 +95,7 @@ segurança passam.
 | 3.3 | Orquestrador (regra primeiro, modelo no empate) |
 | 3.4 | ~~Ações propostas com confirmação e classificação~~ ✅ |
 | 3.5 | Command palette (`/plan`, `/find-bugs`, `/status`…) |
-| 3.6 | `activity_log` com `actor="ai"` ponta a ponta |
+| 3.6 | ~~`activity_log` com `actor="ai"` ponta a ponta~~ ✅ |
 
 **Critério de saída — 3.4 verificado em 2026-08-25**, no app instalado: "sobe o
 kiteasy" devolveu `environment.up` em **0,2 s** (caminho da regra, sem tocar no
@@ -107,8 +107,24 @@ acertou 6 de 6 na escolha de ação e 7 de 7 na escolha de projeto entre 18
 cadastrados — inclusive corrigindo "smartdah" para `smartdash`. O `3b` falhou
 justamente em recusar o que não existe.
 
-Falta de 3.4: a execução confirmada ainda é auditada como ação do usuário. É
-verdade parcial — quem propôs foi a IA —, e fecha com 3.6.
+~~Falta de 3.4: a execução confirmada ainda é auditada como ação do usuário.~~
+**Fechado pela 3.6, em 2026-08-26.**
+
+**Critério de saída — 3.6 verificado em 2026-08-26**, no painel real: "abre o
+devcockpit no vscode" virou proposta em 0,01 s pela regra; confirmada, a linha
+saiu com `actor=ai`, `agent=open.vscode` e o motivo com quem decidiu. A **mesma
+confirmação repetida** foi gravada como ação do usuário — um bilhete, uma
+execução.
+
+O desenho: o servidor emite um bilhete ao propor e só reconhece autoria se ele
+voltar para a mesma rota e o mesmo método. O cliente não afirma autoria; ele
+apresenta o bilhete. Um log que confia no auditado não audita — é a mesma razão
+que proibiu o cliente de mandar URL (D-13).
+
+**Alcance, dito na íntegra:** ação de leitura (`git.status`, `ports.map`,
+`docker.ps`) não gera linha de auditoria no painel, e isso é anterior à 3.6.
+Logo, "o que o agente **fez** ontem?" tem resposta; "o que ele **leu**?" não —
+nem antes, nem agora. Mudar isso é decisão de produto, não de implementação.
 
 **Risco:** médio-alto — é onde a IA encosta em execução. A defesa é não ter
 capacidade nova nenhuma (D-A3), verificada por teste.

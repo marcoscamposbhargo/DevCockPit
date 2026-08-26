@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, { body, params } = {}) {
+async function request(method, path, { body, params, proposta } = {}) {
   const url = new URL(BASE + path, window.location.origin);
   for (const [key, value] of Object.entries(params ?? {})) {
     if (value !== undefined && value !== null && value !== '') {
@@ -26,6 +26,7 @@ async function request(method, path, { body, params } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET') headers['X-DevCockpit-Client'] = 'web';
+  if (proposta) headers['X-DevCockpit-Proposal'] = proposta;
 
   let response;
   try {
@@ -193,7 +194,10 @@ export const api = {
    */
   runProposal: (proposal) => {
     const caminho = proposal.path.replace(/^\/api/, '');
-    return request(proposal.method, caminho);
+    // O bilhete que o servidor emitiu ao propor volta aqui. Não é o cliente
+    // afirmando "isto foi a IA" — é o servidor reconhecendo a própria proposta
+    // e, com isso, gravando a autoria na auditoria (Fase 3.6).
+    return request(proposal.method, caminho, { proposta: proposal.id });
   },
 
   chatStream: (id, question, opcoes = {}) =>

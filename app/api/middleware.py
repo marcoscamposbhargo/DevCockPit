@@ -13,11 +13,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import ALLOWED_HTTP_HOSTS, Settings
-from app.core.logging import new_correlation_id, set_correlation_id
+from app.core.logging import new_correlation_id, set_autoria, set_correlation_id
+from app.services.ai.propostas import REGISTRO
 
 logger = logging.getLogger(__name__)
 
 CLIENT_HEADER = "x-devcockpit-client"
+PROPOSAL_HEADER = "x-devcockpit-proposal"
 CLIENT_HEADER_VALUE = "web"
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -72,6 +74,33 @@ class HostGuardMiddleware(BaseHTTPMiddleware):
             closing = value.find("]")
             return value[: closing + 1] if closing != -1 else value
         return value.rsplit(":", 1)[0] if ":" in value else value
+
+
+class AutoriaMiddleware(BaseHTTPMiddleware):
+    """Marca a requisição como vinda da IA — quando o servidor a reconhece.
+
+    O cliente manda um bilhete, não uma afirmação: ele diz *qual* proposta está
+    confirmando, e quem decide se aquilo é autoria de IA é o registro do
+    servidor, conferindo método e rota. Bilhete inventado, vencido, já usado ou
+    apontando para outra rota simplesmente não marca nada — a ação segue e é
+    gravada como o que ela é, ação da pessoa.
+
+    Não é uma defesa de segurança: a execução já estava contida pelo registro
+    fechado de ações (D-A3). É uma defesa da **verdade do log**.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        set_autoria(None)
+
+        bilhete = request.headers.get(PROPOSAL_HEADER, "")
+        if bilhete:
+            proposta = REGISTRO.resgatar(
+                bilhete, method=request.method, path=request.url.path
+            )
+            if proposta is not None:
+                set_autoria((proposta.action, proposta.reason, proposta.origem))
+
+        return await call_next(request)
 
 
 class OriginGuardMiddleware(BaseHTTPMiddleware):

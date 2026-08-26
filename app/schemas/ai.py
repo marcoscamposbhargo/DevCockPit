@@ -198,6 +198,9 @@ class ProposalOut(BaseModel):
     aponta para um caminho que já existia.
     """
 
+    #: Bilhete emitido pelo servidor. A tela devolve no cabeçalho ao executar,
+    #: e é isso que faz a auditoria registrar a ação como proposta pela IA.
+    id: str = ""
     action: str
     label: str
     #: Texto pronto para a tela, na segunda pessoa e no futuro: é uma promessa

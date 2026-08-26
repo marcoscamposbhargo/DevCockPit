@@ -23,6 +23,7 @@ class ActivityRepository:
         project_id: str | None = None,
         action: str | None = None,
         status: str | None = None,
+        actor: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ActivityLog], int]:
@@ -33,6 +34,8 @@ class ActivityRepository:
             stmt = stmt.where(ActivityLog.action == action)
         if status is not None:
             stmt = stmt.where(ActivityLog.status == status)
+        if actor is not None:
+            stmt = stmt.where(ActivityLog.actor == actor)
 
         total = self.session.execute(
             select(func.count()).select_from(stmt.subquery())

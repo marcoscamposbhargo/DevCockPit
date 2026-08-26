@@ -83,6 +83,15 @@ function linha(entry) {
       // O nome técnico continua no tooltip: quem depura precisa dele, quem só
       // quer saber o que houve não deveria decorar `system.vscode`.
       el('span', { title: entry.action, text: ROTULO_ACAO[entry.action] ?? entry.action }),
+      // Autoria só aparece quando não é a pessoa: marcar toda linha com "você"
+      // seria ruído em 99% delas, e o que interessa é justamente a exceção.
+      entry.actor === 'ai'
+        ? el('span', {
+            class: 'signal',
+            dataset: { kind: 'ia' },
+            title: entry.reason ?? 'Proposta pela IA, confirmada por você.',
+          }, [icon('graph', { size: 11 }), 'IA'])
+        : null,
     ]),
     el('td', {}, [
       entry.project_id
@@ -144,7 +153,7 @@ function tabela(itens) {
 export async function renderActivity(container) {
   mount(container, loading());
 
-  const estado = { familia: '', projeto: '', soProblemas: false, mostrando: PAGINA };
+  const estado = { familia: '', projeto: '', soProblemas: false, soIa: false, mostrando: PAGINA };
   let projetos = [];
 
   try {
@@ -160,6 +169,10 @@ export async function renderActivity(container) {
     const dados = await api.listActivity({
       limit: 200,
       project_id: estado.projeto || undefined,
+      // O filtro por autor vai para o servidor: "o que o agente fez ontem?" é a
+      // pergunta que a Fase 3.6 existe para responder, e ela não deveria
+      // depender de a resposta caber nas 200 linhas trazidas.
+      actor: estado.soIa ? 'ai' : undefined,
     });
 
     const familia = FAMILIAS.find((f) => f.key === estado.familia);
@@ -194,6 +207,16 @@ export async function renderActivity(container) {
           recarregar();
         },
         { title: 'Falhas, tempos esgotados e ações recusadas.' }
+      ),
+      chip(
+        el('span', {}, [icon('graph', { size: 12 }), ' Feito pela IA']),
+        estado.soIa,
+        () => {
+          estado.soIa = !estado.soIa;
+          estado.mostrando = PAGINA;
+          recarregar();
+        },
+        { title: 'Ações que o agente propôs e você confirmou.' }
       ),
       el('span', { class: 'filter-bar__sep', 'aria-hidden': 'true' }),
       ...FAMILIAS.map((f) =>

@@ -154,7 +154,7 @@ test('a simulação para sozinha', () => {
 test('o núcleo fica no centro', () => {
   const posicoes = posicoesEstaveis();
 
-  assert.deepEqual(posicoes.get('core'), { x: 0, y: 0, z: 0 });
+  assert.deepEqual(posicoes.get('core'), { x: 0, y: 0 });
 });
 
 test('nenhuma coordenada vira NaN', () => {
@@ -190,7 +190,7 @@ test('nó arrastado fica onde foi solto', () => {
   layout.fixar('p:a', 400, -120);
   layout.estabilizar();
 
-  assert.deepEqual(layout.posicao('p:a'), { x: 400, y: -120, z: 0 });
+  assert.deepEqual(layout.posicao('p:a'), { x: 400, y: -120 });
 });
 
 test('aresta apontando para nó inexistente não quebra a simulação', () => {
@@ -362,30 +362,4 @@ test('o arranjo não depende da ordem em que os nós chegam', () => {
   for (const [id, escolha] of direto) {
     assert.deepEqual(invertido.get(id), escolha, `${id} mudou de lugar`);
   }
-});
-
-test('em três dimensões os nós saem do plano, e o resultado segue determinístico', () => {
-  const emTres = () => {
-    const l = criarLayout(GRAFO.nos, GRAFO.arestas, { dimensoes: 3 });
-    l.estabilizar();
-    return l.posicoes();
-  };
-
-  const primeira = emTres();
-  const segunda = emTres();
-
-  const fora = [...primeira].filter(([id, p]) => id !== 'core' && Math.abs(p.z) > 1);
-  assert.ok(fora.length > 0, 'alguém saiu do plano z=0');
-
-  for (const [id, ponto] of primeira) {
-    assert.ok(Number.isFinite(ponto.z), `${id} com z inválido`);
-    assert.ok(Math.abs(ponto.z - segunda.get(id).z) < 1e-9, `${id} mudou de profundidade`);
-  }
-});
-
-test('em duas dimensões nada sai do plano', () => {
-  const layout = criarLayout(GRAFO.nos, GRAFO.arestas);
-  layout.estabilizar();
-
-  for (const [, ponto] of layout.posicoes()) assert.equal(ponto.z, 0);
 });

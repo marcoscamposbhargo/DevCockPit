@@ -26,58 +26,11 @@
   margin: 0;
 }
 
-.hb-bar__meta {
-  margin: 2px 0 0;
-  color: var(--fg-muted);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-}
-
-/* Controles do mapa: um bloco só, com divisórias internas — o padrão que todo
-   mapa usa, e que devolve ao título a largura que cinco botões com rótulo
-   estavam consumindo. */
 .hb-bar__acoes {
   display: flex;
+  gap: var(--sp-2);
   margin-left: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  overflow: hidden;
-}
-
-.hb-ctl {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 32px;
-  border: 0;
-  border-left: 1px solid var(--border);
-  background: transparent;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.hb-ctl:first-child {
-  border-left: 0;
-}
-
-.hb-ctl:hover {
-  background: var(--bg-hover);
-  color: var(--fg-primary);
-}
-
-.hb-ctl:focus-visible {
-  outline: var(--ring-width) solid var(--ring);
-  outline-offset: -2px;
-  color: var(--fg-primary);
-}
-
-.hb-ctl[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
+  flex-wrap: wrap;
 }
 
 /* --- palco --- */
@@ -88,12 +41,6 @@
   gap: var(--sp-4);
   flex: 1;
   min-height: 460px;
-  transition: grid-template-columns var(--dur-med) var(--ease-out);
-}
-
-/* Sem nada selecionado, a coluna encolhe: o mapa é o conteúdo desta tela. */
-.hb-body[data-painel='vazio'] {
-  grid-template-columns: minmax(0, 1fr) 232px;
 }
 
 .hb-stage-wrap {
@@ -180,26 +127,6 @@
   transition: fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out);
 }
 
-/* A inicial dentro do círculo: identidade que sobrevive ao zoom de longe e ao
-   rótulo escondido por falta de espaço. */
-.hb-node__inicial {
-  fill: var(--fg-secondary);
-  font-family: var(--font-ui);
-  font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-tight);
-  pointer-events: none;
-  transition: fill var(--dur-fast) var(--ease-out);
-}
-
-.hb-node[data-estado='no-ar'] .hb-node__inicial {
-  fill: var(--fg-primary);
-}
-
-.hb-node:hover .hb-node__inicial,
-.hb-node[data-selecionado='true'] .hb-node__inicial {
-  fill: var(--fg-primary);
-}
-
 .hb-node__label {
   fill: var(--fg-primary);
   font-family: var(--font-ui);
@@ -280,27 +207,7 @@
   stroke-dasharray: 2 3;
 }
 
-.hb-node[data-fixado='true'] /* A inicial dentro do círculo: identidade que sobrevive ao zoom de longe e ao
-   rótulo escondido por falta de espaço. */
-.hb-node__inicial {
-  fill: var(--fg-secondary);
-  font-family: var(--font-ui);
-  font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-tight);
-  pointer-events: none;
-  transition: fill var(--dur-fast) var(--ease-out);
-}
-
-.hb-node[data-estado='no-ar'] .hb-node__inicial {
-  fill: var(--fg-primary);
-}
-
-.hb-node:hover .hb-node__inicial,
-.hb-node[data-selecionado='true'] .hb-node__inicial {
-  fill: var(--fg-primary);
-}
-
-.hb-node__label {
+.hb-node[data-fixado='true'] .hb-node__label {
   fill: var(--fg-primary);
   font-weight: var(--fw-semibold);
 }
@@ -324,51 +231,12 @@
   stroke-width: 3;
 }
 
-.hb-node[data-selecionado='true'] /* A inicial dentro do círculo: identidade que sobrevive ao zoom de longe e ao
-   rótulo escondido por falta de espaço. */
-.hb-node__inicial {
-  fill: var(--fg-secondary);
-  font-family: var(--font-ui);
-  font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-tight);
-  pointer-events: none;
-  transition: fill var(--dur-fast) var(--ease-out);
-}
-
-.hb-node[data-estado='no-ar'] .hb-node__inicial {
-  fill: var(--fg-primary);
-}
-
-.hb-node:hover .hb-node__inicial,
-.hb-node[data-selecionado='true'] .hb-node__inicial {
-  fill: var(--fg-primary);
-}
-
-.hb-node__label {
+.hb-node[data-selecionado='true'] .hb-node__label {
   fill: var(--fg-primary);
 }
 
 .hb-node[data-apagado='true'] {
   opacity: 0.16;
-}
-
-/* O único momento autoral da tela: o mapa se abre do centro para fora, uma vez,
-   quando ela é montada. Nada mais entra com animação — repetir isso em cada
-   elemento transformaria o gesto em tique. */
-.hb-nodes .hb-node {
-  animation: hb-entra 420ms var(--ease-out) backwards;
-  animation-delay: calc(var(--indice, 0) * 14ms);
-}
-
-@keyframes hb-entra {
-  from {
-    opacity: 0;
-    transform: scale(0.6);
-  }
-}
-
-.hb-stage[data-movimento='reduzido'] .hb-nodes .hb-node {
-  animation: none;
 }
 
 /* --- núcleo --- */
@@ -553,31 +421,6 @@
   animation: none;
 }
 
-/* As superfícies que o navegador desenha sozinho também são parte do desenho:
-   seleção e barra de rolagem saem dos tokens, e não do cinza padrão. */
-.hb ::selection {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
-  color: var(--fg-primary);
-}
-
-.hb-resposta__texto {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.hb-resposta__texto::-webkit-scrollbar {
-  width: 8px;
-}
-
-.hb-resposta__texto::-webkit-scrollbar-thumb {
-  border-radius: var(--radius-pill);
-  background: var(--border-strong);
-}
-
-.hb-resposta__texto::-webkit-scrollbar-track {
-  background: transparent;
-}
-
 /* --- legenda --- */
 
 /* No alto, e não no rodapé: embaixo ela disputava espaço com a barra de
@@ -697,17 +540,16 @@
    O painel lateral desce para baixo do palco e o grafo perde altura, não
    utilidade: continua arrastável, com zoom e com foco. */
 @media (max-width: 1100px) {
-  /* O seletor com `[data-painel]` é mais específico que `.hb-body` sozinho, e
-     sem repeti-lo aqui a coluna lateral continuava ao lado do palco numa tela
-     onde não cabem as duas. */
-  .hb-body,
-  .hb-body[data-painel='vazio'],
-  .hb-body[data-painel='cheio'] {
+  .hb-body {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .hb-stage-wrap {
     min-height: 420px;
+  }
+
+  .hb-tool__label {
+    display: none;
   }
 
   .hb-legend {
@@ -805,100 +647,4 @@
   white-space: pre-wrap;
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
-}
-
-/* --- o mapa em três dimensões ---
-   O `<canvas>` desenha as formas; os nomes continuam sendo HTML por cima dele,
-   posicionados pela projeção da câmera. Texto em textura de WebGL perde
-   nitidez em qualquer zoom e some do leitor de tela. */
-
-.hb-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  touch-action: none;
-  cursor: grab;
-}
-
-.hb-canvas[data-sobre='no'] {
-  cursor: pointer;
-}
-
-.hb-rotulos {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.hb-rotulo {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: block;
-  color: var(--fg-primary);
-  font-family: var(--font-ui);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  white-space: nowrap;
-  /* O mesmo contorno do mapa 2D, aqui como sombra em quatro direções: separa o
-     nome das linhas e das esferas que passam por trás. */
-  text-shadow:
-    0 1px 2px var(--bg-base),
-    0 -1px 2px var(--bg-base),
-    1px 0 2px var(--bg-base),
-    -1px 0 2px var(--bg-base);
-  transition: opacity var(--dur-med) var(--ease-out);
-  will-change: transform;
-}
-
-.hb-rotulo[data-tipo='tecnologia'] {
-  color: var(--fg-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-regular);
-}
-
-.hb-rotulo[data-selecionado='true'] {
-  color: var(--accent);
-  font-weight: var(--fw-semibold);
-}
-
-.hb-rotulo[data-tipo='core'] {
-  text-align: center;
-  letter-spacing: var(--tracking-caps);
-  font-weight: var(--fw-semibold);
-}
-
-.hb-rotulo__estado {
-  display: block;
-  margin-top: 2px;
-  color: var(--fg-muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-regular);
-  letter-spacing: 0;
-}
-
-.hb-rotulo[data-brain='error'] .hb-rotulo__estado {
-  color: var(--status-error);
-}
-
-.hb-rotulo[data-brain='warning'] .hb-rotulo__estado {
-  color: var(--status-warning);
-}
-
-.hb-rotulo[data-brain='success'] .hb-rotulo__estado {
-  color: var(--status-running);
-}
-
-/* No modo 3D o fundo é mais fundo: o volume das esferas precisa de um chão
-   escuro para se destacar, e o brilho do núcleo faz o resto. */
-.hb-stage-wrap[data-modo='3d'] {
-  background:
-    radial-gradient(
-      circle at 50% 45%,
-      color-mix(in srgb, var(--accent) 14%, transparent),
-      transparent 66%
-    ),
-    color-mix(in srgb, var(--bg-base) 88%, var(--fg-primary));
 }

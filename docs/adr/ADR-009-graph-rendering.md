@@ -1,6 +1,6 @@
 # ADR-009 — Grafo do HyperBrain em SVG, sem biblioteca
 
-- **Status:** Aceito, **revisado no mesmo dia** (ver "Revisão" no fim)
+- **Status:** Aceito
 - **Data:** 2026-08-25
 - **Fase:** HyperBrain, MVP 1
 - **Origem:** proposta técnica em `docs/ai/HYPERBRAIN.md`
@@ -103,55 +103,3 @@ Negativas:
    colisão de verdade)
 4. o layout precisar de algo que a força simples não dá — hierarquia, camadas,
    agrupamento por cluster
-
----
-
-## Revisão — 2026-08-25, três dimensões
-
-**O usuário pediu o mapa em 3D, depois de ler a recomendação contrária acima.**
-Esta seção registra o que mudou, o que a decisão original acertou e o que ela
-custou.
-
-### O que passou a valer
-
-O HyperBrain tem **dois motores de desenho**, atrás da mesma interface:
-
-| Modo | Quando | O que desenha |
-|------|--------|---------------|
-| `3d` (padrão) | há WebGL na máquina | three.js: esferas, octaedros, linhas e a luz do núcleo |
-| `2d` | sem WebGL, ou por escolha no botão da barra | o SVG desta decisão, intacto |
-
-A escolha vive no `localStorage` e trocar de modo recarrega a rota — trocar de
-motor no meio da vida da tela deixaria metade do estado no anterior.
-
-### A dependência, e como ela não quebra o offline
-
-`three.module.js` (r170, MIT, 1,3 MB) está versionado em
-`frontend/js/vendor/`, e o `index.html` traz um **mapa de importação** que
-resolve `three` para esse arquivo. Sem npm, sem bundler, sem CDN: o executável
-continua abrindo offline, que era a restrição real por trás do ADR-005.
-
-O `three` só é baixado por quem está no modo 3D — a importação é dinâmica.
-
-### O que o 3D custou, e o que foi feito a respeito
-
-| Custo | O que foi feito |
-|-------|-----------------|
-| Texto em WebGL perde nitidez e some do leitor de tela | os rótulos continuam **no DOM**, posicionados pela projeção da câmera |
-| Nó deixa de ser elemento com `tabindex` | o modo 2D permanece como caminho de teclado, e é o que aparece sem WebGL |
-| Cor não vem mais do CSS | os materiais são montados a partir dos tokens, e refeitos quando `data-theme` muda |
-| Oclusão: nome de quem está atrás aparece na frente | raio de câmera por nó, a cada oito quadros, esconde o rótulo ocluído |
-| Rótulos se cruzam também em 3D | o mesmo `labels.js` do mapa 2D acomoda os rótulos projetados |
-| Quadro contínuo enquanto a câmera gira | o giro para na primeira interação e no modo "movimento reduzido" |
-
-### O que a decisão original acertou, e continua valendo
-
-A medição de custo por passo (0,58 ms com 400 nós) segue de pé: a simulação não
-era o gargalo, e não é ela que o 3D acelera. O que o WebGL trouxe foi
-**profundidade** — que é uma pista visual, não uma capacidade nova. Quem precisa
-operar rápido continua tendo o mapa 2D a um clique.
-
-### Gatilho novo para revisar
-
-Se o modo 3D deixar de ser usado por duas semanas, ele vira custo de manutenção
-sem contrapartida — e a dependência sai junto com ele.

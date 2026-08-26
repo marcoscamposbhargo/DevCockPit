@@ -1,9 +1,7 @@
 # HyperBrain — Neural Core
 
-> **Status: MVPs 1 e 2 entregues em 2026-08-25, e o mapa passou a ser 3D no
-> mesmo dia.** As três decisões que travavam o início foram tomadas (seção 14);
-> a de renderização foi revisada a pedido do usuário — ver seção 17 e a revisão
-> do ADR-009. Os MVPs 3 a 5 seguem propostos.
+> **Status: MVPs 1 e 2 entregues em 2026-08-25.** As três decisões que travavam
+> o início foram tomadas (seção 14). Os MVPs 3 a 5 seguem propostos.
 
 Uma tela nova para o DevCockpit: o ecossistema de projetos desenhado como grafo,
 com a inteligência que já existe no painel ligada a ele. Não é uma IA nova, não é
@@ -474,83 +472,7 @@ JavaScript: são `@keyframes`, e o custo por quadro continua sendo zero.
 
 ---
 
-## 17. O mapa em três dimensões
-
-A seção 5 recomendava não usar WebGL nesta tela, e a seção 14 registrou a
-decisão de ficar no SVG. **O usuário leu a recomendação e pediu o 3D assim
-mesmo.** É decisão dele, e está implementada.
-
-O que existe agora são dois motores atrás da mesma interface: `scene3d.js`
-(three.js) e o desenho em SVG, que continua sendo o caminho quando não há WebGL
-e quando alguém prefere. O botão do grafo na barra troca entre os dois, e a
-escolha fica no `localStorage`.
-
-### O que o 3D mudou de verdade
-
-**A profundidade entrou na simulação, não só na câmera.** `layout.js` ganhou um
-terceiro eixo: um grafo resolvido no plano e girado depois continua sendo um
-desenho plano visto de lado. A distribuição inicial em esfera sai do mesmo hash
-determinístico de antes — o mesmo projeto nasce no mesmo lugar.
-
-**A luz é o núcleo.** Uma luz pontual mora dentro dele, com queda quadrática: o
-que está perto recebe mais, o que está longe recua. É a mesma ideia da
-iluminação por distância do mapa 2D, agora feita pela física do renderizador em
-vez de por uma variável CSS.
-
-**O texto não entrou na tela do WebGL.** Nome de projeto e estado do núcleo
-continuam sendo HTML posicionado pela projeção da câmera. Texto em textura perde
-nitidez em qualquer zoom e some do leitor de tela; e é o que permite reaproveitar
-`labels.js` inteiro — o mesmo acomodador de rótulos, alimentado com coordenadas
-de tela em vez de coordenadas do grafo.
-
-### O problema que só existe em 3D
-
-Em duas dimensões nada fica atrás de nada. Em três, o nome de um projeto
-escondido atrás do núcleo aparece **em cima** do núcleo, como se fosse dele. A
-solução é um raio de câmera por nó, a cada oito quadros, escondendo o rótulo de
-quem está ocluído — com uma exceção declarada: o rótulo do próprio núcleo nunca
-some, porque ele é a âncora da tela.
-
-### O refino: o que se move, e por quê
-
-Sete acréscimos depois da primeira versão em 3D, e nenhum é enfeite solto:
-
-| O que | Para quê |
-|-------|----------|
-| **Neblina** entre 700 e 2.600 unidades | o que está longe se dissolve no fundo. É a pista de profundidade mais forte que existe, e custa uma linha |
-| **Poeira**: 300 pontos numa casca esférica | paralaxe. Sem referência fixa, girar a câmera não produz sensação de movimento nenhuma |
-| **Brilho aditivo** no núcleo e em quem está no ar | o "respirar" verde do mapa 2D, aqui como luz somando com o fundo |
-| **Gaiola de arame** girando no núcleo | volume: sem ela o núcleo é uma bola lisa de cor chapada |
-| **Giro próprio** de cada nó, com velocidade tirada do id | um enxame onde tudo gira no mesmo compasso parece máquina, não organismo |
-| **Realce ao passar o mouse** | em 3D não existe `:hover` — o realce é trabalho nosso |
-| **Anel de seleção** que encara a câmera | aumentar o nó não basta: de longe, um nó maior parece só um nó mais perto |
-
-E a câmera **viaja** até o enquadramento em meio segundo, com saída exponencial,
-em vez de saltar. Enquadrar de um salto desorienta: a pessoa perde a referência
-de onde estava olhando e tem de reconstruir o mapa na cabeça.
-
-Dois ajustes que vieram de olhar a tela, não de planejar: o brilho do núcleo
-começou grande e apagado, cobrindo o próprio nome e os rótulos vizinhos —
-encolher o raio e subir a intensidade resolveu, porque brilho concentrado lê
-como fonte de luz e brilho espalhado lê como névoa. E a poeira, dimensionada em
-unidades do mundo, era invisível: a 2.000 de distância, sete unidades viram
-menos de um pixel. Passou a ser medida em pixels de tela.
-
-### O que isso custou, honestamente
-
-- uma dependência de 1,3 MB, versionada em `frontend/js/vendor/` e resolvida por
-  mapa de importação — sem npm, sem bundler, sem CDN, e baixada só por quem usa
-  o modo 3D;
-- o teclado: em WebGL não há elemento por nó. O modo 2D continua sendo o caminho
-  para quem navega por `Tab`, e é o que aparece automaticamente sem WebGL;
-- quadro contínuo enquanto a câmera gira — o mapa 2D custava zero quadro parado.
-  O giro para na primeira interação e no modo de movimento reduzido.
-
-Tudo isso está no ADR-009, na seção de revisão.
-
----
-
-## 18. O que a implementação mudou do desenho
+## 17. O que a implementação mudou do desenho
 
 Quatro coisas que só apareceram com a tela no ar, e um defeito.
 

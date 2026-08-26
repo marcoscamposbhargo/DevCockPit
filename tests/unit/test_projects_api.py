@@ -101,6 +101,41 @@ def test_lista_diz_quem_esta_fora_do_cockpit_ai(client: TestClient, workspace: P
     assert lista["items"][0]["ai_enabled"] is False
 
 
+def test_detalhe_traz_participacao_na_ia(client: TestClient, sample_project: Path) -> None:
+    """A tela do projeto desenha o interruptor a partir deste campo.
+
+    Ele existia na tabela desde a Fase 2 e não saía por rota nenhuma: a defesa
+    D-A1 dizia que excluir um projeto da IA era decisão da pessoa, e não havia
+    como a pessoa decidir.
+    """
+    criado = _create(client, sample_project)
+
+    detalhe = client.get(f"/api/projects/{criado['id']}").json()
+    assert detalhe["ai_enabled"] is True
+
+    client.patch(
+        f"/api/projects/{criado['id']}", json={"ai_enabled": False}, headers=WRITE_HEADERS
+    )
+
+    assert client.get(f"/api/projects/{criado['id']}").json()["ai_enabled"] is False
+
+
+def test_excluir_da_ia_nao_mexe_no_resto_do_projeto(
+    client: TestClient, sample_project: Path
+) -> None:
+    """Tirar da IA é uma chave, não um efeito colateral."""
+    criado = _create(client, sample_project, name="Meu Projeto")
+    antes = client.get(f"/api/projects/{criado['id']}").json()
+
+    client.patch(
+        f"/api/projects/{criado['id']}", json={"ai_enabled": False}, headers=WRITE_HEADERS
+    )
+    depois = client.get(f"/api/projects/{criado['id']}").json()
+
+    for campo in ("name", "path", "status", "is_pinned", "detection_locked"):
+        assert depois[campo] == antes[campo], f"{campo} mudou sem ninguém pedir"
+
+
 def test_detalhe_atualiza_ultimo_acesso(client: TestClient, sample_project: Path) -> None:
     criado = _create(client, sample_project)
     assert criado["last_accessed_at"] is None

@@ -76,6 +76,13 @@ function painelDeProjeto(no, grafo, { aoFocar, emFoco }) {
 
     el('p', { class: 'hb-panel__path', text: projeto.path }),
 
+    // Projeto fora do Cockpit AI precisa dizer isso **antes** de alguém
+    // perguntar sobre ele — senão a resposta vem sem contexto e ninguém
+    // entende por quê (defesa D-A1).
+    projeto.ai_enabled === false
+      ? el('p', { class: 'field__hint', text: 'Fora do Cockpit AI: perguntas sobre ele vão sem contexto.' })
+      : null,
+
     compartilhadas.length
       ? el('div', { class: 'hb-panel__bloco' }, [
           el('span', { class: 'field__label', text: 'Compartilhadas no grafo' }),

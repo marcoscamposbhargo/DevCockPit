@@ -331,10 +331,10 @@ Medido no Chromium, contra o servidor real e os 19 projetos cadastrados.
       núcleo→projeto e projeto→tecnologia declarada
 - [x] 26 testes de frontend, 16 deles do grafo; 635 no `pytest`; `ruff` limpo
 
-Fica pendente para o MVP 2, quando a tela passar a falar com a IA: o critério
-do projeto com `ai_enabled = false`. Ele não é verificável agora porque
-`ProjectSummary` **não expõe esse campo** — e não precisa, já que o MVP 1 não
-faz requisição de IA nenhuma. Expor o campo é trabalho do MVP 2.
+~~Fica pendente o critério do projeto com `ai_enabled = false`.~~ **Fechado em
+2026-08-26**: `ProjectSummary` expõe o campo, o painel lateral avisa quem está
+fora antes de alguém perguntar, e a tela do projeto ganhou o interruptor que a
+defesa D-A1 exigia e que não existia em lugar nenhum.
 
 ---
 

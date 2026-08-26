@@ -29,7 +29,7 @@ const TABS = [
   { key: 'manifest', label: 'Manifest' },
 ];
 
-function overview(project, onDetect) {
+function overview(project, onDetect, onToggleAi) {
   return el('section', {}, [
     el('dl', { class: 'definition-list' }, [
       el('dt', { text: 'Status' }),
@@ -95,6 +95,25 @@ function overview(project, onDetect) {
               text: 'stack travada: a detecção não sobrescreve suas edições',
             })
           : null,
+      ]),
+
+      el('dt', { text: 'Cockpit AI' }),
+      el('dd', {}, [
+        el('button', {
+          // Sem cor de perigo: tirar um projeto da IA é proteção, não estrago.
+          class: 'btn btn--sm',
+          type: 'button',
+          'aria-pressed': String(!project.ai_enabled),
+          onClick: onToggleAi,
+          text: project.ai_enabled ? 'Excluir da IA' : 'Incluir na IA',
+        }),
+        el('span', {
+          class: 'field__hint',
+          style: 'margin-left:var(--sp-2)',
+          text: project.ai_enabled
+            ? 'participa: o contexto deste projeto pode ser enviado ao provedor'
+            : 'fora: nada deste projeto entra em contexto, nem por engano',
+        }),
       ]),
 
       el('dt', { text: 'Último acesso' }),
@@ -197,6 +216,22 @@ export async function renderProject(container, params, query) {
     }
   };
 
+  const alternarIa = async () => {
+    const proximo = !project.ai_enabled;
+    try {
+      await api.updateProject(project.id, { ai_enabled: proximo });
+      toast(
+        proximo
+          ? 'Projeto de volta ao Cockpit AI.'
+          : 'Projeto fora do Cockpit AI: nada dele será enviado a provedor nenhum.',
+        { kind: 'success' }
+      );
+      renderProject(container, params, query);
+    } catch (error) {
+      showError(error);
+    }
+  };
+
   const runDetection = async () => {
     try {
       const diff = await api.detectProject(project.id);
@@ -286,7 +321,7 @@ export async function renderProject(container, params, query) {
   } else if (activeTab === 'manifest') {
     await renderManifestPanel(panel);
   } else {
-    panel.append(overview(project, runDetection));
+    panel.append(overview(project, runDetection, alternarIa));
     panel.append(
       el('section', { style: 'margin-top:var(--sp-5)' }, [
         el('h2', { class: 'section-title', text: 'Ações' }),

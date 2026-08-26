@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-26 (Fase 3.6: a auditoria diz quem pediu a ação)
+**Última atualização:** 2026-08-26 (o interruptor da defesa D-A1 ganha botão)
 
 ---
 
@@ -23,6 +23,11 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
+- [x] (2026-08-26) `ai_enabled` ganhou interruptor na aba Overview do projeto. O
+      campo existia no banco desde a Fase 2 e a defesa D-A1 dizia que excluir um
+      projeto da IA é decisão da pessoa — que até aqui só conseguia decidir por
+      `curl`. O HyperBrain passou a avisar no painel quem está fora, que era o
+      critério de aceite do MVP 2 que tinha ficado pendente.
 - [x] (2026-08-26) Fase 3.6 entregue: a ação que a IA propôs e você confirmou
       deixa de ser gravada como ação sua. O servidor emite um bilhete ao propor
       e só reconhece autoria se ele voltar para a mesma rota — o cliente não

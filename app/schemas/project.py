@@ -144,6 +144,10 @@ class ProjectDetail(BaseModel):
     status: ProjectStatus
     is_pinned: bool
     detection_locked: bool
+    #: Participa do Cockpit AI. A tela do projeto precisa disto para desenhar o
+    #: interruptor da defesa D-A1 — que até aqui existia no banco e não tinha
+    #: como ser acionado por ninguém.
+    ai_enabled: bool = True
     technologies: list[TechnologyOut] = Field(default_factory=list)
     services: list[ServiceOut] = Field(default_factory=list)
     last_accessed_at: datetime | None

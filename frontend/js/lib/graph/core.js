@@ -73,10 +73,15 @@ export function criarNucleo(raio = 46) {
       svgEl('circle', { class: 'hb-core__ring hb-core__ring--externo', r: raio * 1.72 }),
       svgEl('circle', { class: 'hb-core__ring', r: raio * 1.32 }),
       svgEl('circle', { class: 'hb-core__disc', r: raio }),
+      // Arco de atividade: um traço curto girando bem mais rápido que os anéis.
+      // É o que dá a impressão de que existe algo *acontecendo* lá dentro, e
+      // não só de que a luz está acesa.
+      svgEl('circle', { class: 'hb-core__arco', r: raio * 1.14 }),
       svgEl('circle', { class: 'hb-core__pulse', r: raio }),
-      // Dois pulsos defasados: a onda solitária tem um vazio longo entre
-      // batidas, e nesse vazio o núcleo parece desligado.
+      // Três pulsos defasados: com um só, a onda solitária deixa um vazio longo
+      // entre batidas, e nesse vazio o núcleo parece desligado.
       svgEl('circle', { class: 'hb-core__pulse hb-core__pulse--tardio', r: raio }),
+      svgEl('circle', { class: 'hb-core__pulse hb-core__pulse--terceiro', r: raio }),
       svgEl('text', {
         class: 'hb-core__name',
         y: 4,

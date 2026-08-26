@@ -20,6 +20,7 @@ Ver `AI_IMPLEMENTATION_PLAN.md` para o que entrou em cada fase.
 | [AI_IMPLEMENTATION_PLAN](AI_IMPLEMENTATION_PLAN.md) | cinco fases, com critério de saída |
 | [AI_ROADMAP](AI_ROADMAP.md) | ordem, o que fica fora, sinais de parar |
 | [LOCAL_MODEL_GUIDE](LOCAL_MODEL_GUIDE.md) | **uso prático** do Ollama: quando usar cada modelo, números medidos, erros |
+| [HYPERBRAIN](HYPERBRAIN.md) | proposta de tela em grafo sobre a inteligência existente; três decisões em aberto |
 
 O último é o único de uso, e não de projeto: os outros dizem *como funciona por
 dentro*, ele diz *como usar*.

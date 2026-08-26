@@ -1,0 +1,458 @@
+/* HyperBrain — o grafo do ecossistema.
+   Nenhuma cor literal: tudo sai dos tokens, misturado com `color-mix`. É o que
+   permite a mesma folha servir ao tema escuro e ao claro sem um segundo bloco
+   de valores. */
+
+.hb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  /* A tela é o conteúdo: ela ocupa o que sobra da janela em vez de rolar. */
+  min-height: calc(100vh - var(--topbar-height) - var(--sp-5) * 2);
+}
+
+/* --- barra de controles --- */
+
+.hb-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.hb-bar__titulo h1 {
+  font-size: var(--fs-2xl);
+  letter-spacing: var(--tracking-tight);
+  margin: 0;
+}
+
+.hb-bar__acoes {
+  display: flex;
+  gap: var(--sp-2);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* --- palco --- */
+
+.hb-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--sp-4);
+  flex: 1;
+  min-height: 460px;
+}
+
+.hb-stage-wrap {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  /* Fundo próprio, mais profundo que o resto do painel — no escuro afunda, no
+     claro escurece de leve. O grafo precisa de um chão que não compita com os
+     nós, e a superfície dos cards é clara demais para isso. */
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 62%
+    ),
+    color-mix(in srgb, var(--bg-base) 93%, var(--fg-primary));
+}
+
+.hb-stage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.hb-stage[data-arrastando] {
+  cursor: grabbing;
+}
+
+.hb-stage:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* --- arestas --- */
+
+.hb-edge {
+  stroke: color-mix(in srgb, var(--fg-muted) 55%, transparent);
+  stroke-width: 1;
+  transition: opacity var(--dur-med) var(--ease-out),
+    stroke var(--dur-med) var(--ease-out);
+}
+
+.hb-edge[data-kind='core'] {
+  stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.hb-edge[data-kind='tech'] {
+  stroke-dasharray: 3 5;
+}
+
+.hb-edge[data-apagado='true'] {
+  opacity: 0.12;
+}
+
+/* --- nós --- */
+
+.hb-node {
+  cursor: pointer;
+  transition: opacity var(--dur-med) var(--ease-out);
+}
+
+.hb-node__hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.hb-node__shape {
+  fill: var(--bg-surface);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  transition: fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out);
+}
+
+.hb-node__label {
+  fill: var(--fg-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+}
+
+.hb-node[data-tipo='tecnologia'] .hb-node__shape {
+  fill: color-mix(in srgb, var(--status-unknown) 22%, var(--bg-surface));
+  stroke: color-mix(in srgb, var(--status-unknown) 55%, var(--border-strong));
+}
+
+.hb-node[data-tipo='tecnologia'] .hb-node__label {
+  fill: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+/* Estado do projeto: cor **e** anel, porque cor sozinha não serve a quem não
+   distingue as duas. */
+.hb-node[data-estado='no-ar'] .hb-node__shape {
+  fill: color-mix(in srgb, var(--status-running) 30%, var(--bg-surface));
+  stroke: var(--status-running);
+  stroke-width: 2.5;
+}
+
+.hb-node[data-estado='erro'] .hb-node__shape {
+  fill: color-mix(in srgb, var(--status-error) 26%, var(--bg-surface));
+  stroke: var(--status-error);
+}
+
+.hb-node[data-estado='ausente'] .hb-node__shape {
+  stroke-dasharray: 4 3;
+  stroke: var(--status-warning);
+}
+
+.hb-node[data-estado='desconhecido'] .hb-node__shape {
+  stroke-dasharray: 2 3;
+}
+
+.hb-node[data-fixado='true'] .hb-node__label {
+  fill: var(--fg-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.hb-node:hover .hb-node__shape,
+.hb-node:focus-visible .hb-node__shape {
+  stroke: var(--accent);
+}
+
+.hb-node:focus-visible {
+  outline: none;
+}
+
+.hb-node:focus-visible .hb-node__hit {
+  stroke: var(--ring);
+  stroke-width: var(--ring-width);
+}
+
+.hb-node[data-selecionado='true'] .hb-node__shape {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.hb-node[data-selecionado='true'] .hb-node__label {
+  fill: var(--fg-primary);
+}
+
+.hb-node[data-apagado='true'] {
+  opacity: 0.16;
+}
+
+/* --- núcleo --- */
+
+.hb-core__halo {
+  fill: color-mix(in srgb, var(--accent) 8%, transparent);
+  stroke: none;
+}
+
+.hb-core__ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 35%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 6;
+  /* `transform-box: fill-box` é obrigatório aqui: sem ele, `center` num
+     elemento SVG se refere ao centro do *viewBox*, não ao do próprio círculo —
+     e o anel girava numa órbita a centenas de pixels do núcleo, aparecendo como
+     um aro solto no canto da tela. */
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hb-gira 42s linear infinite;
+}
+
+.hb-core__disc {
+  fill: color-mix(in srgb, var(--accent) 24%, var(--bg-surface));
+  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+  stroke-width: 2;
+}
+
+/* O pulso é um segundo disco que cresce e some — a "respiração". */
+.hb-core__pulse {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 40%, transparent);
+  stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hb-respira 5.5s var(--ease-out) infinite;
+}
+
+.hb-core__name {
+  fill: var(--fg-primary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-caps);
+  pointer-events: none;
+}
+
+.hb-core__state {
+  fill: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.hb-core__mote {
+  fill: color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: hb-cintila 6s ease-in-out infinite;
+  animation-delay: var(--fase, 0s);
+}
+
+/* Estados do núcleo. Cada um muda o ritmo, não a quantidade de enfeite. */
+.hb-core[data-brain='desligado'] .hb-core__disc {
+  fill: var(--bg-subtle);
+  stroke: var(--border-strong);
+}
+
+.hb-core[data-brain='desligado'] .hb-core__pulse,
+.hb-core[data-brain='desligado'] .hb-core__mote,
+.hb-core[data-brain='desligado'] .hb-core__ring {
+  animation: none;
+  opacity: 0.25;
+}
+
+.hb-core[data-brain='thinking'] .hb-core__pulse {
+  animation-duration: 1.4s;
+}
+
+.hb-core[data-brain='thinking'] .hb-core__ring {
+  animation-duration: 9s;
+}
+
+.hb-core[data-brain='error'] .hb-core__disc {
+  fill: color-mix(in srgb, var(--status-error) 26%, var(--bg-surface));
+  stroke: var(--status-error);
+}
+
+.hb-core[data-brain='warning'] .hb-core__disc {
+  stroke: var(--status-warning);
+}
+
+.hb-core[data-brain='success'] .hb-core__disc {
+  stroke: var(--status-running);
+}
+
+@keyframes hb-respira {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes hb-gira {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hb-cintila {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* Grafo grande, ou movimento reduzido: o enfeite sai, a informação fica. */
+.hb-stage[data-denso='true'] .hb-core__dust,
+.hb-stage[data-movimento='reduzido'] .hb-core__dust {
+  display: none;
+}
+
+.hb-stage[data-movimento='reduzido'] .hb-core__pulse,
+.hb-stage[data-movimento='reduzido'] .hb-core__ring {
+  animation: none;
+}
+
+/* --- legenda --- */
+
+.hb-legend {
+  position: absolute;
+  left: var(--sp-3);
+  bottom: var(--sp-3);
+  display: flex;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.hb-legend__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.hb-legend__mark {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+}
+
+.hb-legend__item[data-tipo='core'] .hb-legend__mark {
+  background: color-mix(in srgb, var(--accent) 40%, var(--bg-surface));
+  border-color: var(--accent);
+}
+
+/* Triângulo, a mesma forma do nó — um losango aqui ensinaria a procurar na
+   tela uma forma que não existe lá. */
+.hb-legend__item[data-tipo='tecnologia'] .hb-legend__mark {
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: color-mix(in srgb, var(--status-unknown) 55%, var(--fg-muted));
+}
+
+/* --- painel lateral --- */
+
+.hb-side {
+  min-width: 0;
+}
+
+.hb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.hb-panel--vazio {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.hb-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.hb-panel__name {
+  margin: 0;
+  font-size: var(--fs-lg);
+  letter-spacing: var(--tracking-tight);
+}
+
+.hb-panel__path {
+  margin: 0;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+}
+
+.hb-panel__bloco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.hb-panel__lista {
+  margin: 0;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-sm);
+}
+
+.hb-panel__acoes {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* --- telas menores ---
+   O painel lateral desce para baixo do palco e o grafo perde altura, não
+   utilidade: continua arrastável, com zoom e com foco. */
+@media (max-width: 1100px) {
+  .hb-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hb-stage-wrap {
+    min-height: 420px;
+  }
+
+  .hb-tool__label {
+    display: none;
+  }
+
+  .hb-legend {
+    display: none;
+  }
+}

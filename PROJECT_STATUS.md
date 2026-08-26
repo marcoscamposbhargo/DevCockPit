@@ -1,6 +1,6 @@
 # DevCockpit — Project Status
 
-**Última atualização:** 2026-08-25 (Fase 3.4: a IA propõe ação e a pessoa confirma)
+**Última atualização:** 2026-08-25 (HyperBrain MVP 1: o ecossistema vira grafo)
 
 ---
 
@@ -23,6 +23,10 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
+- [x] (2026-08-25) HyperBrain, MVP 1 entregue: tela nova em `#/hyperbrain` com
+      o ecossistema como grafo — núcleo, os 19 projetos e as 12 tecnologias que
+      ligam projeto a projeto. SVG à mão, sem biblioteca nenhuma (ADR-009);
+      estabiliza em 0,96 s e para de pedir quadro. Zero linha de backend.
 - [x] (2026-08-21) `@app.on_event` estava deprecado no FastAPI e gerava 385
       warnings na suíte. Migrado para `lifespan` em `app/main.py`. Sobra um
       único warning, de terceiro (`starlette.testclient` pedindo `httpx2`).
@@ -338,8 +342,12 @@ teste removidos.
 
 ## Em andamento
 
-Nada. Fases 1 e 2 do Cockpit AI entregues em 2026-08-25 (`docs/ai/`). A Fase 3
-— especialistas, orquestrador e ações propostas — espera uso real do chat.
+Nada. Do Cockpit AI, as Fases 1, 2, 3.1 e 3.4 estão entregues (`docs/ai/`);
+faltam 3.2, 3.3, 3.5 e 3.6.
+
+Do HyperBrain (`docs/ai/HYPERBRAIN.md`), o MVP 1 está entregue e o MVP 2 — o
+"Ask HyperBrain" ligado à IA que já existe, com destaque de nós por comando —
+espera uso real da tela antes de começar.
 
 ---
 

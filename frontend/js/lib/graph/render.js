@@ -1,0 +1,161 @@
+// Nós e arestas viram SVG.
+//
+// SVG e não canvas pelo mesmo motivo registrado em `charts.js`: as cores saem
+// das variáveis do CSS, então trocar de tema não exige redesenhar nada. E há um
+// ganho que canvas não dá de graça: cada nó é um elemento real, então foco de
+// teclado, `aria-label` e leitor de tela funcionam sem nenhuma camada extra.
+//
+// Nenhum texto vindo da API encosta em `innerHTML` — nome de projeto e de
+// tecnologia entram por `textContent`, como manda o ADR-005.
+
+const NS = 'http://www.w3.org/2000/svg';
+
+export function svgEl(tag, atributos = {}, filhos = []) {
+  const node = document.createElementNS(NS, tag);
+  for (const [chave, valor] of Object.entries(atributos)) {
+    if (valor === null || valor === undefined || valor === false) continue;
+    if (chave === 'class') node.setAttribute('class', String(valor));
+    else if (chave === 'dataset') {
+      for (const [k, v] of Object.entries(valor)) {
+        if (v !== null && v !== undefined) node.dataset[k] = String(v);
+      }
+    } else if (chave === 'text') node.textContent = String(valor);
+    else node.setAttribute(chave, valor === true ? '' : String(valor));
+  }
+  for (const filho of [].concat(filhos)) {
+    if (filho) node.append(filho);
+  }
+  return node;
+}
+
+/** O palco: raiz, viewport que recebe zoom e pan, e as duas camadas. */
+export function criarPalco() {
+  const arestas = svgEl('g', { class: 'hb-edges' });
+  const nos = svgEl('g', { class: 'hb-nodes' });
+  const viewport = svgEl('g', { class: 'hb-viewport' }, [arestas, nos]);
+
+  const svg = svgEl(
+    'svg',
+    {
+      class: 'hb-stage',
+      role: 'application',
+      'aria-label': 'Mapa de projetos do HyperBrain',
+    },
+    [viewport]
+  );
+
+  return { svg, viewport, arestas, nos };
+}
+
+const ROTULO_TIPO = { projeto: 'projeto', tecnologia: 'tecnologia', core: 'núcleo' };
+
+//: Rótulo comprido é o que faz um grafo virar sopa de letras: "PLATAFORMA DE
+//: INGRESSOS" ocupa quatro vezes a largura do próprio nó e atravessa os
+//: vizinhos. O nome inteiro continua no `aria-label` e no painel lateral —
+//: quem precisa dele não perde nada, e quem só está olhando o mapa ganha.
+const LIMITE_DO_ROTULO = 18;
+
+export function encurtar(texto, limite = LIMITE_DO_ROTULO) {
+  const limpo = String(texto ?? '').trim();
+  return limpo.length <= limite ? limpo : `${limpo.slice(0, limite - 1)}…`;
+}
+
+function forma(no) {
+  if (no.tipo === 'tecnologia') {
+    // Triângulo: a forma diferencia o tipo sem depender de cor, que é o
+    // requisito de quem não distingue as duas.
+    const r = no.tamanho;
+    const pontos = [
+      [0, -r],
+      [r * 0.87, r * 0.5],
+      [-r * 0.87, r * 0.5],
+    ]
+      .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
+      .join(' ');
+    return svgEl('polygon', { class: 'hb-node__shape', points: pontos });
+  }
+
+  return svgEl('circle', { class: 'hb-node__shape', r: no.tamanho });
+}
+
+/** Um nó: forma, rótulo e o mínimo de semântica para o teclado alcançá-lo. */
+export function desenharNo(no) {
+  const descricao =
+    no.tipo === 'tecnologia'
+      ? `${no.rotulo}, tecnologia usada por ${no.contagem} projetos`
+      : `${no.rotulo}, ${ROTULO_TIPO[no.tipo] ?? no.tipo}`;
+
+  const grupo = svgEl(
+    'g',
+    {
+      class: 'hb-node',
+      dataset: { id: no.id, tipo: no.tipo, estado: no.estado ?? '', fixado: no.fixado ?? false },
+      tabindex: '0',
+      role: 'button',
+      'aria-label': descricao,
+    },
+    [
+      // Alvo de clique maior que o desenho: um círculo de 19px é preciso
+      // demais para o mouse, e muito mais para o toque.
+      svgEl('circle', { class: 'hb-node__hit', r: Math.max(no.tamanho + 12, 26) }),
+      forma(no),
+      svgEl('text', {
+        class: 'hb-node__label',
+        y: no.tamanho + 16,
+        'text-anchor': 'middle',
+        text: encurtar(no.rotulo),
+      }),
+    ]
+  );
+
+  return grupo;
+}
+
+export function desenharAresta(aresta) {
+  return svgEl('line', {
+    class: 'hb-edge',
+    dataset: { id: aresta.id, kind: aresta.kind },
+  });
+}
+
+/** Aplica as posições calculadas. Roda a cada quadro, então é só atributo. */
+export function aplicarPosicoes(posicoes, { elementosDeNo, elementosDeAresta, arestas }) {
+  for (const [id, elemento] of elementosDeNo) {
+    const p = posicoes.get(id);
+    if (p) elemento.setAttribute('transform', `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`);
+  }
+
+  for (const aresta of arestas) {
+    const linha = elementosDeAresta.get(aresta.id);
+    const a = posicoes.get(aresta.de);
+    const b = posicoes.get(aresta.para);
+    if (!linha || !a || !b) continue;
+    linha.setAttribute('x1', a.x.toFixed(2));
+    linha.setAttribute('y1', a.y.toFixed(2));
+    linha.setAttribute('x2', b.x.toFixed(2));
+    linha.setAttribute('y2', b.y.toFixed(2));
+  }
+}
+
+/** Traduz o estado visual em atributos — o CSS faz o resto.
+ *
+ * Atenuar por classe e opacidade, e não recalcular layout: entrar em foco não
+ * pode mexer em onde as coisas estão, ou a pessoa perde a referência do que
+ * estava olhando.
+ */
+export function aplicarDestaque({ elementosDeNo, elementosDeAresta, arestas }, { foco, proximos, destacados, selecionado }) {
+  for (const [id, elemento] of elementosDeNo) {
+    const apagado =
+      (foco && !proximos.has(id)) || (!foco && destacados && !destacados.has(id) && id !== 'core');
+    elemento.dataset.apagado = String(Boolean(apagado));
+    elemento.dataset.selecionado = String(id === selecionado);
+    elemento.dataset.foco = String(id === foco);
+  }
+
+  for (const aresta of arestas) {
+    const linha = elementosDeAresta.get(aresta.id);
+    if (!linha) continue;
+    const dentro = foco ? proximos.has(aresta.de) && proximos.has(aresta.para) : true;
+    linha.dataset.apagado = String(!dentro);
+  }
+}

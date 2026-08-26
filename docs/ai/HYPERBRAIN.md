@@ -368,8 +368,15 @@ prova usando: organizar o mapa é gesto de quem trabalha com ele, e um nó que
 volta sozinho transforma cada arrumação em perda de tempo. "Reorganizar" solta
 todos.
 
-**O defeito:** `Esc` não saía do foco. O atalho estava preso ao palco SVG, mas
+**Dois defeitos, os dois achados olhando a tela.** O primeiro: `Esc` não saía do
+foco. O atalho estava preso ao palco SVG, mas
 quem acabou de clicar em "Focar" no painel lateral tem o foco do teclado no
 botão — o evento nunca chegava ao palco. Só funcionava depois de clicar num nó,
 que é exatamente quando não se precisa dele. Agora vive no documento, e a
 verificação ao vivo confere que sair do foco realmente reacende tudo.
+
+O segundo saiu de uma captura de tela: um aro solto flutuando no canto, longe do
+núcleo. Era o anel do próprio núcleo. Num elemento SVG, `transform-origin: center`
+se refere ao centro do **viewBox**, não ao do elemento — o anel girava numa órbita
+de centenas de pixels. `transform-box: fill-box` resolve, e o mesmo valia para o
+pulso. Nenhum teste pegaria isso: o elemento estava lá, com os atributos certos.

@@ -88,6 +88,12 @@ O modelo completo, com ameaças, defesas e testes obrigatórios, está em [`docs
 <sub><b>Análise</b> — atividade por dia e por hora, stack dos projetos e o estado da máquina. Gráficos em SVG à mão, sem biblioteca.</sub>
 </td>
 </tr>
+<tr>
+<td colspan="2">
+<img src="docs/screenshots/hyperbrain.png" alt="HyperBrain — o ecossistema como grafo">
+<sub><b>HyperBrain</b> — o ecossistema como mapa: o núcleo, os projetos e as tecnologias que ligam projeto a projeto. Foco atenua o resto, arrastar organiza, e o nó fica onde foi solto. Também em SVG à mão, sem biblioteca de grafo (<a href="docs/adr/ADR-009-graph-rendering.md">ADR-009</a>).</sub>
+</td>
+</tr>
 </table>
 
 ## Instalação

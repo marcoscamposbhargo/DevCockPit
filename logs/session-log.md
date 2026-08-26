@@ -2860,13 +2860,19 @@ quadros pedidos depois disso. O laço encerra em vez de girar em vazio.
 - **nó arrastado fica onde foi solto** — organizar o mapa é gesto de quem
   trabalha com ele. "Reorganizar" solta todos.
 
-### O defeito
+### Dois defeitos, os dois achados olhando a tela
 
 `Esc` não saía do foco. O atalho estava preso ao palco SVG, mas quem acabou de
 clicar em "Focar" no painel lateral tem o foco do teclado no botão — o evento
 nunca chegava ao palco. Ou seja: só funcionava depois de clicar num nó, que é
 exatamente quando não se precisa dele. Achado pela verificação ao vivo, não por
 leitura de código.
+
+O segundo apareceu numa captura de tela: um aro solto flutuando no canto, longe
+do núcleo. Era o anel do próprio núcleo. Num elemento SVG, `transform-origin:
+center` se refere ao centro do **viewBox**, e não ao do elemento — o anel girava
+numa órbita de centenas de pixels. `transform-box: fill-box` resolve. Nenhum
+teste pegaria: o elemento estava lá, com os atributos certos. Foi preciso olhar.
 
 16 testes novos no grafo (26 de frontend), 635 no `pytest`, `ruff` limpo.
 

@@ -23,6 +23,12 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
+- [x] (2026-08-26) `Dockerfile`, `docker-compose.yml` e `.dockerignore`
+      versionados, com aviso no topo: são **experimentais**. Dentro de um
+      container o painel perde abrir editor/pasta/terminal, varredura e
+      verificação de porta — `localhost` ali é o do container. Servem só ao
+      cenário de rodar num servidor Linux contra projetos do próprio servidor.
+      Ninguém roda teste contra esse caminho.
 - [x] (2026-08-25) HyperBrain: rótulos deixaram de se atropelar (0 pares
       sobrepostos, medido na tela), tecnologias com matiz própria e o núcleo com
       batimento — o ritmo diz o estado da IA, e parado significa desligada.

@@ -1,0 +1,68 @@
+# DevCockpit em container — **experimental**. Ver o cabeçalho do `Dockerfile`
+# para o que o painel deixa de conseguir fazer aqui dentro.
+#
+# Dois pontos de atenção antes de subir isto em qualquer lugar:
+#
+#   1. `/var/run/docker.sock` montado dá ao container controle do Docker do
+#      host. Um serviço HTTP com esse socket é, na prática, root na máquina.
+#      Aceitável numa máquina pessoal atrás do loopback; inaceitável exposto.
+#   2. `ports: "127.0.0.1:8765:8765"` é o que limita a exposição real. Publicar
+#      em `0.0.0.0` contraria o NFR-001 (loopback) do modelo de segurança.
+
+services:
+  devcockpit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devcockpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      # Sem DEVCOCKPIT_HOST: quem manda no bind é o CMD do Dockerfile
+      # (0.0.0.0, obrigatório para o proxy de porta do Docker alcançar o
+      # processo). A validação de origem usa só a porta, então o par
+      # 127.0.0.1:8765 do mapeamento acima é o que importa.
+      DEVCOCKPIT_PORT: 8765
+      DEVCOCKPIT_ENV: production
+      DEVCOCKPIT_DATABASE_URL: sqlite:///./data/devcockpit.db
+      DEVCOCKPIT_LOG_LEVEL: INFO
+      DEVCOCKPIT_LOG_FILE: ./logs/devcockpit.log
+      DEVCOCKPIT_LOG_FORMAT: json
+      DEVCOCKPIT_ROOTS_FILE: ./configs/roots.yml
+      DEVCOCKPIT_DEFAULTS_FILE: ./configs/defaults.yml
+      DEVCOCKPIT_CACHE_TTL_SECONDS: 5
+      DEVCOCKPIT_HEALTH_POLL_INTERVAL: 30
+      DEVCOCKPIT_HEALTH_TIMEOUT: 2
+      DEVCOCKPIT_TIMEOUT_GIT: 10
+      DEVCOCKPIT_TIMEOUT_DOCKER_READ: 15
+      DEVCOCKPIT_TIMEOUT_COMPOSE_UP: 300
+      DEVCOCKPIT_TIMEOUT_COMPOSE_CONTROL: 120
+      DEVCOCKPIT_TIMEOUT_SYSTEM_ACTION: 10
+      DEVCOCKPIT_TIMEOUT_SCAN: 120
+      DEVCOCKPIT_SCAN_MAX_DEPTH: 3
+      DEVCOCKPIT_JOB_OUTPUT_LIMIT: 2097152
+      DEVCOCKPIT_JOB_RETENTION: 3600
+      DEVCOCKPIT_HEALTH_HISTORY_DAYS: 7
+      DEVCOCKPIT_ACTIVITY_RETENTION_DAYS: 90
+    volumes:
+      # Persist database
+      - devcockpit_data:/app/data
+      # Persist logs
+      - devcockpit_logs:/app/logs
+      # Mount config (read-only after initialization)
+      - ./configs:/app/configs:ro
+      # Mount docker socket for Docker operations
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health').read()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  devcockpit_data:
+    driver: local
+  devcockpit_logs:
+    driver: local

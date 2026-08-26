@@ -511,6 +511,31 @@ solução é um raio de câmera por nó, a cada oito quadros, escondendo o rótu
 quem está ocluído — com uma exceção declarada: o rótulo do próprio núcleo nunca
 some, porque ele é a âncora da tela.
 
+### O refino: o que se move, e por quê
+
+Sete acréscimos depois da primeira versão em 3D, e nenhum é enfeite solto:
+
+| O que | Para quê |
+|-------|----------|
+| **Neblina** entre 700 e 2.600 unidades | o que está longe se dissolve no fundo. É a pista de profundidade mais forte que existe, e custa uma linha |
+| **Poeira**: 300 pontos numa casca esférica | paralaxe. Sem referência fixa, girar a câmera não produz sensação de movimento nenhuma |
+| **Brilho aditivo** no núcleo e em quem está no ar | o "respirar" verde do mapa 2D, aqui como luz somando com o fundo |
+| **Gaiola de arame** girando no núcleo | volume: sem ela o núcleo é uma bola lisa de cor chapada |
+| **Giro próprio** de cada nó, com velocidade tirada do id | um enxame onde tudo gira no mesmo compasso parece máquina, não organismo |
+| **Realce ao passar o mouse** | em 3D não existe `:hover` — o realce é trabalho nosso |
+| **Anel de seleção** que encara a câmera | aumentar o nó não basta: de longe, um nó maior parece só um nó mais perto |
+
+E a câmera **viaja** até o enquadramento em meio segundo, com saída exponencial,
+em vez de saltar. Enquadrar de um salto desorienta: a pessoa perde a referência
+de onde estava olhando e tem de reconstruir o mapa na cabeça.
+
+Dois ajustes que vieram de olhar a tela, não de planejar: o brilho do núcleo
+começou grande e apagado, cobrindo o próprio nome e os rótulos vizinhos —
+encolher o raio e subir a intensidade resolveu, porque brilho concentrado lê
+como fonte de luz e brilho espalhado lê como névoa. E a poeira, dimensionada em
+unidades do mundo, era invisível: a 2.000 de distância, sete unidades viram
+menos de um pixel. Passou a ser medida em pixels de tela.
+
 ### O que isso custou, honestamente
 
 - uma dependência de 1,3 MB, versionada em `frontend/js/vendor/` e resolvida por

@@ -20,6 +20,7 @@ import * as THREE from 'three';
 // Apelidado para não colidir com a função local que projeta os rótulos —
 // a colisão de nomes fazia a função chamar a si mesma até estourar a pilha.
 import { posicionarRotulos as acomodarNaTela } from './labels.js';
+import { semente } from './layout.js';
 import { encurtar } from './render.js';
 
 //: Distância inicial da câmera. Ajustada no primeiro enquadramento.
@@ -73,6 +74,31 @@ function corDoNo(no, cores) {
   return cores.secundario.clone();
 }
 
+/** Um disco de luz desenhado em memória, para servir de textura de brilho.
+ *
+ * Gerado e não carregado de arquivo: são 64 pixels de degradê radial, e um
+ * `.png` para isso seria um arquivo a mais no pacote, uma requisição a mais no
+ * carregamento e uma cor a menos sob controle dos tokens.
+ */
+function texturaDeBrilho() {
+  const lado = 128;
+  const tela = document.createElement('canvas');
+  tela.width = lado;
+  tela.height = lado;
+
+  const pincel = tela.getContext('2d');
+  const degrade = pincel.createRadialGradient(lado / 2, lado / 2, 0, lado / 2, lado / 2, lado / 2);
+  degrade.addColorStop(0, 'rgba(255,255,255,1)');
+  degrade.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+  degrade.addColorStop(1, 'rgba(255,255,255,0)');
+  pincel.fillStyle = degrade;
+  pincel.fillRect(0, 0, lado, lado);
+
+  const textura = new THREE.CanvasTexture(tela);
+  textura.colorSpace = THREE.SRGBColorSpace;
+  return textura;
+}
+
 function geometriaDoNo(no) {
   if (no.tipo === 'core') return new THREE.IcosahedronGeometry(no.tamanho, 3);
   if (no.tipo === 'tecnologia') return new THREE.OctahedronGeometry(no.tamanho * 1.15, 0);
@@ -91,6 +117,11 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
   let cores = paleta(raiz);
 
   const cena = new THREE.Scene();
+  // Neblina: o que está longe se dissolve no fundo, como acontece com qualquer
+  // coisa vista à distância. É a pista de profundidade mais forte que existe, e
+  // custa uma linha — sem ela, um grafo em 3D parece um grafo plano bagunçado.
+  cena.fog = new THREE.Fog(cores.fundo.getHex(), 700, 2600);
+
   const camera = new THREE.PerspectiveCamera(52, 1, 1, 12000);
   camera.position.set(0, 0, DISTANCIA_INICIAL);
 
@@ -138,7 +169,7 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
     const claro = raiz.dataset.theme === 'light';
     const corDaLuz = claro ? cores.superficie : cores.texto;
     luzAmbiente.color.copy(corDaLuz);
-    luzAmbiente.intensity = claro ? 2.6 : 0.55;
+    luzAmbiente.intensity = claro ? 2.6 : 0.8;
     luzDeApoio.color.copy(corDaLuz);
     luzDeApoio.intensity = claro ? 2.2 : 1.1;
     renderizador.toneMappingExposure = claro ? 1.35 : 1.15;
@@ -146,11 +177,51 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
 
   ajustarLuzAoTema();
 
+  // --- poeira ---------------------------------------------------------------
+  //
+  // Trezentos pontos parados numa casca esférica bem maior que o grafo. Eles não
+  // representam nada, e é justamente por isso que funcionam: dão paralaxe. Sem
+  // um plano de fundo, girar a câmera não produz sensação de movimento nenhuma,
+  // porque não há referência fixa contra a qual o giro apareça.
+  const brilho = texturaDeBrilho();
+  const poeira = new Float32Array(300 * 3);
+  for (let i = 0; i < 300; i += 1) {
+    const h = (i * 2654435761) >>> 0;
+    const angulo = ((h % 1000) / 1000) * Math.PI * 2;
+    const inclinacao = Math.acos(1 - (2 * ((h >>> 10) % 1000)) / 1000);
+    const raioDaPoeira = 1800 + ((h >>> 20) % 900);
+    poeira[i * 3] = Math.sin(inclinacao) * Math.cos(angulo) * raioDaPoeira;
+    poeira[i * 3 + 1] = Math.sin(inclinacao) * Math.sin(angulo) * raioDaPoeira;
+    poeira[i * 3 + 2] = Math.cos(inclinacao) * raioDaPoeira;
+  }
+
+  const geometriaDaPoeira = new THREE.BufferGeometry();
+  geometriaDaPoeira.setAttribute('position', new THREE.BufferAttribute(poeira, 3));
+  const nuvem = new THREE.Points(
+    geometriaDaPoeira,
+    new THREE.PointsMaterial({
+      color: cores.secundario,
+      // Tamanho em pixels de tela, e não em unidades do mundo: a 2.000 de
+      // distância, sete unidades viram menos de um pixel e a poeira some.
+      size: 2.2,
+      sizeAttenuation: false,
+      map: brilho,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+      fog: false,
+      blending: THREE.AdditiveBlending,
+    })
+  );
+  cena.add(nuvem);
+
   // --- nós ----------------------------------------------------------------
 
   const malhas = new Map();
   const rotulos = new Map();
   const desenhaveis = [];
+  //: Brilhos que pulsam junto com o tempo — núcleo e projetos no ar.
+  const auroras = [];
 
   for (const no of grafo.nos) {
     // O núcleo **é** a fonte de luz da cena: material sem sombreamento, que não
@@ -173,9 +244,37 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
     malha.geometry.computeBoundingSphere();
     malha.userData.id = no.id;
     malha.userData.tipo = no.tipo;
+    // Velocidade de giro própria, derivada do id: um enxame onde tudo gira no
+    // mesmo compasso parece máquina, não organismo.
+    malha.userData.giro = no.tipo === 'core' ? 0 : (((semente(no.id) % 60) - 30) / 30) * 0.004;
     cena.add(malha);
     malhas.set(no.id, malha);
     desenhaveis.push(malha);
+
+    // O que está no ar ganha um brilho aditivo em volta — o mesmo "respirar"
+    // verde do mapa 2D, aqui como luz de verdade somando com o fundo.
+    if (no.estado === 'no-ar' || no.tipo === 'core') {
+      const auréola = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: brilho,
+          color: corDoNo(no, cores),
+          transparent: true,
+          // O brilho do núcleo cobria o próprio nome e os rótulos vizinhos: a
+          // luz precisa sugerir energia, não apagar a informação em volta. A
+          // saída é encolher o raio e subir a intensidade: brilho concentrado
+          // lê como fonte de luz; brilho espalhado lê como névoa.
+          opacity: no.tipo === 'core' ? 0.7 : 0.45,
+          depthWrite: false,
+          fog: false,
+          blending: THREE.AdditiveBlending,
+        })
+      );
+      const tamanhoDoBrilho = no.tamanho * (no.tipo === 'core' ? 3.4 : 4.6);
+      auréola.scale.setScalar(tamanhoDoBrilho);
+      malha.userData.auréola = auréola;
+      cena.add(auréola);
+      auroras.push({ malha, sprite: auréola, base: tamanhoDoBrilho });
+    }
 
     const rotulo = document.createElement('span');
     rotulo.className = 'hb-rotulo';
@@ -216,6 +315,37 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
     cena.add(halo);
   }
 
+  // Uma casca de arame girando devagar em volta do núcleo: dá volume ao que,
+  // sem ela, é uma bola lisa de cor chapada.
+  const gaiola = nucleo
+    ? new THREE.Mesh(
+        new THREE.IcosahedronGeometry(nucleo.geometry.parameters.radius * 1.55, 1),
+        new THREE.MeshBasicMaterial({
+          color: cores.acento,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.28,
+          fog: false,
+        })
+      )
+    : null;
+  if (gaiola) cena.add(gaiola);
+
+  // Anel de seleção: um aro que sempre encara a câmera. Em 3D, aumentar o nó
+  // não basta como sinal — de longe, um nó maior parece só um nó mais perto.
+  const anelDeSelecao = new THREE.Mesh(
+    new THREE.RingGeometry(1, 1.14, 48),
+    new THREE.MeshBasicMaterial({
+      color: cores.acento,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      fog: false,
+    })
+  );
+  anelDeSelecao.visible = false;
+  cena.add(anelDeSelecao);
+
   // --- arestas ------------------------------------------------------------
   //
   // Um único objeto de linhas para o grafo inteiro: dezenas de objetos
@@ -229,7 +359,7 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
 
   const linhas = new THREE.LineSegments(
     geometriaDeArestas,
-    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55 })
+    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 })
   );
   cena.add(linhas);
 
@@ -261,6 +391,34 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
 
   const orbita = { theta: 0.35, phi: 1.15, distancia: DISTANCIA_INICIAL, alvo: new THREE.Vector3() };
   let girando = true;
+
+  //: Para onde a câmera está indo, quando está indo. `null` quando parada.
+  let viagem = null;
+
+  /** Move a câmera até uma distância, em vez de teleportá-la.
+   *
+   * Enquadrar de um salto desorienta: a pessoa perde a referência de onde
+   * estava olhando e precisa reconstruir o mapa inteiro na cabeça. Meio segundo
+   * de caminho resolve isso — e é curto o bastante para não parecer lento.
+   */
+  function viajarAte(distancia, duracao = 480) {
+    viagem = { de: orbita.distancia, para: distancia, inicio: null, duracao };
+  }
+
+  function avancarViagem(agora) {
+    if (!viagem) return false;
+    if (viagem.inicio === null) viagem.inicio = agora;
+
+    const t = Math.min(1, (agora - viagem.inicio) / viagem.duracao);
+    // Saída exponencial: sai rápido, chega devagar. O movimento parece decidido
+    // no começo e cuidadoso no fim, que é como a mão de alguém se move.
+    const suave = 1 - Math.pow(1 - t, 3);
+    orbita.distancia = viagem.de + (viagem.para - viagem.de) * suave;
+    posicionarCamera();
+
+    if (t >= 1) viagem = null;
+    return true;
+  }
 
   function posicionarCamera() {
     const senoPhi = Math.sin(orbita.phi);
@@ -302,6 +460,7 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
     if (!gesto) {
       const alvo = apontar(evento);
       tela.dataset.sobre = alvo ? 'no' : '';
+      realçar(alvo?.userData.id ?? null);
       aoPairar?.(alvo?.userData.id ?? null);
       return;
     }
@@ -352,6 +511,30 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
     ponteiro.y = -((evento.clientY - caixa.top) / caixa.height) * 2 + 1;
     raio.setFromCamera(ponteiro, camera);
     return raio.intersectObjects(desenhaveis, false)[0]?.object ?? null;
+  }
+
+  //: Nó sob o ponteiro. Em 3D não existe `:hover` — o realce é trabalho nosso.
+  let sobOPonteiro = null;
+
+  function realçar(id) {
+    if (id === sobOPonteiro) return;
+
+    const anterior = malhas.get(sobOPonteiro);
+    if (anterior && anterior.userData.tipo !== 'core') {
+      anterior.scale.setScalar(anterior.userData.escalaBase ?? 1);
+    }
+    const rotuloAnterior = rotulos.get(sobOPonteiro);
+    if (rotuloAnterior) delete rotuloAnterior.dataset.sobre;
+
+    sobOPonteiro = id;
+
+    const atual = malhas.get(id);
+    if (atual && atual.userData.tipo !== 'core') {
+      atual.userData.escalaBase = atual.userData.escalaBase ?? atual.scale.x;
+      atual.scale.setScalar(atual.userData.escalaBase * 1.3);
+    }
+    const rotulo = rotulos.get(id);
+    if (rotulo) rotulo.dataset.sobre = 'true';
   }
 
   // --- laço ---------------------------------------------------------------
@@ -488,6 +671,7 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
     if (nucleo) {
       luzDoNucleo.position.copy(nucleo.position);
       halo.position.copy(nucleo.position);
+      if (gaiola) gaiola.position.copy(nucleo.position);
     }
 
     grafo.arestas.forEach((aresta, i) => {
@@ -514,10 +698,36 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
 
   return {
     /** Um quadro. A página decide quando chamar. */
-    desenhar({ girarSozinho = true } = {}) {
+    desenhar({ girarSozinho = true, tempo = 0 } = {}) {
+      const viajando = avancarViagem(tempo);
       if (girarSozinho && girando) orbita.theta += 0.0009;
-      if (girando) posicionarCamera();
+      if (girando && !viajando) posicionarCamera();
+
+      // Giro próprio de cada nó, e a pulsação dos brilhos. Duas contas por
+      // objeto, num punhado de objetos: o custo fica no ruído.
+      for (const malha of malhas.values()) {
+        if (malha.userData.giro) malha.rotation.y += malha.userData.giro;
+      }
+      if (gaiola) {
+        gaiola.rotation.y += 0.0016;
+        gaiola.rotation.x += 0.0008;
+      }
+      for (const { malha, sprite, base } of auroras) {
+        sprite.position.copy(malha.position);
+        const pulso = 1 + Math.sin(tempo / 900 + base) * 0.07;
+        sprite.scale.setScalar(base * pulso);
+      }
+
       atualizarGeometria();
+
+      // O anel encara a câmera e acompanha o nó — os dois a cada quadro, porque
+      // tanto a câmera quanto o nó se movem.
+      if (anelDeSelecao.visible) {
+        const alvo = malhas.get(anelDeSelecao.userData.alvo);
+        if (alvo) anelDeSelecao.position.copy(alvo.position);
+        anelDeSelecao.quaternion.copy(camera.quaternion);
+      }
+
       posicionarRotulos();
       renderizador.render(cena, camera);
     },
@@ -533,13 +743,10 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
       const abertura = (camera.fov * Math.PI) / 180;
       orbita.alvo.set(0, 0, 0);
       // 2,1 e não 1,35: em perspectiva, o nó mais próximo da câmera ocupa
-      // muito mais tela que o raio do conjunto sugere, e o enquadramento
-      // apertado deixava metade do grafo para fora.
-      orbita.distancia = Math.min(
-        ESCALA_MAXIMA,
-        Math.max(ESCALA_MINIMA, (maior * 2.1) / Math.tan(abertura / 2))
+      // muito mais tela que o raio do conjunto sugere.
+      viajarAte(
+        Math.min(ESCALA_MAXIMA, Math.max(ESCALA_MINIMA, (maior * 2.1) / Math.tan(abertura / 2)))
       );
-      posicionarCamera();
     },
 
     aproximar(fator = 1 / 1.2) {
@@ -555,8 +762,14 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
 
     girando: () => girando,
 
+    /** A câmera ainda está a caminho de algum lugar. */
+    viajando: () => viagem !== null,
+
     /** Foco, destaque e seleção — os mesmos estados da versão em SVG. */
     aplicarDestaque({ foco, proximos, destacados, selecionado }) {
+      anelDeSelecao.visible = false;
+      anelDeSelecao.userData.alvo = null;
+
       for (const [id, malha] of malhas) {
         const apagado =
           (foco && !proximos.has(id)) ||
@@ -566,7 +779,16 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
         malha.material.transparent = apagado;
         malha.material.emissiveIntensity =
           id === selecionado ? 0.9 : malha.userData.tipo === 'core' ? 0.85 : apagado ? 0.02 : 0.12;
-        malha.scale.setScalar(id === selecionado ? 1.25 : 1);
+        malha.userData.escalaBase = id === selecionado ? 1.25 : 1;
+        malha.scale.setScalar(malha.userData.escalaBase);
+
+        if (id === selecionado) {
+          const raioDoNo = (malha.geometry.boundingSphere?.radius ?? 20) * 1.25;
+          anelDeSelecao.scale.setScalar(raioDoNo * 1.7);
+          anelDeSelecao.position.copy(malha.position);
+          anelDeSelecao.visible = true;
+          anelDeSelecao.userData.alvo = id;
+        }
 
         const rotulo = rotulos.get(id);
         if (rotulo) {
@@ -625,6 +847,9 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
       }
       luzDoNucleo.color.copy(cores.acento);
       halo.material.color.copy(cores.acento);
+      if (gaiola) gaiola.material.color.copy(cores.acento);
+      nuvem.material.color.copy(cores.secundario);
+      cena.fog.color.copy(cores.fundo);
       ajustarLuzAoTema();
       pintarArestas();
     },
@@ -638,6 +863,14 @@ export function criarCena3D({ container, grafo, layout, aoSelecionar, aoPairar }
       }
       halo.geometry.dispose();
       halo.material.dispose();
+      gaiola?.geometry.dispose();
+      gaiola?.material.dispose();
+      anelDeSelecao.geometry.dispose();
+      anelDeSelecao.material.dispose();
+      for (const { sprite } of auroras) sprite.material.dispose();
+      geometriaDaPoeira.dispose();
+      nuvem.material.dispose();
+      brilho.dispose();
       geometriaDeArestas.dispose();
       linhas.material.dispose();
       // O contexto WebGL é finito: o navegador derruba os mais antigos quando

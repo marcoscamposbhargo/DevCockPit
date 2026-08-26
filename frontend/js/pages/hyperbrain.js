@@ -372,7 +372,11 @@ export async function renderHyperbrain(container) {
 
     return {
       tipo: '3d',
-      desenhar: () => cena.desenhar({ girarSozinho: !movimentoCurto }),
+      desenhar: () =>
+        // O relógio vem de `performance.now()`, e não de um contador de
+        // quadros: a pulsação precisa ter a mesma velocidade numa tela de
+        // 60 Hz e numa de 144.
+        cena.desenhar({ girarSozinho: !movimentoCurto, tempo: performance.now() }),
       assentar: () => cena.enquadrar(),
       enquadrar: () => cena.enquadrar(),
       ampliar: () => cena.aproximar(1 / 1.2),

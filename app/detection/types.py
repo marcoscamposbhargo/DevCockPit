@@ -59,8 +59,21 @@ class Detection:
         known = {tech.name for tech in self.technologies}
         self.technologies.extend(t for t in other.technologies if t.name not in known)
 
-        keys = {service.key for service in self.services}
-        self.services.extend(s for s in other.services if s.key not in keys)
+        # Chave repetida: fica quem leu de arquivo. Antes era sempre o primeiro,
+        # e isso bastava quando tudo vinha do mesmo diretório. Com monorepo, o
+        # `backend/` é varrido antes do `infra/`: a porta **convencional** do
+        # framework chegava primeiro e derrubava a que o Compose publica de
+        # verdade. O projeto inteiro trata arquivo como mais forte que
+        # convenção — o `merge` era o único lugar que não tratava.
+        por_chave = {service.key: service for service in self.services}
+        for candidato in other.services:
+            atual = por_chave.get(candidato.key)
+            if atual is None:
+                self.services.append(candidato)
+                por_chave[candidato.key] = candidato
+            elif atual.port_source != "file" and candidato.port_source == "file":
+                self.services[self.services.index(atual)] = candidato
+                por_chave[candidato.key] = candidato
 
         self.compose_file = self.compose_file or other.compose_file
         self.warnings.extend(other.warnings)

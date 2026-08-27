@@ -488,3 +488,28 @@ def test_deteccao_nao_cadastra_servico_em_porta_ja_ocupada(session, workspace: P
     assert any("já é de 'servico-5433'" in aviso for aviso in diff.warnings), (
         "ignorar em silêncio deixaria a pessoa sem saber por que o serviço não apareceu"
     )
+
+
+def test_porta_lida_de_arquivo_vence_a_convencional(registry, workspace: Path) -> None:
+    """Ordem de varredura não pode decidir qual porta vale.
+
+    `backend/` é varrido antes de `infra/`. O detector Python sugere a porta
+    **convencional** do framework (8000, padrão do uvicorn); o Compose publica a
+    porta **real**. Quando o primeiro vencia por chegar antes, o painel passava
+    a verificar um número que o projeto não usa — e o projeto inteiro trata
+    arquivo como evidência mais forte que convenção.
+    """
+    projeto = workspace / "monorepo"
+    (projeto / "backend").mkdir(parents=True)
+    (projeto / "infra").mkdir()
+    (projeto / "backend" / "requirements.txt").write_text("fastapi\nuvicorn\n", encoding="utf-8")
+    (projeto / "infra" / "docker-compose.yml").write_text(
+        "services:\n  backend:\n    build: ../backend\n    ports:\n      - \"8100:8000\"\n",
+        encoding="utf-8",
+    )
+
+    detection = registry.run(projeto)
+
+    backend = next(s for s in detection.services if s.key == "backend")
+    assert backend.port == 8100, "a porta do Compose foi descartada pela convenção"
+    assert backend.port_source == "file"

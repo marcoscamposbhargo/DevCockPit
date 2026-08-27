@@ -24,7 +24,7 @@ from app.core.errors import (
     ValidationError,
 )
 from app.core.paths import resolve_within_project
-from app.detection.detectors.docker_stack import COMPOSE_FILENAMES, find_compose_file
+from app.detection.detectors.docker_stack import COMPOSE_FILENAMES, find_compose_relativo
 from app.jobs.job import Job
 from app.jobs.job_manager import JobManager
 from app.models.project import DockerConfig, Project
@@ -82,12 +82,13 @@ class DockerService:
                 raise NoComposeFile(f"Arquivo Compose não encontrado: {configured}")
             return configured
 
-        found = find_compose_file(project_dir)
+        found = find_compose_relativo(project_dir)
         if found is None:
             raise NoComposeFile(
-                "Nenhum arquivo Compose encontrado. Procurados: " + ", ".join(COMPOSE_FILENAMES)
+                "Nenhum arquivo Compose encontrado na raiz nem nas subpastas de "
+                "projeto. Procurados: " + ", ".join(COMPOSE_FILENAMES)
             )
-        return found.name
+        return found
 
     def declared_services(self, project: Project, compose_file: str) -> list[str]:
         """Serviços declarados no Compose — o conjunto fechado que valida a entrada.

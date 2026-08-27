@@ -307,3 +307,29 @@ def test_logs_com_daemon_fora_do_ar(
 
     assert resposta.status_code == 503
     assert resposta.json()["error"]["code"] == "DOCKER_UNAVAILABLE"
+
+
+def test_compose_em_subpasta_e_encontrado(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Quem separa infraestrutura do código guarda o Compose em `infra/`.
+
+    A detecção passou a enxergar monorepo, mas a aba Docker tem busca própria e
+    continuava só na raiz — respondendo "nenhum arquivo Compose encontrado"
+    para um projeto que tem um. O caminho volta relativo porque
+    `docker compose -f` roda a partir da raiz do projeto.
+    """
+    from app.detection.detectors.docker_stack import find_compose_relativo
+
+    (tmp_path / "infra").mkdir()
+    (tmp_path / "infra" / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+
+    assert find_compose_relativo(tmp_path) == "infra/docker-compose.yml"
+
+
+def test_a_raiz_vence_a_subpasta_no_compose(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from app.detection.detectors.docker_stack import find_compose_relativo
+
+    (tmp_path / "infra").mkdir()
+    (tmp_path / "infra" / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
+
+    assert find_compose_relativo(tmp_path) == "docker-compose.yml"

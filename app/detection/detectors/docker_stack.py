@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from app.core.monorepo import SUBPROJETOS
 from app.detection.types import Category, DetectedTech, Detection, SuggestedService
 
 COMPOSE_FILENAMES = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
@@ -53,6 +54,32 @@ def find_compose_file(project_dir: Path) -> Path | None:
         candidate = project_dir / name
         if candidate.is_file():
             return candidate
+    return None
+
+
+def find_compose_relativo(project_dir: Path) -> str | None:
+    """O Compose do projeto, como caminho relativo à raiz dele.
+
+    A raiz primeiro; depois as subpastas de monorepo. Quem separa
+    infraestrutura do código guarda o arquivo em `infra/`, e a aba Docker
+    respondia "nenhum arquivo Compose encontrado" para um projeto que tem um.
+
+    Devolve caminho, e não só o nome, porque `docker compose -f` roda a partir
+    da raiz do projeto: `docker-compose.yml` solto apontaria para um arquivo que
+    não existe ali.
+    """
+    na_raiz = find_compose_file(project_dir)
+    if na_raiz is not None:
+        return na_raiz.name
+
+    for relativo in SUBPROJETOS:
+        sub = project_dir / relativo
+        if not sub.is_dir():
+            continue
+        achado = find_compose_file(sub)
+        if achado is not None:
+            return f"{relativo}/{achado.name}"
+
     return None
 
 

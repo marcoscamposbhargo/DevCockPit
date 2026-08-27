@@ -172,6 +172,8 @@ def test_porta_escolhida_vira_configuracao(
 
     monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
     monkeypatch.setattr(launcher, "escolher_porta", lambda _preferida: 8899)
+    # Sem isto o teste dependeria de a 8765 estar livre nesta máquina.
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: False)
     monkeypatch.setattr(launcher, "aplicar_migracoes", lambda: None)
 
     registrado: dict[str, object] = {}
@@ -194,6 +196,7 @@ def test_sem_porta_livre_nao_sobe_servidor(
 ) -> None:
     monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
     monkeypatch.setattr(launcher, "escolher_porta", lambda _preferida: None)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: False)
 
     def nao_deveria() -> None:
         raise AssertionError("migração não pode rodar sem porta")
@@ -201,3 +204,59 @@ def test_sem_porta_livre_nao_sobe_servidor(
     monkeypatch.setattr(launcher, "aplicar_migracoes", nao_deveria)
 
     assert launcher.main(["--no-browser"]) == 1
+
+
+def test_painel_ja_aberto_nao_sobe_um_segundo(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Duas instâncias contra o mesmo SQLite disputam a escrita.
+
+    O launcher tratava porta ocupada sempre da mesma forma: pegar a próxima
+    livre. Quando quem ocupa é o próprio painel, isso produz dois pollers
+    escrevendo o mesmo banco — e "database is locked" aparecendo num botão sem
+    relação nenhuma com o que a pessoa estava fazendo. As duas instâncias ainda
+    podem servir versões diferentes do código.
+    """
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    monkeypatch.setattr(launcher, "porta_disponivel", lambda _porta: False)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: True)
+
+    def nao_deveria(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("não pode subir um segundo servidor")
+
+    monkeypatch.setattr(launcher, "aplicar_migracoes", nao_deveria)
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", nao_deveria)
+
+    abertos: list[str] = []
+    monkeypatch.setattr(launcher.webbrowser, "open", abertos.append)
+
+    assert launcher.main([]) == 0
+    assert abertos == ["http://127.0.0.1:8765"], "a janela existente é trazida à frente"
+
+
+def test_porta_ocupada_por_estranho_faz_o_painel_mudar_de_porta(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Um `200` não basta: qualquer servidor pode responder nessa porta.
+
+    Tratar um estranho como "o painel" mandaria a pessoa para a tela de outro
+    programa e deixaria o DevCockpit sem subir.
+    """
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    monkeypatch.setattr(launcher, "porta_disponivel", lambda porta: porta != 8765)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: False)
+    monkeypatch.setattr(launcher, "aplicar_migracoes", lambda: None)
+
+    registrado: dict[str, object] = {}
+
+    def uvicorn_falso(app, host, port, log_level):  # type: ignore[no-untyped-def]
+        registrado["port"] = port
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", uvicorn_falso)
+
+    assert launcher.main(["--no-browser"]) == 0
+    assert registrado["port"] == 8766

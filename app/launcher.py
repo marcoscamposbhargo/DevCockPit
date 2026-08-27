@@ -193,6 +193,38 @@ def escolher_porta(preferida: int) -> int | None:
     return None
 
 
+def painel_ja_no_ar(porta: int) -> bool:
+    """Já existe um DevCockpit atendendo nesta porta?
+
+    A pergunta importa porque a resposta muda o que fazer. Porta ocupada por
+    outro programa é motivo para escolher a próxima livre; porta ocupada pelo
+    **próprio painel** é motivo para abrir aquele, e não subir um rival.
+
+    Duas instâncias contra o mesmo SQLite disputam a escrita — e o SQLite
+    admite um escritor por vez. Foi assim que apareceu "database is locked"
+    num botão que não tinha nada a ver com o que estava sendo feito. Elas
+    também podem rodar versões diferentes: depois de reconstruir o executável,
+    a janela aberta continua servindo o código velho.
+
+    A verificação é a assinatura do próprio `/api/health`, não só um `200`:
+    qualquer servidor pode responder 200 nessa porta, e tratar um estranho como
+    "o painel" mandaria a pessoa para a tela errada.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{porta}/api/health", timeout=1.5
+        ) as resposta:
+            dados = json.loads(resposta.read().decode("utf-8", errors="replace"))
+    except (OSError, urllib.error.URLError, ValueError):
+        return False
+
+    return isinstance(dados, dict) and "tools" in dados and "allowed_roots" in dados
+
+
 def abrir_navegador_quando_subir(url: str, timeout_s: float = 20.0) -> None:
     """Abre o navegador só depois que o servidor responde.
 
@@ -342,11 +374,18 @@ def main(argv: list[str] | None = None) -> int:
     for criado in semear_configuracao(base):
         _dizer(f"  criado: {criado}")
 
+    # Painel já aberto: traz aquele para a frente em vez de subir um segundo.
+    if not porta_disponivel(args.port) and painel_ja_no_ar(args.port):
+        url = f"http://127.0.0.1:{args.port}"
+        _dizer(f"  o DevCockpit já está aberto em {url}")
+        webbrowser.open(url)
+        return 0
+
     porta = escolher_porta(args.port)
     if porta is None:
         return _falhar(f"Nenhuma porta livre entre {args.port} e {args.port + 19}.")
     if porta != args.port:
-        _dizer(f"  porta {args.port} ocupada; usando {porta}")
+        _dizer(f"  porta {args.port} ocupada por outro programa; usando {porta}")
 
     # Antes de qualquer coisa que leia `Settings` — e antes de o cache de
     # `get_settings()` fechar. A porta não é só onde o servidor escuta: ela

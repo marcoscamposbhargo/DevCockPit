@@ -608,3 +608,27 @@ def test_entre_dois_http_vale_a_ordem_declarada_nao_o_nome(servico, projeto, ses
     session.flush()
 
     assert servico.status(projeto).command == "npm run dev -- -p 3002"
+
+
+def test_monorepo_node_tambem_recebe_a_porta(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """Um `frontend/` não é caso especial: a porta tem que descer com o plano.
+
+    A primeira versão da fixação de porta parava na raiz — `plan_from_subproject`
+    chamava o plano Node sem passar a porta adiante. Monorepo é justamente onde
+    o painel mais precisa disso, porque é o formato dos projetos que sobem um
+    backend e um frontend na mesma máquina.
+    """
+    import json as _json
+
+    frontend = Path(projeto.path) / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        _json.dumps({"scripts": {"dev": "next dev"}, "dependencies": {"next": "^15.0.0"}}),
+        encoding="utf-8",
+    )
+    _servico(projeto, session, 3020, key="app")
+
+    estado = servico.status(projeto)
+
+    assert estado.command == "npm run dev -- -p 3020"
+    assert "em frontend/" in estado.evidence

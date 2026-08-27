@@ -562,7 +562,7 @@ def plan_from_subproject(project_dir: Path, port: int | None = None) -> RunPlan 
         if not sub.is_dir():
             continue
 
-        plano = plan_from_node(sub) or plan_from_python(sub, port=port)
+        plano = plan_from_node(sub, port=port) or plan_from_python(sub, port=port)
         if plano is None:
             continue
 

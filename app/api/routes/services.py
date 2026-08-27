@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends
 
 from app.api.deps import (
+    get_activity_service,
     get_cache,
     get_docker_service,
     get_health_service,
@@ -15,7 +17,8 @@ from app.api.deps import (
     get_system_service,
 )
 from app.core.cache import TTLCache
-from app.core.errors import DomainError
+from app.core.errors import DomainError, ValidationError
+from app.models.project import ActivityStatus
 from app.models.project import ProjectService as ProjectServiceModel
 from app.schemas.health import (
     ObservedPortOut,
@@ -29,6 +32,7 @@ from app.schemas.health import (
     ServicesReplace,
     ServiceStateOut,
 )
+from app.services.activity_service import ActivityService
 from app.services.dashboard_service import CACHE_KEY as DASHBOARD_CACHE_KEY
 from app.services.docker_service import DockerService
 from app.services.health_service import HealthService, targets_from_project
@@ -152,14 +156,56 @@ def list_services(
     return ServiceList(items=items)
 
 
+#: Rótulo que o próprio painel gerou ao cadastrar uma porta observada. Só ele
+#: é reescrito quando a porta muda — rótulo escrito por gente fica como está.
+_ROTULO_AUTOMATICO = re.compile(r"^App \((\d{2,5})\)$")
+
+
+def _exigir_portas_distintas(itens) -> None:  # type: ignore[no-untyped-def]
+    """Dois serviços do mesmo projeto na mesma porta é estado impossível.
+
+    Uma porta tem um ouvinte. Aceitar a duplicata fazia o painel verificar três
+    vezes o mesmo endereço, atribuir a resposta a três serviços e ainda avisar,
+    na tela de Ports, sobre a inconsistência que ele mesmo tinha gravado.
+    Recusar na escrita é onde isso custa menos.
+    """
+    vistos: dict[int, str] = {}
+    for item in itens:
+        if item.port is None:
+            continue
+        anterior = vistos.get(item.port)
+        if anterior is not None:
+            raise ValidationError(
+                f"A porta {item.port} já é do serviço '{anterior}'. "
+                "Uma porta tem um ouvinte só — troque a de um dos dois."
+            )
+        vistos[item.port] = item.key
+
+
+def _rotulo_coerente(label: str, port: int | None) -> str:
+    """Mantém o número do rótulo igual ao da porta, quando o painel o escreveu.
+
+    `App (5442)` numa linha cuja porta é 3000 são dois números discordando na
+    mesma linha — e o da esquerda é o que a pessoa lê primeiro.
+    """
+    casou = _ROTULO_AUTOMATICO.match(label or "")
+    if casou and port is not None and casou.group(1) != str(port):
+        return f"App ({port})"
+    return label
+
+
 @router.put("/services", response_model=ServiceList)
 def replace_services(
     project_id: str,
     payload: ServicesReplace,
     projects: ProjectService = Depends(get_project_service),
     health: HealthService = Depends(get_health_service),
+    activity: ActivityService = Depends(get_activity_service),
 ) -> ServiceList:
     project = projects.get(project_id)
+    _exigir_portas_distintas(payload.items)
+
+    antes = {s.key: s.port for s in project.services}
 
     project.services.clear()
     #: O flush precisa acontecer **entre** o clear e os appends. Sem ele o
@@ -174,7 +220,7 @@ def replace_services(
         project.services.append(
             ProjectServiceModel(
                 key=item.key,
-                label=item.label,
+                label=_rotulo_coerente(item.label, item.port),
                 host=item.host,
                 port=item.port,
                 url=item.url,
@@ -185,6 +231,26 @@ def replace_services(
         )
 
     health.invalidate(project.id)
+
+    # Trocar a porta de um serviço é escrita, e escrita sem rastro não tem como
+    # ser explicada depois. Foi o que aconteceu com o AgilContabil: três
+    # serviços foram para a 3000 e o log não sabia dizer quando, nem por quem.
+    depois = {item.key: item.port for item in payload.items}
+    mudou = [
+        f"{chave}: {antes.get(chave, '—')} → {porta}"
+        for chave, porta in depois.items()
+        if antes.get(chave) != porta
+    ]
+    removidos = [chave for chave in antes if chave not in depois]
+    if removidos:
+        mudou.append(f"removidos: {', '.join(sorted(removidos))}")
+
+    activity.record(
+        action="services.replace",
+        status=ActivityStatus.SUCCESS,
+        project_id=project.id,
+        message="; ".join(mudou) if mudou else "sem alteração de porta",
+    )
 
     return ServiceList(
         items=[

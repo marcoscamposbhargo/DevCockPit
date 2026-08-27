@@ -159,19 +159,24 @@ def test_mapa_de_portas_diz_quem_ocupa_cada_uma(client: TestClient, projeto: str
 
 
 def test_dois_servicos_do_mesmo_projeto_na_mesma_porta_conflitam(
-    client: TestClient, projeto: str
+    client: TestClient, projeto: str, session
 ) -> None:
-    """Contar por nome de projeto escondia este caso: um `set` de um nome só."""
-    client.put(
-        f"/api/projects/{projeto}/services",
-        json={
-            "items": [
-                {"key": "api", "label": "API", "port": 8000},
-                {"key": "admin", "label": "Admin", "port": 8000},
-            ]
-        },
-        headers=WRITE_HEADERS,
-    )
+    """Contar por nome de projeto escondia este caso: um `set` de um nome só.
+
+    A duplicata entra **direto no banco**, e não pela API: o `PUT` passou a
+    recusá-la. Mas a tela precisa continuar sabendo mostrar o caso, porque
+    banco de instalação antiga tem linhas gravadas antes da regra — o
+    AgilContabil tinha três serviços na 3000 quando ela foi escrita.
+    """
+    from app.models.project import ProjectService as ProjectServiceModel
+
+    for chave, rotulo in (("api", "API"), ("admin", "Admin")):
+        session.add(
+            ProjectServiceModel(
+                project_id=projeto, key=chave, label=rotulo, host="localhost", port=8000
+            )
+        )
+    session.commit()
 
     mapa = client.get("/api/services/ports").json()
 
@@ -444,3 +449,87 @@ def test_dashboard_diz_quem_foi_medido(client, sample_project) -> None:  # type:
     assert "checked_project_ids" in dados
     # Recém-cadastrado, sem ciclo do poller: não medido.
     assert projeto["id"] not in dados["checked_project_ids"]
+
+
+# --- a porta duplicada para de nascer --------------------------------------
+
+
+def test_dois_servicos_na_mesma_porta_sao_recusados(client: TestClient, projeto: str) -> None:
+    """Uma porta tem um ouvinte. Aceitar a duplicata gravava estado impossível.
+
+    O painel verificava três vezes o mesmo endereço, atribuía a resposta aos
+    três serviços e ainda avisava, na tela de Ports, sobre a inconsistência que
+    ele mesmo tinha gravado.
+    """
+    resposta = client.put(
+        f"/api/projects/{projeto}/services",
+        json={
+            "items": [
+                {"key": "api", "label": "API", "port": 8000},
+                {"key": "admin", "label": "Admin", "port": 8000},
+            ]
+        },
+        headers=WRITE_HEADERS,
+    )
+
+    assert resposta.status_code == 422
+    assert "8000" in resposta.json()["error"]["message"]
+    assert "'api'" in resposta.json()["error"]["message"], "diz de quem é a porta"
+
+
+def test_trocar_a_porta_corrige_o_rotulo_que_o_painel_escreveu(
+    client: TestClient, projeto: str
+) -> None:
+    """`App (5442)` numa linha cuja porta é 3000 são dois números discordando.
+
+    O rótulo com a porta embutida nasce quando o painel cadastra uma porta
+    observada. Trocar a porta depois deixava o número velho na tela.
+    """
+    client.put(
+        f"/api/projects/{projeto}/services",
+        json={"items": [{"key": "app", "label": "App (5442)", "port": 5442}]},
+        headers=WRITE_HEADERS,
+    )
+
+    resposta = client.put(
+        f"/api/projects/{projeto}/services",
+        json={"items": [{"key": "app", "label": "App (5442)", "port": 3000}]},
+        headers=WRITE_HEADERS,
+    )
+
+    assert resposta.json()["items"][0]["label"] == "App (3000)"
+
+
+def test_rotulo_escrito_por_gente_nao_e_reescrito(client: TestClient, projeto: str) -> None:
+    """A regra vale para o rótulo que o painel gerou, não para o que a pessoa deu."""
+    resposta = client.put(
+        f"/api/projects/{projeto}/services",
+        json={"items": [{"key": "db", "label": "Postgres", "port": 5442}]},
+        headers=WRITE_HEADERS,
+    )
+
+    assert resposta.json()["items"][0]["label"] == "Postgres"
+
+
+def test_trocar_porta_de_servico_fica_na_auditoria(client: TestClient, projeto: str) -> None:
+    """Escrita sem rastro não tem como ser explicada depois.
+
+    Foi o que aconteceu com o AgilContabil: três serviços foram para a 3000 e o
+    log não sabia dizer quando, nem por quem.
+    """
+    client.put(
+        f"/api/projects/{projeto}/services",
+        json={"items": [{"key": "app", "label": "App", "port": 3000}]},
+        headers=WRITE_HEADERS,
+    )
+    client.put(
+        f"/api/projects/{projeto}/services",
+        json={"items": [{"key": "app", "label": "App", "port": 3010}]},
+        headers=WRITE_HEADERS,
+    )
+
+    entrada = client.get("/api/activity", params={"limit": 1}).json()["items"][0]
+
+    assert entrada["action"] == "services.replace"
+    assert entrada["project_id"] == projeto
+    assert "3000" in entrada["message"] and "3010" in entrada["message"]

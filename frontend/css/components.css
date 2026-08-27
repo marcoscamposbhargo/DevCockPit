@@ -2716,3 +2716,84 @@
   display: flex;
   gap: var(--sp-2);
 }
+
+/* --- especialistas, atalhos e comandos (Cockpit AI, Fases 3.2 e 3.5) --- */
+
+.chat-chapeus {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-2);
+}
+
+/* Os atalhos ficam colados nos chapéus: são a mesma ideia — o que este perfil
+   faz sem precisar de frase nenhuma. */
+.chat-atalhos {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.chat-atalhos:empty {
+  display: none;
+}
+
+.chat-entrada {
+  position: relative;
+}
+
+/* A lista de comandos sobe **acima** do campo, não abaixo: embaixo ela cairia
+   fora da área visível do painel quando a conversa está longa. */
+.chat-comandos {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  z-index: 5;
+}
+
+.chat-comandos:empty {
+  display: none;
+}
+
+.chat-comando {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-comando:last-child {
+  border-bottom: 0;
+}
+
+.chat-comando:hover,
+.chat-comando:focus-visible {
+  background: var(--bg-hover);
+}
+
+.chat-comando__nome {
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+
+.chat-comando__resumo {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}

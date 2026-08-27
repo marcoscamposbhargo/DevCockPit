@@ -31,6 +31,8 @@ from app.schemas.ai import (
     ChatHistoryOut,
     ChatMessageOut,
     DayItemOut,
+    EspecialistaList,
+    EspecialistaOut,
     MemoryCreate,
     MemoryList,
     MemoryOut,
@@ -48,8 +50,14 @@ from app.schemas.ai import (
     TaskOut,
     TaskUpdate,
 )
+from app.services.ai.actions import POR_CHAVE as ACOES_POR_CHAVE
 from app.services.ai.chat_service import ChatService
-from app.services.ai.orchestrator import Orchestrator
+from app.services.ai.especialistas import (
+    ESPECIALISTAS,
+    PADRAO,
+    VERSAO_DOS_PROMPTS,
+)
+from app.services.ai.orchestrator import Orchestrator, Proposta
 from app.services.ai.propostas import REGISTRO
 from app.services.briefing_service import BriefingService
 from app.services.memory_service import MemoryService
@@ -326,6 +334,62 @@ def chat_history(
     )
 
 
+@global_router.get("/specialists", response_model=EspecialistaList)
+def listar_especialistas(
+    project_id: str | None = None,
+    projects: ProjectService = Depends(get_project_service),
+) -> EspecialistaList:
+    """Os chapéus disponíveis e os botões de cada um.
+
+    Os atalhos vêm do **mesmo registro fechado** das propostas: a tela não ganha
+    um caminho de execução próprio por estar dentro da conversa. Quando um
+    projeto é informado, o caminho já vem resolvido para ele — e a ação que
+    exige projeto some da lista quando não há um (defesa D-A3).
+    """
+    projeto = projects.get(project_id) if project_id else None
+
+    itens = []
+    for especialista in ESPECIALISTAS:
+        atalhos = []
+        for chave in especialista.atalhos:
+            acao = ACOES_POR_CHAVE.get(chave)
+            if acao is None or (acao.needs_project and projeto is None):
+                continue
+
+            proposta = Proposta(
+                acao=acao,
+                project_id=projeto.id if projeto else None,
+                project_name=projeto.name if projeto else None,
+                reason="atalho do especialista",
+                origem="atalho",
+            )
+            dados = proposta.to_dict()
+            # Atalho também precisa de bilhete: confirmado, ele vira ação
+            # marcada como proposta pela IA, igual à que veio de uma frase.
+            pendente = REGISTRO.registrar(
+                action=dados["action"],
+                method=dados["method"],
+                path=dados["path"],
+                project_id=dados["project_id"],
+                reason=dados["reason"],
+                origem=dados["origem"],
+            )
+            atalhos.append(ProposalOut(**dados, id=pendente.id))
+
+        itens.append(
+            EspecialistaOut(
+                key=especialista.key,
+                label=especialista.label,
+                descricao=especialista.descricao,
+                atalhos=atalhos,
+            )
+        )
+
+    return EspecialistaList(
+        items=itens, padrao=PADRAO.key, versao_dos_prompts=VERSAO_DOS_PROMPTS
+    )
+
+
 @global_router.post("/propose", response_model=ProposeOut)
 def propose_action(
     payload: ProposeAsk,
@@ -436,7 +500,11 @@ async def chat_ask(
     def eventos():  # type: ignore[no-untyped-def]
         try:
             for pedaco in chat.ask(
-                project, payload.question, estado=estado, perfil=payload.model
+                project,
+                payload.question,
+                estado=estado,
+                perfil=payload.model,
+                agente=payload.agent,
             ):
                 dados = json.dumps({"text": pedaco}, ensure_ascii=False)
                 yield f"event: chunk\ndata: {dados}\n\n"
@@ -464,6 +532,7 @@ def _mensagem_out(registro: AiMessage) -> ChatMessageOut:
         id=registro.id,
         role=registro.role,
         content=registro.content,
+        agent=registro.agent,
         context_summary=registro.context_summary,
         context_tokens=registro.context_tokens,
         tokens_in=registro.tokens_in,

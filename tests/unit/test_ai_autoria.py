@@ -213,3 +213,57 @@ def test_filtro_por_autor_separa_o_que_a_ia_fez(client: TestClient, sample_proje
 
     assert so_ia["total"] == 0
     assert so_usuario["total"] >= 1
+
+
+# --- os atalhos do especialista (Fase 3.2) ---------------------------------
+
+
+def test_atalho_que_precisa_de_projeto_some_quando_nao_ha_um(client: TestClient) -> None:
+    """Ação de projeto, sem projeto, seria proposta no vazio. A global fica."""
+    dados = client.get("/api/ai/specialists").json()
+
+    oferecidos = {a["action"] for p in dados["items"] for a in p["atalhos"]}
+    assert "environment.up" not in oferecidos, "ação de projeto sem projeto"
+    assert "ports.map" in oferecidos, "o mapa de portas é da máquina, não do projeto"
+    assert dados["padrao"] == "fullstack"
+
+
+def test_atalho_ja_vem_com_bilhete_e_caminho_resolvido(
+    client: TestClient, sample_project
+) -> None:
+    projeto = _criar_projeto(client, sample_project)
+
+    dados = client.get("/api/ai/specialists", params={"project_id": projeto["id"]}).json()
+    devops = next(p for p in dados["items"] if p["key"] == "devops")
+
+    assert devops["atalhos"], "com projeto, o DevOps tem botões"
+    for atalho in devops["atalhos"]:
+        assert atalho["id"], "sem bilhete, o clique não teria como ser marcado como da IA"
+        assert "{project_id}" not in atalho["path"], "o cliente não monta caminho (D-13)"
+        assert atalho["path"].startswith("/api/")
+
+    # `ports.map` é da máquina e não leva projeto no caminho; `server.logs` é
+    # do projeto e leva. As duas formas convivem na mesma barra de atalhos.
+    do_projeto = next(a for a in devops["atalhos"] if a["action"] == "server.logs")
+    assert projeto["id"] in do_projeto["path"]
+
+
+def test_o_clique_no_atalho_e_auditado_como_acao_da_ia(
+    client: TestClient, sample_project
+) -> None:
+    """O botão do especialista não é um atalho para fora da auditoria."""
+    projeto = _criar_projeto(client, sample_project)
+
+    pendente = REGISTRO.registrar(
+        action="project.update",
+        method="PATCH",
+        path=f"/api/projects/{projeto['id']}",
+        project_id=projeto["id"],
+        reason="atalho do especialista",
+        origem="atalho",
+    )
+    _acao_auditada(client, projeto["id"], **{"X-DevCockpit-Proposal": pendente.id})
+
+    entrada = client.get("/api/activity", params={"limit": 1}).json()["items"][0]
+    assert entrada["actor"] == "ai"
+    assert "atalho" in (entrada["reason"] or "")

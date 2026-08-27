@@ -149,6 +149,18 @@ class AiMessage(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
     #: Que camadas de contexto entraram — proveniência sem o conteúdo.
+    #: Qual chapéu atendeu — `devops`, `fullstack`, `qa`. Nulo nas mensagens
+    #: anteriores à Fase 3.2, e em pergunta avulsa (que não tem perfil).
+    agent: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: A versão do prompt que produziu esta resposta. Sem ela, uma resposta
+    #: guardada não tem como ser explicada depois que o prompt muda.
+    prompt_versao: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    #: Qual chapéu atendeu — `devops`, `fullstack`, `qa`. Nulo nas mensagens
+    #: anteriores à Fase 3.2, e na pergunta avulsa, que não tem perfil.
+    agent: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    #: A versão do prompt que produziu esta resposta. Sem ela, uma resposta
+    #: guardada não tem como ser explicada depois que o prompt muda.
+    prompt_versao: Mapped[str | None] = mapped_column(String(10), nullable=True)
     context_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     context_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

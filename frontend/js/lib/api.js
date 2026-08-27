@@ -164,6 +164,9 @@ export const api = {
   deleteTask: (taskId) => request('DELETE', `/ai/tasks/${taskId}`),
 
   aiStatus: () => request('GET', '/ai/status'),
+  /** Os chapéus e os botões de cada um, já resolvidos para este projeto. */
+  especialistas: (projectId) =>
+    request('GET', '/ai/specialists', { params: { project_id: projectId } }),
   chatHistory: (id) => request('GET', `/projects/${encodeURIComponent(id)}/chat`),
 
   /** Pergunta com resposta em stream (SSE).
@@ -201,7 +204,12 @@ export const api = {
   },
 
   chatStream: (id, question, opcoes = {}) =>
-    sseAsk(`/projects/${encodeURIComponent(id)}/chat`, { question }, opcoes),
+    sseAsk(
+      `/projects/${encodeURIComponent(id)}/chat`,
+      // `agent` fixa o especialista; sem ele, a regra do servidor escolhe.
+      { question, agent: opcoes.agente ?? null },
+      opcoes
+    ),
 
   globalMemory: (kind) => request('GET', '/ai/memory', { params: { kind } }),
   createGlobalMemory: (body) => request('POST', '/ai/memory', { body }),

@@ -495,3 +495,45 @@ def test_pergunta_rapida_tem_teto_de_resposta_proprio(session: Session) -> None:
     list(chat.ask_quick("Como vejo a porta 3000?"))
 
     assert falso.last_request.max_output_tokens == 300
+
+
+# --- o chapéu na conversa (Fases 3.2 e 3.3) -------------------------------
+
+
+def test_a_pergunta_escolhe_o_prompt_do_especialista(
+    session: Session, projeto: Project
+) -> None:
+    falso = FakeProvider(resposta="ok")
+    chat = ChatService(session, config(), provider=falso)
+
+    list(chat.ask(projeto, "o container não sobe"))
+
+    assert "chapéu agora é DevOps" in falso.last_request.system
+
+
+def test_o_chapeu_fixado_vence_a_palavra_da_pergunta(
+    session: Session, projeto: Project
+) -> None:
+    falso = FakeProvider(resposta="ok")
+    chat = ChatService(session, config(), provider=falso)
+
+    list(chat.ask(projeto, "o container não sobe", agente="qa"))
+
+    assert "chapéu agora é QA" in falso.last_request.system
+
+
+def test_quem_respondeu_fica_gravado_com_a_versao_do_prompt(
+    session: Session, projeto: Project
+) -> None:
+    """Sem a versão, uma resposta guardada deixa de ter explicação assim que o
+    prompt muda: o texto que a produziu não existe mais em lugar nenhum."""
+    from app.services.ai.especialistas import VERSAO_DOS_PROMPTS
+
+    SessionService(session, git=None).start(projeto)
+    chat = ChatService(session, config(), provider=FakeProvider(resposta="ok"))
+
+    list(chat.ask(projeto, "o teste quebrou", agente="qa"))
+
+    resposta = chat.history(projeto)[-1]
+    assert resposta.agent == "qa"
+    assert resposta.prompt_versao == VERSAO_DOS_PROMPTS

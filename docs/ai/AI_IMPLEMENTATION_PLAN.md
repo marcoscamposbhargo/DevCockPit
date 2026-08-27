@@ -91,10 +91,10 @@ segurança passam.
 | # | Item |
 |---|------|
 | 3.1 | ~~Migração `007` (`ai_task`) e tela de tarefas por projeto~~ ✅ |
-| 3.2 | Perfis de especialista + prompts versionados |
-| 3.3 | Orquestrador (regra primeiro, modelo no empate) |
+| 3.2 | ~~Perfis de especialista + prompts versionados~~ ✅ |
+| 3.3 | ~~Orquestrador escolhe o especialista~~ ✅ |
 | 3.4 | ~~Ações propostas com confirmação e classificação~~ ✅ |
-| 3.5 | Command palette (`/plan`, `/find-bugs`, `/status`…) |
+| 3.5 | ~~Command palette (`/plan`, `/find-bugs`, `/status`…)~~ ✅ |
 | 3.6 | ~~`activity_log` com `actor="ai"` ponta a ponta~~ ✅ |
 
 **Critério de saída — 3.4 verificado em 2026-08-25**, no app instalado: "sobe o
@@ -125,6 +125,33 @@ que proibiu o cliente de mandar URL (D-13).
 `docker.ps`) não gera linha de auditoria no painel, e isso é anterior à 3.6.
 Logo, "o que o agente **fez** ontem?" tem resposta; "o que ele **leu**?" não —
 nem antes, nem agora. Mudar isso é decisão de produto, não de implementação.
+
+**Critério de saída — 3.2, 3.3 e 3.5 verificados em 2026-08-27**, no painel
+real: `GET /ai/specialists` devolveu os três perfis com os atalhos já resolvidos
+para o projeto e um bilhete por botão; o clique num atalho executou pela mesma
+rota do botão de sempre.
+
+**Três perfis, não os sete do desenho.** DevOps, Full Stack e QA cobrem o que
+este painel faz hoje — subir ambiente, achar por que não subiu, saber o que
+quebrou. Perfil sem uso é prompt para manter sem ninguém ler; os outros quatro
+entram quando houver trabalho que os chame.
+
+**Divergência consciente na 3.3:** o desenho previa o modelo desempatando
+quando nenhuma regra casasse. Não há chamada de modelo no roteamento, e o motivo
+é medido: num provedor local uma classificação curta custa de 3 a 26 segundos —
+mais que a resposta inteira em muitos casos. Roteamento que custa isso não é
+roteamento, é espera. A regra decide; sem casar, o Full Stack atende. A pessoa
+pode fixar o chapéu na tela, e a escolha dela vence a regra.
+
+**O que a 3.2 acrescentou ao banco** (migração `009`): `ai_message.agent` e
+`ai_message.prompt_versao`. A segunda parece exagero até o prompt mudar —
+depois disso, uma resposta guardada sem a versão vira algo que ninguém consegue
+explicar, porque o texto que a produziu não existe mais em lugar nenhum.
+
+**Os atalhos não são capacidade nova (D-A3).** Cada botão de perfil aponta para
+uma ação do mesmo registro fechado das propostas, com bilhete emitido pelo
+servidor — clicar equivale a confirmar uma proposta. Um teste percorre os três
+perfis e falha se algum atalho apontar para fora do registro.
 
 **Risco:** médio-alto — é onde a IA encosta em execução. A defesa é não ter
 capacidade nova nenhuma (D-A3), verificada por teste.

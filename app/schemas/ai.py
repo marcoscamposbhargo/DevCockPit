@@ -183,6 +183,28 @@ class ChatAsk(BaseModel):
     #: definiu, do mesmo jeito que `OpenBrowserRequest` recebe a chave do
     #: serviço e jamais a URL (decisão D-13).
     model: Literal["default", "alt"] = "default"
+    #: Fixa o especialista. Vazio, a regra escolhe. Como o `model`, é conjunto
+    #: fechado: chave de perfil que o servidor conhece, nunca prompt do cliente
+    #: — quem manda instrução para o modelo é o servidor (defesa D-A4).
+    agent: Literal["devops", "fullstack", "qa"] | None = None
+
+
+class EspecialistaOut(BaseModel):
+    key: str
+    label: str
+    descricao: str
+    #: Ações do registro fechado que a tela mostra como botão para este perfil.
+    #: Nada de capacidade nova: são os botões que já existem, reunidos onde a
+    #: conversa acontece (defesa D-A3).
+    atalhos: list[ProposalOut] = Field(default_factory=list)
+
+
+class EspecialistaList(BaseModel):
+    items: list[EspecialistaOut]
+    #: Quem atende quando nada casa e nada foi fixado.
+    padrao: str
+    #: Versão dos prompts em uso. Vai gravada em cada resposta.
+    versao_dos_prompts: str
 
 
 class ProposeAsk(BaseModel):
@@ -232,6 +254,8 @@ class ChatMessageOut(BaseModel):
     id: int
     role: str
     content: str
+    #: Qual chapéu respondeu, quando houve um.
+    agent: str | None = None
     #: Que camadas de contexto entraram — proveniência, não o conteúdo.
     context_summary: str | None = None
     context_tokens: int = 0

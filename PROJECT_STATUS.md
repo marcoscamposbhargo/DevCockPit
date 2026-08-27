@@ -23,6 +23,18 @@ Anote aqui embaixo, sem cerimônia. Uma linha basta.
 
 ## Anotações de uso
 
+- [x] (2026-08-27) Fase 3 fechada: 3.2, 3.3 e 3.5. A conversa ganhou **chapéu**.
+      Três perfis — DevOps, Full Stack e QA —, cada um com instrução própria,
+      versionada em código, e uma barra de botões que faz num clique o que antes
+      exigia pedir por escrito: subir o ambiente, abrir o terminal, ver o log.
+      Nenhum botão é capacidade nova: todos apontam para ações do registro
+      fechado, com bilhete do servidor, e um teste falha se algum sair de lá.
+      A regra escolhe o perfil pela pergunta, você pode fixar um, e a migração
+      `009` grava em cada resposta quem atendeu e com qual versão de prompt.
+      Comandos de barra (`/status`, `/plan`, `/find-bugs`, `/why`, `/review`,
+      `/document`) são atalhos de digitação com o chapéu certo já escolhido.
+      Divergência assumida do desenho: **o modelo não desempata o roteamento**.
+      Medido nesta máquina, classificar custa de 3 a 26 s — mais que a resposta.
 - [x] (2026-08-26) `ai_enabled` ganhou interruptor na aba Overview do projeto. O
       campo existia no banco desde a Fase 2 e a defesa D-A1 dizia que excluir um
       projeto da IA é decisão da pessoa — que até aqui só conseguia decidir por
@@ -374,8 +386,10 @@ teste removidos.
 
 ## Em andamento
 
-Nada. Do Cockpit AI, as Fases 1, 2, 3.1, 3.4 e 3.6 estão entregues (`docs/ai/`);
-faltam 3.2, 3.3 e 3.5.
+Nada. Do Cockpit AI, a **Fase 3 está inteira** (`docs/ai/`), junto com as Fases
+1 e 2. Faltam a Fase 4 (Project Intelligence e Health Score), a Fase 5 (dados e
+automação) e o item 17 do prompt de visão — integração com VS Code / Claude
+Code, adiada de propósito para depois da 3.
 
 Do HyperBrain (`docs/ai/HYPERBRAIN.md`), os MVPs 1 e 2 estão entregues, em 2D. O
 MVP 3 — tarefas, sessões, decisões e serviços como nós — espera **uso real da

@@ -29,6 +29,7 @@ from app.models.base import utcnow
 from app.models.project import Project
 from app.repositories.ai_repository import MessageRepository, SessionRepository, UsageRepository
 from app.services.ai.context_engine import ContextEngine
+from app.services.ai.especialistas import VERSAO_DOS_PROMPTS, escolher
 from app.services.ai.providers import AIRequest, Message
 
 logger = logging.getLogger(__name__)
@@ -148,8 +149,13 @@ class ChatService:
         *,
         estado: dict | None = None,
         perfil: str = PERFIL_PADRAO,
+        agente: str | None = None,
     ) -> Iterator[str]:
         """Pergunta e resposta em stream. Persiste no fim, com o gasto.
+
+        `agente` fixa o chapéu. Vazio, a regra escolhe — e sem chamar modelo
+        para isso: rotear com provedor local custa de 3 a 26 segundos, mais que
+        a própria resposta em muitos casos.
 
         `perfil` é `"default"` ou `"alt"` — uma escolha de conjunto fechado, e
         nunca o nome de um modelo. É a mesma doutrina de `open_service_url`,
@@ -166,17 +172,20 @@ class ChatService:
 
         contexto = self.context.build(project, texto, estado=estado)
         sessao = self.sessions.open_for(project.id)
+        especialista, _origem = escolher(texto, fixado=agente)
 
         pedido = AIRequest(
             messages=[
                 *self._historico(sessao),
                 Message(role="user", content=f"{contexto.render()}\n\n---\n\n{texto}"),
             ],
-            system=INSTRUCAO,
+            system=especialista.prompt,
             max_output_tokens=self.settings.ai_max_output_tokens,
         )
 
-        self._gravar(project, sessao, "user", texto, contexto_tokens=contexto.tokens)
+        self._gravar(
+            project, sessao, "user", texto, contexto_tokens=contexto.tokens, agente=especialista.key
+        )
 
         comeco = time.monotonic()
         partes: list[str] = []
@@ -200,6 +209,7 @@ class ChatService:
             tokens_out=tokens_out,
             duracao_ms=int((time.monotonic() - comeco) * 1000),
             resumo_contexto=self._resumo_do_contexto(contexto),
+            agente=especialista.key,
         )
         self.usage.add(tokens_in=tokens_in, tokens_out=tokens_out)
 
@@ -398,6 +408,7 @@ class ChatService:
         tokens_out: int = 0,
         duracao_ms: int | None = None,
         resumo_contexto: str | None = None,
+        agente: str | None = None,
     ) -> None:
         if sessao is None:
             # Sem sessão aberta a conversa acontece, mas não vira histórico:
@@ -408,6 +419,9 @@ class ChatService:
                 session_id=sessao.id,
                 role=role,
                 content=conteudo,
+                agent=agente,
+                # A versão só faz sentido quando houve prompt de especialista.
+                prompt_versao=VERSAO_DOS_PROMPTS if agente else None,
                 context_summary=resumo_contexto,
                 context_tokens=contexto_tokens,
                 tokens_in=tokens_in,

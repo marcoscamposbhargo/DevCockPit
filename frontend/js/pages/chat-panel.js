@@ -10,14 +10,27 @@
 // de tela.
 
 import { api } from '../lib/api.js';
+import { COMANDOS, interpretarComando, sugerir } from '../lib/comandos.js';
 import { el, mount } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
-import { showError } from '../lib/ui.js';
+import { showError, toast } from '../lib/ui.js';
+
+const NOME_DO_CHAPEU = { devops: 'DevOps', fullstack: 'Full Stack', qa: 'QA' };
+
+// Quem assina a resposta. Sem o chapéu, três instruções de sistema diferentes
+// produziriam respostas com tom e prioridade distintos sob o mesmo nome — e
+// ninguém saberia por quê. Mensagem antiga (anterior à Fase 3.2) não tem chapéu
+// gravado, e aí volta a assinar como o painel inteiro.
+function assinatura(mensagem) {
+  if (mensagem.role === 'user') return 'você';
+  const chapeu = NOME_DO_CHAPEU[mensagem.agent];
+  return chapeu ? `Cockpit AI · ${chapeu}` : 'Cockpit AI';
+}
 
 function bolha(mensagem) {
   const minha = mensagem.role === 'user';
   return el('div', { class: 'chat-msg', dataset: { role: mensagem.role } }, [
-    el('div', { class: 'chat-msg__quem', text: minha ? 'você' : 'Cockpit AI' }),
+    el('div', { class: 'chat-msg__quem', text: assinatura(mensagem) }),
     el('div', { class: 'chat-msg__texto', text: mensagem.content }),
     // Proveniência: dá para conferir o que a IA sabia quando respondeu — e,
     // quando a resposta estiver errada, ver qual bloco estava velho.
@@ -159,10 +172,22 @@ export async function renderChatPanel(container, project) {
         ]
   );
 
+  // Especialistas e seus atalhos. Falhar aqui não impede o chat: sem a lista, o
+  // roteamento automático do servidor continua valendo.
+  let perfis = { items: [], padrao: 'fullstack' };
+  try {
+    perfis = await api.especialistas(project.id);
+  } catch {
+    /* sem chapéus na tela; o servidor escolhe sozinho, como antes. */
+  }
+
+  //: `null` = deixa a regra do servidor escolher. Fixar é escolha da pessoa.
+  let fixado = null;
+
   const entrada = el('textarea', {
     class: 'input',
     rows: '2',
-    placeholder: 'O que você quer saber sobre este projeto?',
+    placeholder: 'Pergunte, ou digite / para os comandos.',
   });
   const botao = el('button', { class: 'btn btn--primary', type: 'button' }, [
     icon('search', { size: 14 }),
@@ -172,17 +197,28 @@ export async function renderChatPanel(container, project) {
   const seletor = status.model_alt ? seletorDeModelo(status) : null;
 
   const perguntar = async () => {
-    const pergunta = entrada.value.trim();
-    if (!pergunta) return;
+    const digitado = entrada.value.trim();
+    if (!digitado) return;
+
+    // Comando vira pergunta com o chapéu certo já escolhido. Ele não abre
+    // capacidade nova: economiza a digitação e a dúvida de qual perfil pediria
+    // aquilo.
+    const comando = interpretarComando(digitado);
+    const pergunta = comando ? comando.pergunta : digitado;
+    const agente = comando ? comando.agente : fixado;
 
     entrada.value = '';
+    listaDeComandos.replaceChildren();
     botao.disabled = true;
 
     if (conversa.querySelector?.('.panel__empty')) conversa.replaceChildren();
-    conversa.append(bolha({ role: 'user', content: pergunta }));
+    conversa.append(bolha({ role: 'user', content: comando ? digitado : pergunta }));
 
     const resposta = el('div', { class: 'chat-msg', dataset: { role: 'assistant' } }, [
-      el('div', { class: 'chat-msg__quem', text: 'Cockpit AI' }),
+      // Só assina o chapéu quando ele foi escolhido aqui (comando ou seletor).
+      // No modo automático quem escolhe é a regra do servidor, e o painel só
+      // descobre qual foi ao recarregar o histórico — chutar seria pior.
+      el('div', { class: 'chat-msg__quem', text: assinatura({ role: 'assistant', agent: agente }) }),
     ]);
     const texto = el('div', { class: 'chat-msg__texto', text: '…' });
     resposta.append(texto);
@@ -193,6 +229,7 @@ export async function renderChatPanel(container, project) {
       // conforme chega, em vez de o painel ficar mudo por dez segundos.
       await api.chatStream(project.id, pergunta, {
         model: seletor?.dataset.escolha ?? 'default',
+        agente,
         onChunk: (pedaco) => {
           if (texto.textContent === '…') texto.textContent = '';
           texto.textContent += pedaco;
@@ -208,6 +245,109 @@ export async function renderChatPanel(container, project) {
       botao.disabled = false;
     }
   };
+
+  // --- chapéus, atalhos e comandos ---------------------------------------
+
+  const listaDeComandos = el('div', { class: 'chat-comandos' });
+  const barraDeAtalhos = el('div', { class: 'chat-atalhos' });
+
+  function desenharAtalhos() {
+    const perfil = perfis.items.find((p) => p.key === (fixado ?? perfis.padrao));
+    const atalhos = perfil?.atalhos ?? [];
+
+    mount(
+      barraDeAtalhos,
+      ...atalhos.map((proposta) =>
+        el('button', {
+          class: 'btn btn--sm',
+          type: 'button',
+          title: proposta.describe,
+          text: proposta.label,
+          onClick: async (evento) => {
+            // Um clique em vez de uma frase. A execução é a mesma rota de
+            // sempre, com o mesmo bilhete: a auditoria registra como ação
+            // proposta pela IA e confirmada por você.
+            const alvo = evento.currentTarget;
+            alvo.disabled = true;
+            try {
+              await api.runProposal(proposta);
+              toast(`${proposta.label}: ok.`, { kind: 'success' });
+            } catch (erro) {
+              showError(erro);
+            } finally {
+              // O bilhete valeu uma vez; recarrega para pegar outro.
+              const novos = await api.especialistas(project.id).catch(() => perfis);
+              perfis = novos;
+              desenharAtalhos();
+            }
+          },
+        })
+      )
+    );
+  }
+
+  const chapeus = el(
+    'div',
+    { class: 'chat-chapeus', role: 'group', 'aria-label': 'Especialista' },
+    [
+      el('button', {
+        class: `filter-chip${fixado === null ? ' filter-chip--on' : ''}`,
+        type: 'button',
+        title: 'A regra do servidor escolhe pelo que você escrever.',
+        text: 'Automático',
+        onClick: () => {
+          fixado = null;
+          redesenharChapeus();
+        },
+      }),
+      ...perfis.items.map((perfil) =>
+        el('button', {
+          class: 'filter-chip',
+          type: 'button',
+          title: perfil.descricao,
+          text: perfil.label,
+          onClick: () => {
+            fixado = fixado === perfil.key ? null : perfil.key;
+            redesenharChapeus();
+          },
+        })
+      ),
+    ]
+  );
+
+  function redesenharChapeus() {
+    const botoes = [...chapeus.children];
+    botoes.forEach((b, i) => {
+      const chave = i === 0 ? null : perfis.items[i - 1]?.key;
+      const ligado = chave === fixado;
+      b.className = `filter-chip${ligado ? ' filter-chip--on' : ''}`;
+      b.setAttribute('aria-pressed', String(ligado));
+    });
+    desenharAtalhos();
+  }
+
+  redesenharChapeus();
+
+  entrada.addEventListener('input', () => {
+    const casaram = sugerir(entrada.value);
+    mount(
+      listaDeComandos,
+      ...casaram.map((comando) =>
+        el('button', {
+          class: 'chat-comando',
+          type: 'button',
+          onClick: () => {
+            entrada.value = `${comando.nome} `;
+            entrada.focus();
+            listaDeComandos.replaceChildren();
+          },
+        }, [
+          el('span', { class: 'chat-comando__nome', text: comando.nome }),
+          el('span', { class: 'chat-comando__resumo', text: comando.resumo }),
+        ])
+      )
+    );
+  });
 
   botao.addEventListener('click', perguntar);
   entrada.addEventListener('keydown', (evento) => {
@@ -227,11 +367,14 @@ export async function renderChatPanel(container, project) {
         medidor(status),
       ]),
       el('div', { class: 'panel__body' }, [
+        chapeus,
+        barraDeAtalhos,
         conversa,
-        el('div', { class: 'chat-entrada' }, [entrada, botao]),
+        el('div', { class: 'chat-entrada' }, [listaDeComandos, entrada, botao]),
         el('p', {
           class: 'field__hint',
           text:
+            `Comandos: ${COMANDOS.map((c) => c.nome).join(', ')}. ` +
             'O painel envia memória, sessões, tarefas e estado deste projeto. ' +
             'Arquivos de segredo nunca são lidos, e chaves em código saem redigidas.',
         }),

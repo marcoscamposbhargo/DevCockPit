@@ -295,3 +295,45 @@ def test_projeto_em_container_aparece_no_ar_na_listagem(client, sample_project) 
 
     assert item["app_online"] is True
     assert item["app_running"] is not True, "não há processo nativo; quem responde é o container"
+
+
+def test_porta_de_outro_projeto_nao_acende_este(client, sample_project) -> None:  # type: ignore[no-untyped-def]
+    """A verificação pergunta "tem alguém aí?", nunca "quem?".
+
+    O crossperformance apareceu no ar mostrando o container do APP INGRESSO,
+    que é quem ocupa a 8000 de verdade. Dois projetos declarando a mesma porta
+    padrão é o caso comum, não o exótico.
+    """
+    from app.services.health_service import HealthResult
+
+    criado = client.post(
+        "/api/projects", json={"path": str(sample_project)}, headers=WRITE_HEADERS
+    ).json()
+    client.put(
+        f"/api/projects/{criado['id']}/services",
+        json={"items": [{"key": "api", "label": "API", "port": 8000, "health_kind": "HTTP"}]},
+        headers=WRITE_HEADERS,
+    )
+
+    client.app.state.health_service.cache.set(
+        f"health:{criado['id']}:api",
+        HealthResult(project_id=criado["id"], key="api", state="ONLINE", latency_ms=3),
+    )
+
+    class _Dono:
+        project_id = "outro-projeto"
+        project_name = "Outro"
+        process_name = "docker"
+        strong_evidence = True
+
+    class _Observadas:
+        def by_port(self):
+            return {8000: _Dono()}
+
+    client.app.state.port_discovery.last_known = lambda: _Observadas()  # type: ignore[method-assign]
+
+    item = next(
+        p for p in client.get("/api/projects").json()["items"] if p["id"] == criado["id"]
+    )
+
+    assert item["app_online"] is False, "a porta responde, mas quem responde é de outro projeto"

@@ -14,7 +14,7 @@ import pytest
 from app.adapters.system.ports import FakePortScanner, ListeningPort
 from app.core.cache import TTLCache
 from app.services.container_ports_service import parse_ps_global
-from app.services.dashboard_service import DashboardService
+from app.services.dashboard_service import avaliar_dono
 from app.services.port_discovery_service import PortDiscoveryService, ProjectRef
 
 pytestmark = pytest.mark.unit
@@ -115,7 +115,7 @@ def test_porta_de_outro_projeto_nao_e_prova(tmp_path: Path) -> None:
     projeto = Project(id="contabil", name="Contábil", path=str(tmp_path))
     dono = DonoFalso("plataforma", "Plataforma", True)
 
-    provado, pista = DashboardService._avaliar_dono(projeto, dono)
+    provado, pista = avaliar_dono(projeto, dono)
 
     assert provado is False
     assert "Plataforma" in pista
@@ -126,7 +126,7 @@ def test_sem_dono_conhecido_nao_e_prova(tmp_path: Path) -> None:
 
     projeto = Project(id="contabil", name="Contábil", path=str(tmp_path))
 
-    provado, pista = DashboardService._avaliar_dono(projeto, DonoFalso(None, None, False))
+    provado, pista = avaliar_dono(projeto, DonoFalso(None, None, False))
 
     assert provado is False
     assert "sem dono" in pista
@@ -138,7 +138,7 @@ def test_processo_do_proprio_projeto_e_prova(tmp_path: Path) -> None:
     projeto = Project(id="contabil", name="Contábil", path=str(tmp_path))
 
     dono = DonoFalso("contabil", "Contábil", True)
-    provado, pista = DashboardService._avaliar_dono(projeto, dono)
+    provado, pista = avaliar_dono(projeto, dono)
 
     assert provado is True
     assert pista is None
@@ -154,4 +154,4 @@ def test_sem_observacao_nenhuma_o_painel_nao_desconfia(tmp_path: Path) -> None:
 
     projeto = Project(id="contabil", name="Contábil", path=str(tmp_path))
 
-    assert DashboardService._avaliar_dono(projeto, None) == (True, None)
+    assert avaliar_dono(projeto, None) == (True, None)

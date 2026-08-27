@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.deps import get_dev_server_service, get_health_service, get_project_service
+from app.api.deps import (
+    get_dev_server_service,
+    get_health_service,
+    get_port_discovery,
+    get_project_service,
+)
 from app.models.project import Project
 from app.schemas.git import DetectionResult, PortDriftOut
 from app.schemas.project import (
@@ -18,8 +23,10 @@ from app.schemas.project import (
     ProjectSummary,
     ProjectUpdate,
 )
+from app.services.dashboard_service import avaliar_dono
 from app.services.dev_server_service import DevServerService
 from app.services.health_service import HealthService
+from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -57,6 +64,7 @@ def list_projects(
     service: ProjectService = Depends(get_project_service),
     servers: DevServerService = Depends(get_dev_server_service),
     health: HealthService = Depends(get_health_service),
+    ports: PortDiscoveryService = Depends(get_port_discovery),
     status_filter: str | None = Query(default=None, alias="status"),
     tech: str | None = Query(default=None),
     pinned: bool | None = Query(default=None),
@@ -73,13 +81,26 @@ def list_projects(
     # servidores é mais barato que ler uma linha sete vezes.
     rodando = {registro.project_id for registro in servers.running_project_ids()}
 
+    # Quem ocupa cada porta, do cache que a descoberta preenche. Uma leitura
+    # para a lista inteira, não uma por projeto.
+    donos = ports.last_known().by_port() if ports is not None else None
+
     return ProjectList(
-        items=[_to_summary(p, **_capacidades(p, servers, rodando, health)) for p in projects],
+        items=[
+            _to_summary(p, **_capacidades(p, servers, rodando, health, donos))
+            for p in projects
+        ],
         total=total,
     )
 
 
-def _capacidades(project: Project, servers, rodando: set[str], health=None) -> dict:  # type: ignore[no-untyped-def]
+def _capacidades(  # type: ignore[no-untyped-def]
+    project: Project,
+    servers,
+    rodando: set[str],
+    health=None,
+    dono_por_porta=None,
+) -> dict:
     """O que o painel sabe fazer com este projeto, e em que estado ele está.
 
     Leitura de disco pequena e local — os mesmos arquivos que a detecção já lê,
@@ -114,7 +135,19 @@ def _capacidades(project: Project, servers, rodando: set[str], health=None) -> d
     if health is not None and abrivel is not None:
         ultimo = health.last_known(project.id, abrivel.key)
         if ultimo is not None and ultimo.state in ("ONLINE", "OFFLINE", "ERROR", "STARTING"):
-            app_online = ultimo.state == "ONLINE"
+            online = ultimo.state == "ONLINE"
+            # A verificação abre um socket e pergunta "tem alguém aí?", nunca
+            # "quem?". Duas respostas divergem sempre que dois projetos
+            # declaram a mesma porta — e foi o que aconteceu na primeira versão
+            # disto: o crossperformance apareceu no ar mostrando o container do
+            # APP INGRESSO, que é quem ocupa a 8000 de verdade.
+            #
+            # Sem prova de dono, o painel não afirma. É a mesma regra que o
+            # Dashboard aplica com `proven`, e por isso ela mora num lugar só.
+            if online and dono_por_porta is not None:
+                provado, _ = avaliar_dono(project, dono_por_porta.get(abrivel.port))
+                online = provado
+            app_online = online
 
     return {
         "can_start": tem_app or _has_compose(project),

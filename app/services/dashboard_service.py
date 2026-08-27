@@ -79,6 +79,45 @@ class Dashboard:
 CACHE_KEY = "dashboard"
 
 
+def avaliar_dono(project: Project, dono) -> tuple[bool, str | None]:  # type: ignore[no-untyped-def]
+    """Decide se dá para afirmar que quem responde na porta é deste projeto.
+
+    A verificação de saúde abre um socket e pergunta "tem alguém aí?". Nunca
+    soube perguntar "quem?", e as duas respostas divergem sempre que dois
+    projetos declaram a mesma porta.
+
+    Sem observação nenhuma — antes do primeiro ciclo do poller — o resultado é
+    "provado". Não saber não é o mesmo que desconfiar, e marcar tudo como
+    suspeito no primeiro minuto de uso seria pior que o defeito que isto
+    conserta.
+
+    Mora aqui, e não dentro do Dashboard, porque a listagem de projetos faz a
+    mesma pergunta para colorir o grafo. Duas cópias da regra divergiriam, e o
+    painel passaria a dar duas respostas para "este projeto está no ar?".
+    """
+    if dono is None:
+        return True, None
+
+    if dono.project_id == project.id:
+        if dono.strong_evidence:
+            return True, None
+        return False, (
+            f"Responde, mas o painel não prova que é deste projeto — "
+            f"quem ocupa a porta é {dono.process_name or 'um processo'}."
+        )
+
+    if dono.project_id:
+        return False, (
+            f"Quem ocupa a porta é {dono.process_name or 'um processo'}, "
+            f"do {dono.project_name}."
+        )
+
+    return False, (
+        f"Responde, mas sem dono conhecido — "
+        f"quem ocupa a porta é {dono.process_name or 'um processo'}."
+    )
+
+
 class DashboardService:
     def __init__(
         self,
@@ -223,7 +262,7 @@ class DashboardService:
                     continue
 
                 dono = observadas.get(service.port) if service.port else None
-                provado, pista = self._avaliar_dono(project, dono)
+                provado, pista = avaliar_dono(project, dono)
 
                 ativos.append(
                     ActiveService(
@@ -243,36 +282,7 @@ class DashboardService:
         ativos.sort(key=lambda item: not item.proven)
         return ativos[:20]
 
-    @staticmethod
-    def _avaliar_dono(project: Project, dono) -> tuple[bool, str | None]:  # type: ignore[no-untyped-def]
-        """Decide se dá para afirmar que quem responde é deste projeto.
 
-        Sem observação nenhuma — antes do primeiro ciclo do poller — o
-        resultado é "provado". Não saber não é o mesmo que desconfiar, e marcar
-        tudo como suspeito no primeiro minuto de uso seria pior que o defeito
-        que isto conserta.
-        """
-        if dono is None:
-            return True, None
-
-        if dono.project_id == project.id:
-            if dono.strong_evidence:
-                return True, None
-            return False, (
-                f"Responde, mas o painel não prova que é deste projeto — "
-                f"quem ocupa a porta é {dono.process_name or 'um processo'}."
-            )
-
-        if dono.project_id:
-            return False, (
-                f"Quem ocupa a porta é {dono.process_name or 'um processo'}, "
-                f"do {dono.project_name}."
-            )
-
-        return False, (
-            f"Responde, mas sem dono conhecido — "
-            f"quem ocupa a porta é {dono.process_name or 'um processo'}."
-        )
 
     def _port_conflicts(self, projects: list[Project]) -> list[PortConflict]:
         """Duas coisas disputando a mesma porta é a dor que aparece na hora errada."""

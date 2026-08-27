@@ -339,6 +339,9 @@ export async function renderHyperbrain(container) {
 
   // --- painel lateral -----------------------------------------------------
 
+  // Faixa no topo, não coluna à direita: o grafo é a ferramenta, e tirar 320px
+  // da largura dele para mostrar texto que quase sempre está vazio invertia a
+  // prioridade da tela.
   const painel = el('div', { class: 'hb-side' });
 
   //: Cartão que a conversa produziu — filtro, ação proposta ou resposta. Fica
@@ -806,6 +809,7 @@ export async function renderHyperbrain(container) {
     container,
     el('div', { class: 'hb', dataset: { movimento: movimentoCurto ? 'reduzido' : 'completo' } }, [
       barra,
+      painel,
       el('div', { class: 'hb-body' }, [
         el('div', { class: 'hb-stage-wrap' }, [
           palco.svg,
@@ -821,7 +825,6 @@ export async function renderHyperbrain(container) {
             )
           ),
         ]),
-        painel,
       ]),
     ])
   );

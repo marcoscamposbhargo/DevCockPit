@@ -37,7 +37,7 @@
 
 .hb-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-4);
   flex: 1;
   min-height: 460px;
@@ -541,8 +541,71 @@
 
 /* --- painel lateral --- */
 
+/* Faixa horizontal acima do palco. Era uma coluna de 320px à direita, que
+   cobrava largura do grafo em tempo integral para mostrar um texto que, na
+   maior parte do tempo, é o convite a selecionar um nó. */
 .hb-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
   min-width: 0;
+}
+
+/* Dentro da faixa, o cartão deita: cabeçalho, blocos e ações lado a lado.
+   `align-items: center` mantém a linha de base entre o nome do projeto e os
+   chips, que em coluna ficavam empilhados. */
+.hb-side .hb-panel {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.hb-side .hb-panel__head {
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* O caminho do projeto é o texto mais longo do cartão e o menos urgente:
+   encolhe primeiro, com reticências, em vez de empurrar as ações para outra
+   linha. */
+.hb-side .hb-panel__path {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hb-side .hb-panel__bloco {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+/* As ações vão para a direita da faixa — o mesmo lugar em que estão na barra
+   de cima, para o olho não precisar procurar. */
+.hb-side .hb-panel__acoes {
+  margin-left: auto;
+}
+
+/* Vazio é a maior parte do tempo: uma linha, sem ocupar altura do grafo. */
+.hb-side .hb-panel--vazio {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.hb-side .hb-panel--vazio p {
+  margin: 0;
+}
+
+/* Cartão de resposta da conversa continua legível: texto corrido não deita. */
+.hb-side .hb-panel--resposta,
+.hb-side .hb-panel--recusa {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .hb-panel {
@@ -606,11 +669,17 @@
 }
 
 /* --- telas menores ---
-   O painel lateral desce para baixo do palco e o grafo perde altura, não
-   utilidade: continua arrastável, com zoom e com foco. */
+   O grafo perde altura, não utilidade: continua arrastável, com zoom e com
+   foco. A faixa de contexto volta a empilhar, porque deitar num espaço estreito
+   só produz uma coluna de palavras cortadas. */
 @media (max-width: 1100px) {
-  .hb-body {
-    grid-template-columns: minmax(0, 1fr);
+  .hb-side .hb-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .hb-side .hb-panel__acoes {
+    margin-left: 0;
   }
 
   .hb-stage-wrap {

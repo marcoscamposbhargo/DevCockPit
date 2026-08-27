@@ -359,3 +359,38 @@ def test_manifesto_registra_auditoria(client, sample_project: Path) -> None:
     }
 
     assert {"manifest.import", "manifest.export"} <= acoes
+
+
+def test_manifesto_nao_importa_porta_ja_ocupada(client, sample_project: Path) -> None:
+    """A terceira porta de entrada da mesma tabela.
+
+    A tela recusa porta duplicada e a detecção a pula; a importação de
+    manifesto escrevia. Três caminhos para a mesma tabela e a regra vivendo em
+    um só — exatamente o formato de defeito que este projeto produz.
+    """
+    projeto = _cadastra(client, sample_project)
+    client.put(
+        f"/api/projects/{projeto['id']}/services",
+        json={"items": [{"key": "db", "label": "Banco", "port": 5433, "health_kind": "TCP"}]},
+        headers=WRITE_HEADERS,
+    )
+
+    manifesto = yaml.safe_dump(
+        {
+            "version": 1,
+            "name": "App",
+            "services": {"api": {"label": "API", "port": 5433}},
+        },
+        allow_unicode=True,
+    )
+    (sample_project / "devcockpit.yml").write_text(manifesto, encoding="utf-8")
+
+    resposta = client.post(
+        f"/api/projects/{projeto['id']}/manifest/import", headers=WRITE_HEADERS
+    )
+
+    assert resposta.status_code == 422, resposta.text
+    assert "5433" in resposta.text
+
+    servicos = client.get(f"/api/projects/{projeto['id']}").json()["services"]
+    assert [s["key"] for s in servicos] == ["db"], "nada foi gravado pela metade"

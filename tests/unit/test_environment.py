@@ -685,3 +685,25 @@ def test_sem_varredura_o_preflight_se_cala(projeto) -> None:  # type: ignore[no-
 
     assert PreflightService(None).check(projeto).observed is False
     assert PreflightService(DescobertaComPortas([])).check(projeto).observed is False
+
+
+def test_compose_em_subpasta_entra_no_plano(
+    session, session_factory, projeto, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """A consequência aqui é pior que uma tela vazia.
+
+    A aba Docker já achava o Compose de quem o guarda em `infra/`; o plano de
+    ambiente, não. "Ligar o ambiente" subia a aplicação e **pulava os
+    containers** — o app no ar, sem banco, sem o painel dizer que faltou algo.
+    """
+    infra = Path(projeto.path) / "infra"
+    infra.mkdir()
+    (infra / "docker-compose.yml").write_text(
+        "services:\n  db:\n    image: postgres\n", encoding="utf-8"
+    )
+    servers = DevServerService(session=session, logs_dir=tmp_path)
+
+    plano = servico(session_factory, tmp_path).plan(projeto, servers)
+
+    assert plano.has_docker is True
+    assert plano.compose_file == "infra/docker-compose.yml"

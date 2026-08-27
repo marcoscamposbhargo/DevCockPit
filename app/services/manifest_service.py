@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ValidationError
 from app.core.paths import resolve_within_project
-from app.detection.detectors.docker_stack import find_compose_file
+from app.detection.detectors.docker_stack import find_compose_relativo
 from app.models.project import (
     ActivityStatus,
     DockerConfig,
@@ -43,6 +43,7 @@ from app.schemas.manifest import (
     ManifestServiceEntry,
 )
 from app.services.activity_service import ActivityService
+from app.services.portas import exigir_portas_distintas
 
 #: Nome canônico primeiro: é o que a exportação escreve.
 MANIFEST_FILENAMES = ("devcockpit.yml", "devcockpit.yaml")
@@ -251,6 +252,21 @@ class ManifestService:
         conflito, justamente o que FR-112 proíbe.
         """
         por_chave = {service.key: service for service in project.services}
+
+        # O estado **resultante**, não só o que o manifesto traz: importar um
+        # serviço na porta de outro que já existe grava a mesma duplicata que a
+        # tela recusa. Antes de escrever, e não depois.
+        resultante = [
+            (chave, servico.port)
+            for chave, servico in por_chave.items()
+            if chave not in services
+        ]
+        resultante += [
+            (chave, _entry_to_values(chave, entrada).get("port"))
+            for chave, entrada in services.items()
+        ]
+        exigir_portas_distintas(resultante)
+
         alterados: list[str] = []
 
         for key, entry in services.items():
@@ -406,10 +422,10 @@ class ManifestService:
 
         # Sem linha no banco, o disco responde: exportar um projeto com Compose
         # sem a seção `docker` produziria um manifesto incompleto.
-        encontrado = find_compose_file(Path(project.path))
+        encontrado = find_compose_relativo(Path(project.path))
         if encontrado is None:
             return None
-        return {"enabled": True, "compose_file": encontrado.name}
+        return {"enabled": True, "compose_file": encontrado}
 
 
 def _entry_to_values(key: str, entry: ManifestServiceEntry) -> dict:

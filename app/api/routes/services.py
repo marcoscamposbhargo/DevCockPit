@@ -17,7 +17,7 @@ from app.api.deps import (
     get_system_service,
 )
 from app.core.cache import TTLCache
-from app.core.errors import DomainError, ValidationError
+from app.core.errors import DomainError
 from app.models.project import ActivityStatus
 from app.models.project import ProjectService as ProjectServiceModel
 from app.schemas.health import (
@@ -37,6 +37,7 @@ from app.services.dashboard_service import CACHE_KEY as DASHBOARD_CACHE_KEY
 from app.services.docker_service import DockerService
 from app.services.health_service import HealthService, targets_from_project
 from app.services.port_discovery_service import PortDiscoveryService
+from app.services.portas import exigir_portas_distintas
 from app.services.project_service import ProjectService
 from app.services.system_action_service import SystemActionService
 
@@ -161,27 +162,6 @@ def list_services(
 _ROTULO_AUTOMATICO = re.compile(r"^App \((\d{2,5})\)$")
 
 
-def _exigir_portas_distintas(itens) -> None:  # type: ignore[no-untyped-def]
-    """Dois serviços do mesmo projeto na mesma porta é estado impossível.
-
-    Uma porta tem um ouvinte. Aceitar a duplicata fazia o painel verificar três
-    vezes o mesmo endereço, atribuir a resposta a três serviços e ainda avisar,
-    na tela de Ports, sobre a inconsistência que ele mesmo tinha gravado.
-    Recusar na escrita é onde isso custa menos.
-    """
-    vistos: dict[int, str] = {}
-    for item in itens:
-        if item.port is None:
-            continue
-        anterior = vistos.get(item.port)
-        if anterior is not None:
-            raise ValidationError(
-                f"A porta {item.port} já é do serviço '{anterior}'. "
-                "Uma porta tem um ouvinte só — troque a de um dos dois."
-            )
-        vistos[item.port] = item.key
-
-
 def _rotulo_coerente(label: str, port: int | None) -> str:
     """Mantém o número do rótulo igual ao da porta, quando o painel o escreveu.
 
@@ -203,7 +183,7 @@ def replace_services(
     activity: ActivityService = Depends(get_activity_service),
 ) -> ServiceList:
     project = projects.get(project_id)
-    _exigir_portas_distintas(payload.items)
+    exigir_portas_distintas((i.key, i.port) for i in payload.items)
 
     antes = {s.key: s.port for s in project.services}
 

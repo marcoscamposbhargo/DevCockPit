@@ -43,7 +43,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.adapters.docker.adapter import DockerAdapter
 from app.core.errors import DomainError
-from app.detection.detectors.docker_stack import find_compose_file
+from app.detection.detectors.docker_stack import find_compose_relativo
 from app.jobs.job import Job
 from app.models.project import Project
 from app.runner.async_runner import AsyncCommandRunner
@@ -147,8 +147,11 @@ class EnvironmentService:
         project_dir = Path(project.path)
         if not project_dir.is_dir():
             return None
-        encontrado = find_compose_file(project_dir)
-        return encontrado.name if encontrado is not None else None
+        # Busca profunda: quem separa infraestrutura guarda o Compose em
+        # `infra/`, e a aba Docker já o encontrava lá. Aqui não encontrava, e a
+        # consequência era pior que uma tela vazia — "Ligar o ambiente" subia a
+        # aplicação e **pulava os containers**, deixando o app sem banco.
+        return find_compose_relativo(project_dir)
 
     @staticmethod
     def _app_service_key(project: Project, servers: DevServerService) -> str | None:

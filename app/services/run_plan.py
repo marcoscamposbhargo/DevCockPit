@@ -40,6 +40,7 @@ from pathlib import Path
 import yaml
 
 from app.core.errors import ValidationError
+from app.core.monorepo import SUBPROJETOS_EXECUTAVEIS
 from app.core.paths import resolve_within_project
 from app.runner.allowlist import FORBIDDEN_FLAGS, FORBIDDEN_FRAGMENTS
 
@@ -542,11 +543,11 @@ def _package_name(spec: str) -> str:
 # --- composição ----------------------------------------------------------
 
 
-#: Subpastas de monorepo, na ordem em que fazem sentido subir. Backend antes de
-#: frontend porque o front quase sempre depende dele — e porque subir o front
-#: contra uma API morta produz uma tela que carrega e não funciona, que é pior
-#: que não subir.
-SUBPROJETOS = ("backend", "api", "server", "src/backend", "frontend", "web", "client", "app")
+#: Subpastas de monorepo que **se rodam**, na ordem em que fazem sentido subir.
+#: A lista mora em `app.core.monorepo` porque a detecção precisa concordar com
+#: ela: reconhecer o Next do `frontend/` e não saber subi-lo seria o pior dos
+#: dois mundos.
+SUBPROJETOS = SUBPROJETOS_EXECUTAVEIS
 
 
 def plan_from_subproject(project_dir: Path, port: int | None = None) -> RunPlan | None:

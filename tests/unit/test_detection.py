@@ -400,3 +400,91 @@ def test_env_com_comentario_e_aspas(workspace: Path) -> None:
     )
 
     assert read_env_file(project) == {"POSTGRES_PORT": "5440", "VAZIO": ""}
+
+
+# --- monorepo -------------------------------------------------------------
+
+
+def test_monorepo_sem_marcador_na_raiz_e_reconhecido(registry, workspace: Path) -> None:
+    """Um repositório com `backend/` e `frontend/` não declara nada na raiz.
+
+    Ele aparecia sem stack nenhuma no painel — e sem ambiente, porque o Compose
+    de quem separa infraestrutura mora em `infra/`. O planejador de execução já
+    descia um nível; a detecção não, e as duas discordavam sobre o mesmo
+    projeto.
+    """
+    projeto = workspace / "monorepo"
+    (projeto / "backend").mkdir(parents=True)
+    (projeto / "frontend").mkdir()
+    (projeto / "backend" / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    (projeto / "frontend" / "package.json").write_text(
+        json.dumps({"dependencies": {"next": "^15.0.0"}}), encoding="utf-8"
+    )
+
+    detection = registry.run(projeto)
+
+    assert {"fastapi", "nextjs"} <= names(detection)
+
+
+def test_a_evidencia_diz_de_qual_pasta_veio(registry, workspace: Path) -> None:
+    """"pyproject.toml" mandaria procurar na raiz um arquivo que está em `backend/`."""
+    projeto = workspace / "monorepo"
+    (projeto / "backend").mkdir(parents=True)
+    (projeto / "backend" / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+
+    detection = registry.run(projeto)
+
+    fastapi = next(t for t in detection.technologies if t.name == "fastapi")
+    assert fastapi.evidence.startswith("backend/")
+
+
+def test_compose_em_subpasta_vem_com_o_caminho(registry, workspace: Path) -> None:
+    """Nome solto mentiria: quem lê "docker-compose.yml" procura na raiz."""
+    projeto = workspace / "monorepo"
+    (projeto / "infra").mkdir(parents=True)
+    shutil.copy(FIXTURES / "multi_service.yml", projeto / "infra" / "docker-compose.yml")
+
+    detection = registry.run(projeto)
+
+    assert detection.compose_file == "infra/docker-compose.yml"
+
+
+def test_a_raiz_vence_a_subpasta(registry, workspace: Path) -> None:
+    """O que a raiz declara é a palavra do projeto sobre si mesmo."""
+    projeto = workspace / "monorepo"
+    (projeto / "backend").mkdir(parents=True)
+    (projeto / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    (projeto / "backend" / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+
+    detection = registry.run(projeto)
+
+    fastapi = next(t for t in detection.technologies if t.name == "fastapi")
+    assert fastapi.evidence == "requirements.txt", "a evidência da raiz não foi substituída"
+
+
+def test_deteccao_nao_cadastra_servico_em_porta_ja_ocupada(session, workspace: Path) -> None:  # type: ignore[no-untyped-def]
+    """A rota de edição recusa porta duplicada desde a sessão passada.
+
+    A detecção entrava pela outra porta da mesma casa: chave nova e porta
+    ocupada criavam `postgres 5442` ao lado de `servico-5442`, os dois na mesma
+    porta — o estado que a API proíbe, gravado pelo próprio painel, com a tela
+    depois acusando a inconsistência que ele mesmo produziu.
+
+    Quase sempre é o mesmo serviço com outro nome: o painel cadastrou a partir
+    de uma porta observada, o Compose chama de `db`. Renomear seria decidir
+    sozinho; duplicar seria mentir.
+    """
+    from app.models.project import ProjectService as ProjectServiceModel
+    from app.services.detection_service import DetectionService
+
+    project = _projeto_com_compose(session, workspace, porta_no_arquivo=5433)
+    project.services.append(ProjectServiceModel(key="servico-5433", label="App", port=5433))
+    session.flush()
+
+    diff = DetectionService(session=session).run_for(project, record=False)
+
+    assert "db" not in diff.services_added
+    assert [s.key for s in project.services] == ["servico-5433"]
+    assert any("já é de 'servico-5433'" in aviso for aviso in diff.warnings), (
+        "ignorar em silêncio deixaria a pessoa sem saber por que o serviço não apareceu"
+    )

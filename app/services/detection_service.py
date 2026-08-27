@@ -115,7 +115,7 @@ class DetectionService:
             )
             added.append(name)
 
-        services_added, port_drift = self._apply_services(project, detection.services)
+        services_added, port_drift, ignorados = self._apply_services(project, detection.services)
 
         diff = DetectionDiff(
             added=sorted(added),
@@ -123,7 +123,14 @@ class DetectionService:
             kept_manual=sorted(manual),
             services_added=sorted(services_added),
             compose_file=detection.compose_file,
-            warnings=detection.warnings,
+            warnings=[
+                *detection.warnings,
+                *(
+                    [f"Serviço não cadastrado, porta já ocupada: {', '.join(ignorados)}."]
+                    if ignorados
+                    else []
+                ),
+            ],
             port_drift=port_drift,
         )
 
@@ -138,7 +145,7 @@ class DetectionService:
 
     def _apply_services(
         self, project: Project, suggestions: list
-    ) -> tuple[list[str], list[PortDrift]]:
+    ) -> tuple[list[str], list[PortDrift], list[str]]:
         """Só adiciona serviço que ainda não existe. Nunca sobrescreve o do usuário.
 
         Nunca sobrescrever é a regra certa e continua valendo. O que faltava era
@@ -154,8 +161,15 @@ class DetectionService:
         """
         por_chave = {service.key: service for service in project.services}
         existing = set(por_chave)
+        # Uma porta tem um ouvinte só, e a rota de edição já recusa duplicata
+        # desde a sessão passada. A detecção entrava pela outra porta da mesma
+        # casa: sugestão com chave nova e porta ocupada criava o estado que a
+        # API proíbe — `postgres 5442` ao lado de `servico-5442`, os dois na
+        # mesma porta, e a tela acusando inconsistência que o painel gravou.
+        por_porta = {s.port: s for s in project.services if s.port}
         added: list[str] = []
         drift: list[PortDrift] = []
+        ignorados: list[str] = []
 
         for suggestion in suggestions:
             if suggestion.key in existing:
@@ -181,6 +195,18 @@ class DetectionService:
                         )
                     )
                 continue
+
+            if suggestion.port and suggestion.port in por_porta:
+                # Quase sempre é o mesmo serviço com outro nome: o painel
+                # cadastrou `servico-5442` a partir de uma porta observada, e o
+                # Compose chama de `postgres`. Renomear seria decidir sozinho;
+                # duplicar seria mentir. Fica de fora, e o resumo diz por quê.
+                dono = por_porta[suggestion.port]
+                ignorados.append(
+                    f"{suggestion.key} (porta {suggestion.port} já é de '{dono.key}')"
+                )
+                continue
+
             project.services.append(
                 ProjectServiceModel(
                     key=suggestion.key,
@@ -192,9 +218,11 @@ class DetectionService:
                 )
             )
             existing.add(suggestion.key)
+            if suggestion.port:
+                por_porta[suggestion.port] = project.services[-1]
             added.append(suggestion.key)
 
-        return added, drift
+        return added, drift, ignorados
 
 
 def _summary(diff: DetectionDiff) -> str:

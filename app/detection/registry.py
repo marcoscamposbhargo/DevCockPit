@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from app.core.monorepo import SUBPROJETOS
 from app.detection.detectors.docker_stack import ComposeDetector, DockerfileDetector
 from app.detection.detectors.node_stack import (
     NextConfigDetector,
@@ -23,7 +24,7 @@ from app.detection.detectors.other_stacks import (
     StaticHtmlDetector,
 )
 from app.detection.detectors.python_stack import PyprojectDetector, RequirementsDetector
-from app.detection.types import Detection, Detector
+from app.detection.types import DetectedTech, Detection, Detector
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,31 @@ DEFAULT_DETECTORS: tuple[Detector, ...] = (
 FALLBACK_DETECTORS: tuple[Detector, ...] = (StaticHtmlDetector(),)
 
 
+def _dentro_de(deteccao: Detection, relativo: str) -> Detection:
+    """Reescreve uma detecção de subpasta para falar em nome do projeto inteiro.
+
+    Sem isso, a evidência diria "pyproject.toml" para um arquivo que está em
+    `backend/`, e o `compose_file` viraria um caminho que não existe a partir
+    da raiz — que é justamente o erro que o painel cometia ao não achar o
+    Compose de quem o guarda em `infra/`.
+    """
+    return Detection(
+        technologies=[
+            DetectedTech(
+                name=t.name,
+                category=t.category,
+                evidence=f"{relativo}/{t.evidence}",
+            )
+            for t in deteccao.technologies
+        ],
+        services=deteccao.services,
+        compose_file=(
+            f"{relativo}/{deteccao.compose_file}" if deteccao.compose_file else None
+        ),
+        warnings=deteccao.warnings,
+    )
+
+
 class DetectionRegistry:
     def __init__(
         self,
@@ -66,20 +92,45 @@ class DetectionRegistry:
             result.warnings.append("Diretório não encontrado; detecção não executada.")
             return result
 
-        for detector in self.detectors:
-            partial = self._safe_detect(detector, project_dir, result)
-            if partial is not None:
-                result.merge(partial)
+        self._rodar(self.detectors, project_dir, result)
+
+        # Monorepo: a raiz de um repositório com `backend/` e `frontend/` não
+        # tem marcador nenhum, e o projeto aparecia sem stack e sem ambiente.
+        # A raiz vem primeiro de propósito — o que ela declara é a palavra do
+        # projeto sobre si mesmo, e `merge` mantém quem chegou antes.
+        for relativo in SUBPROJETOS:
+            sub = project_dir / relativo
+            if sub.is_dir():
+                self._rodar(self.detectors, sub, result, dentro=relativo)
 
         # Fallback só entra quando nada mais reconheceu o projeto: um
         # `index.html` de template não deve rotular um Next.js como estático.
         if not result.technologies:
-            for detector in self.fallbacks:
-                partial = self._safe_detect(detector, project_dir, result)
-                if partial is not None:
-                    result.merge(partial)
+            self._rodar(self.fallbacks, project_dir, result)
 
         return result
+
+    def _rodar(
+        self,
+        detectores: tuple[Detector, ...],
+        diretorio: Path,
+        result: Detection,
+        *,
+        dentro: str = "",
+    ) -> None:
+        """Roda um conjunto de detectores num diretório e junta o que achou.
+
+        `dentro` é o caminho relativo à raiz do projeto. Ele entra na evidência
+        e no `compose_file` porque um nome de arquivo solto mentiria: quem lê
+        "docker-compose.yml" procura na raiz, e o arquivo está em `infra/`.
+        """
+        for detector in detectores:
+            partial = self._safe_detect(detector, diretorio, result)
+            if partial is None:
+                continue
+            if dentro:
+                partial = _dentro_de(partial, dentro)
+            result.merge(partial)
 
     @staticmethod
     def _safe_detect(detector: Detector, project_dir: Path, result: Detection) -> Detection | None:

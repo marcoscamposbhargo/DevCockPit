@@ -262,3 +262,36 @@ def test_revalidacao_do_frontend_nao_baixa_o_arquivo_de_novo(client: TestClient)
 
     assert segunda.status_code == 304
     assert not segunda.content
+
+
+def test_projeto_em_container_aparece_no_ar_na_listagem(client, sample_project) -> None:  # type: ignore[no-untyped-def]
+    """`app_running` fala do processo nativo, e num projeto inteiramente em
+    Docker ele é falso para sempre. O grafo desenhava apagado um projeto com os
+    containers de pé e os serviços respondendo.
+
+    `app_online` responde à outra pergunta — a aplicação atende? — lendo o cache
+    que o poller preenche, sem trabalho por projeto na listagem (NFR-010).
+    """
+    from app.services.health_service import HealthResult
+
+    criado = client.post(
+        "/api/projects", json={"path": str(sample_project)}, headers=WRITE_HEADERS
+    ).json()
+    client.put(
+        f"/api/projects/{criado['id']}/services",
+        json={"items": [{"key": "api", "label": "API", "port": 8000, "health_kind": "HTTP"}]},
+        headers=WRITE_HEADERS,
+    )
+
+    saude = client.app.state.health_service
+    saude.cache.set(
+        f"health:{criado['id']}:api",
+        HealthResult(project_id=criado["id"], key="api", state="ONLINE", latency_ms=3),
+    )
+
+    item = next(
+        p for p in client.get("/api/projects").json()["items"] if p["id"] == criado["id"]
+    )
+
+    assert item["app_online"] is True
+    assert item["app_running"] is not True, "não há processo nativo; quem responde é o container"

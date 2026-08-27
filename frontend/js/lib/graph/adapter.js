@@ -39,20 +39,31 @@ export function matizDaTecnologia(nome) {
 
 /** Estado do nó de projeto, na mesma doutrina do resto do painel.
  *
- * `app_running` é `null` quando o projeto não tem aplicação separada da stack
- * de containers — e aí "parado" seria afirmação sem prova. Vira `desconhecido`,
- * que a tela desenha diferente de `parado`.
+ * Duas perguntas diferentes, e o grafo responde à segunda:
+ *
+ * - `app_running`: **há processo nativo de pé?** É o que o botão de ligar usa,
+ *   porque é o que ele liga e desliga.
+ * - `app_online`: **a aplicação atende?** Cobre o projeto que roda inteiro em
+ *   container, onde o primeiro é falso para sempre.
+ *
+ * O grafo usava só o primeiro, e desenhava apagado um projeto com os dois
+ * containers de pé atendendo — foi o caso do APP INGRESSO. Aqui a pergunta é
+ * "está no ar?", não "quem o subiu?".
+ *
+ * `null` nos dois é `desconhecido`, que a tela desenha diferente de `parado`:
+ * projeto sem aplicação separada, ou que ninguém verificou ainda, não é prova
+ * de nada.
  */
 export function estadoDoProjeto(projeto) {
-  if (projeto.app_running === true) return 'no-ar';
+  if (projeto.app_online === true || projeto.app_running === true) return 'no-ar';
   if (projeto.status === 'ERROR') return 'erro';
   if (projeto.status === 'MISSING') return 'ausente';
-  if (projeto.app_running === false) return 'parado';
+  if (projeto.app_online === false || projeto.app_running === false) return 'parado';
   return 'desconhecido';
 }
 
 function tamanhoDoProjeto(projeto, agora) {
-  if (projeto.app_running === true) return TAMANHO.projetoAtivo;
+  if (projeto.app_online === true || projeto.app_running === true) return TAMANHO.projetoAtivo;
   if (projeto.is_pinned) return TAMANHO.projetoFixado;
 
   const acesso = projeto.last_accessed_at ? Date.parse(projeto.last_accessed_at) : NaN;

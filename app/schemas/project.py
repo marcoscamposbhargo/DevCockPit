@@ -127,6 +127,10 @@ class ProjectSummary(BaseModel):
     #: estado é a verificação de saúde, e `false` seria mentira: diria "parado"
     #: com tudo no ar.
     app_running: bool | None = None
+    #: A aplicação **atende**? Vem do cache de health, e responde por projeto que
+    #: roda em container, onde `app_running` é falso para sempre. `None` enquanto
+    #: ninguém verificou — que não é o mesmo que "não".
+    app_online: bool | None = None
     #: Primeiro serviço que dá para abrir no navegador. O card precisa da
     #: **chave**, não da URL: quem abre é o backend, e passar URL do cliente
     #: reabriria o vetor que a decisão D-13 fecha.

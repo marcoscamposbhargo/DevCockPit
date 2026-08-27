@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.deps import get_dev_server_service, get_project_service
+from app.api.deps import get_dev_server_service, get_health_service, get_project_service
 from app.models.project import Project
 from app.schemas.git import DetectionResult, PortDriftOut
 from app.schemas.project import (
@@ -19,6 +19,7 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.services.dev_server_service import DevServerService
+from app.services.health_service import HealthService
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -31,6 +32,7 @@ def _to_summary(
     app_running: bool | None = None,
     open_service_key: str | None = None,
     open_service_label: str | None = None,
+    app_online: bool | None = None,
 ) -> ProjectSummary:
     return ProjectSummary(
         id=project.id,
@@ -46,6 +48,7 @@ def _to_summary(
         app_running=app_running,
         open_service_key=open_service_key,
         open_service_label=open_service_label,
+        app_online=app_online,
     )
 
 
@@ -53,6 +56,7 @@ def _to_summary(
 def list_projects(
     service: ProjectService = Depends(get_project_service),
     servers: DevServerService = Depends(get_dev_server_service),
+    health: HealthService = Depends(get_health_service),
     status_filter: str | None = Query(default=None, alias="status"),
     tech: str | None = Query(default=None),
     pinned: bool | None = Query(default=None),
@@ -70,12 +74,12 @@ def list_projects(
     rodando = {registro.project_id for registro in servers.running_project_ids()}
 
     return ProjectList(
-        items=[_to_summary(p, **_capacidades(p, servers, rodando)) for p in projects],
+        items=[_to_summary(p, **_capacidades(p, servers, rodando, health)) for p in projects],
         total=total,
     )
 
 
-def _capacidades(project: Project, servers, rodando: set[str]) -> dict:  # type: ignore[no-untyped-def]
+def _capacidades(project: Project, servers, rodando: set[str], health=None) -> dict:  # type: ignore[no-untyped-def]
     """O que o painel sabe fazer com este projeto, e em que estado ele está.
 
     Leitura de disco pequena e local — os mesmos arquivos que a detecção já lê,
@@ -96,6 +100,22 @@ def _capacidades(project: Project, servers, rodando: set[str]) -> dict:  # type:
         None,
     )
 
+    # `app_running` fala do **processo nativo**, e continua sendo o que o botão
+    # de ligar usa: ele liga e desliga esse processo, não o container. Mas um
+    # projeto que roda inteiro em Docker tem `app_running=False` para sempre, e
+    # quem só olha esse campo o desenha apagado com a aplicação atendendo — foi
+    # o caso do APP INGRESSO, com os dois containers de pé e o grafo dizendo que
+    # não havia nada no ar.
+    #
+    # `app_online` responde a outra pergunta: **a aplicação atende?** Vem do
+    # cache que o poller preenche, sem rede nem disco aqui (NFR-010), e é `None`
+    # enquanto ninguém verificou — que é diferente de "não".
+    app_online: bool | None = None
+    if health is not None and abrivel is not None:
+        ultimo = health.last_known(project.id, abrivel.key)
+        if ultimo is not None and ultimo.state in ("ONLINE", "OFFLINE", "ERROR", "STARTING"):
+            app_online = ultimo.state == "ONLINE"
+
     return {
         "can_start": tem_app or _has_compose(project),
         # `None` de propósito quando não há aplicação separada: ver o comentário
@@ -103,16 +123,17 @@ def _capacidades(project: Project, servers, rodando: set[str]) -> dict:  # type:
         "app_running": (project.id in rodando) if tem_app else None,
         "open_service_key": abrivel.key if abrivel else None,
         "open_service_label": abrivel.label if abrivel else None,
+        "app_online": app_online,
     }
 
 
 def _has_compose(project: Project) -> bool:
     from pathlib import Path
 
-    from app.detection.detectors.docker_stack import find_compose_file
+    from app.detection.detectors.docker_stack import find_compose_relativo
 
     diretorio = Path(project.path)
-    return diretorio.is_dir() and find_compose_file(diretorio) is not None
+    return diretorio.is_dir() and find_compose_relativo(diretorio) is not None
 
 
 @router.post("", response_model=ProjectDetail, status_code=status.HTTP_201_CREATED)

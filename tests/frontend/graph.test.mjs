@@ -363,3 +363,35 @@ test('o arranjo não depende da ordem em que os nós chegam', () => {
     assert.deepEqual(invertido.get(id), escolha, `${id} mudou de lugar`);
   }
 });
+
+test('projeto que roda em container conta como no ar', () => {
+  // `app_running` fala do processo nativo, e num projeto inteiramente em
+  // Docker ele é falso para sempre. O grafo desenhava apagado o APP INGRESSO
+  // com os dois containers de pé e os dois serviços respondendo.
+  assert.equal(
+    estadoDoProjeto({ app_running: false, app_online: true, status: 'REGISTERED' }),
+    'no-ar'
+  );
+});
+
+test('sem verificação nenhuma, o grafo não afirma que está parado', () => {
+  assert.equal(
+    estadoDoProjeto({ app_running: null, app_online: null, status: 'REGISTERED' }),
+    'desconhecido'
+  );
+});
+
+test('processo recém-ligado vence verificação velha', () => {
+  // Tentador dizer "parado": a última verificação falhou. Mas o processo subiu
+  // agora, por clique no painel, e a aplicação leva segundos para atender — o
+  // nó piscaria apagado logo depois de alguém ligá-lo, e a explicação seria um
+  // número de cache, não o estado da máquina.
+  //
+  // Por isso a ordem: o processo que o painel acabou de subir é o fato mais
+  // recente que ele tem. `app_online` existe para o caso em que não há processo
+  // nativo nenhum, que é o do projeto em container.
+  assert.equal(
+    estadoDoProjeto({ app_running: true, app_online: false, status: 'REGISTERED' }),
+    'no-ar'
+  );
+});

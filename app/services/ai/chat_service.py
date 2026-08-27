@@ -186,6 +186,13 @@ class ChatService:
         self._gravar(
             project, sessao, "user", texto, contexto_tokens=contexto.tokens, agente=especialista.key
         )
+        # Fecha a transação **antes** de começar o stream, e isso não é detalhe.
+        # O repositório só dá `flush`, então a escrita ficava aberta pelo tempo
+        # inteiro da resposta — com provedor local, minutos. O SQLite admite um
+        # escritor por vez: nesse intervalo, subir um servidor ou gravar um
+        # ciclo do poller falhava com "database is locked". A pergunta já está
+        # completa aqui; não há por que segurá-la até o fim da resposta.
+        self.session.commit()
 
         comeco = time.monotonic()
         partes: list[str] = []
@@ -212,6 +219,9 @@ class ChatService:
             agente=especialista.key,
         )
         self.usage.add(tokens_in=tokens_in, tokens_out=tokens_out)
+        # Mesma razão: solta o banco assim que a resposta está gravada, sem
+        # esperar o fim da requisição.
+        self.session.commit()
 
         if contexto.cortados:
             # A resposta diz que cortou. Omitir em silêncio faria a tela

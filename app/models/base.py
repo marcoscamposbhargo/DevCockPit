@@ -60,6 +60,11 @@ def create_session_factory(database_url: str, echo: bool = False) -> sessionmake
             # WAL reduz contenção entre requisição e tarefas de background (ADR-002).
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
+            # Espera em vez de falhar quando outro escritor está no meio de uma
+            # transação. O padrão do driver são 5 s, e o poller de health mais a
+            # requisição do usuário já se cruzaram dentro dessa janela. Não
+            # substitui transação curta — só evita que um pico vire erro na tela.
+            cursor.execute("PRAGMA busy_timeout=15000")
             cursor.close()
 
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)

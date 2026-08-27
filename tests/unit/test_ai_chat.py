@@ -537,3 +537,33 @@ def test_quem_respondeu_fica_gravado_com_a_versao_do_prompt(
     resposta = chat.history(projeto)[-1]
     assert resposta.agent == "qa"
     assert resposta.prompt_versao == VERSAO_DOS_PROMPTS
+
+
+# --- o banco não fica preso durante a resposta ----------------------------
+
+
+def test_a_pergunta_e_liberada_antes_do_stream_comecar(
+    session: Session, projeto: Project
+) -> None:
+    """O SQLite admite um escritor por vez.
+
+    O repositório só dá `flush`, então a pergunta ficava numa transação aberta
+    enquanto o modelo respondia — minutos, com provedor local. Nesse intervalo,
+    subir um servidor ou gravar um ciclo do poller falhava com "database is
+    locked", e o painel mostrava "Erro interno" numa ação que não tinha nada a
+    ver com a IA.
+
+    Este teste olha o único sinal que importa: quando o primeiro pedaço da
+    resposta sai, a pergunta **já está commitada**.
+    """
+    SessionService(session, git=None).start(projeto)
+    chat = ChatService(session, config(), provider=FakeProvider(resposta="alo"))
+
+    fluxo = chat.ask(projeto, "e aí?")
+    next(fluxo)  # consome só o primeiro pedaço: o stream está no meio
+
+    assert not session.in_transaction(), (
+        "a transação de escrita continuou aberta durante o stream"
+    )
+
+    list(fluxo)

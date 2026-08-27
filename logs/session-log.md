@@ -3367,3 +3367,48 @@ seguem esperando **uso real da tela**, não código.
    assina "Cockpit AI · QA" e que `ai_message.agent` foi gravado.
 2. Usar os atalhos por alguns dias antes de acrescentar perfil ou botão. A
    sessão 24 já cobrou o preço de empilhar camada sem esse teste.
+
+### Correção depois do fechamento — "database is locked" no clique do atalho
+
+O primeiro clique em **Subir o servidor** devolveu "Erro interno" na tela. O log
+disse o que era, e não tinha nada a ver com a Fase 3:
+
+```
+sqlite3.OperationalError: database is locked
+[SQL: INSERT INTO dev_server (project_id, pid, command, ...)]
+```
+
+**A causa, que é anterior aos chapéus:** o repositório de mensagens só chama
+`flush()`, nunca `commit()`. A pergunta era gravada **antes** do stream começar,
+e a transação de escrita ficava aberta até o fim da requisição — com provedor
+local, minutos. O SQLite admite um escritor por vez; nessa janela, qualquer
+outra escrita falhava. O poller de health caiu junto, no mesmo segundo.
+
+Ou seja: conversar com a IA travava o painel inteiro para escrita enquanto ela
+respondia. O sintoma aparecia longe da causa — o erro surgia num botão que não
+tem relação nenhuma com o chat, e foi por isso que passou despercebido até
+agora.
+
+**O conserto:** `commit()` logo depois de gravar a pergunta, e de novo depois de
+gravar a resposta. A pergunta já está completa no primeiro ponto; não havia
+razão para segurá-la. Somado a isso, `PRAGMA busy_timeout=15000` — o padrão do
+driver são 5 s, e não substitui transação curta: só evita que um pico normal
+vire erro na tela.
+
+**O teste vale porque falha sem o conserto**, e isso foi verificado nos dois
+sentidos: `test_a_pergunta_e_liberada_antes_do_stream_comecar` consome o
+primeiro pedaço do stream e exige `not session.in_transaction()`. A primeira
+versão do teste passava com e sem o conserto — olhava `session.dirty`, que fica
+vazio depois do `flush`. Teste que passa dos dois jeitos não é teste.
+
+Verificado no painel real: com uma resposta em stream, **seis escritas seguidas
+devolveram 200**, e o log não registrou nenhum lock depois disso.
+
+### Armadilha de plataforma, terceira aparição
+
+Reinstalar o executável esbarrou em `VCRUNTIME140.dll` travada — desta vez por
+`chrome-native-host.exe`, processo do Claude no Chrome, sem relação com o
+projeto. O hash do arquivo instalado e do novo era **idêntico**, então a saída
+foi copiar tudo menos ele (`robocopy /XF`) e conferir arquivo por arquivo que
+nada faltou. Matar processo alheio para trocar um arquivo que não mudou seria
+custo sem ganho.

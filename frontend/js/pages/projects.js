@@ -25,6 +25,9 @@ import { navigate } from '../router.js';
 function buildSignals(dashboard) {
   const online = new Map();
   const git = new Map();
+  // Quem o verificador já mediu. Fora desta lista, "0 online" seria afirmação
+  // que ninguém apurou — o poller só cobre projeto fixado e recente.
+  const medidos = new Set(dashboard?.checked_project_ids ?? []);
 
   for (const service of dashboard?.active_services ?? []) {
     // `proven: false` é "alguém responde nessa porta", não "este projeto está
@@ -37,7 +40,7 @@ function buildSignals(dashboard) {
     git.set(change.project_id, change);
   }
 
-  return { online, git };
+  return { online, git, medidos };
 }
 
 const SIGNAL_ICON = { docker: 'container', dirty: 'branch', clean: 'branch' };
@@ -56,8 +59,21 @@ function signalRow(project, signals) {
 
   const total = project.services_total ?? 0;
   const online = signals.online.get(project.id) ?? 0;
+  const medido = signals.medidos.has(project.id);
 
-  if (total > 0) {
+  if (total > 0 && !medido) {
+    // "0 de 3 online" e "ninguém verificou ainda" são fatos diferentes, e o
+    // card dizia o primeiro nos dois casos. É a mesma distinção que o grafo já
+    // faz entre `parado` e `desconhecido`.
+    chips.push(
+      signal(
+        'unknown',
+        `${total} serviço(s) · não verificado`,
+        'O verificador roda para projetos fixados e recentes. Este ainda não foi medido — ' +
+          'abra o projeto para ver o estado agora.'
+      )
+    );
+  } else if (total > 0) {
     const kind = online === 0 ? 'off' : online >= total ? 'on' : 'partial';
     chips.push(
       signal(

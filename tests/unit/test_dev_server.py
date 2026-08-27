@@ -500,3 +500,111 @@ def test_porta_ja_cadastrada_nao_e_reportada(client, workspace) -> None:  # type
     estado = client.get(f"/api/projects/{projeto['id']}/server").json()
 
     assert estado["undeclared_ports"] == []
+
+
+# --- a porta do Node deixa de escorregar -----------------------------------
+
+
+def _node(projeto, *, framework: str, script: str = "next dev", manager_lock: str = "") -> None:
+    """Um projeto Node mínimo: dependência declarada e script de dev."""
+    import json as _json
+
+    (Path(projeto.path) / "package.json").write_text(
+        _json.dumps({"scripts": {"dev": script}, "dependencies": {framework: "^1.0.0"}}),
+        encoding="utf-8",
+    )
+    if manager_lock:
+        (Path(projeto.path) / manager_lock).write_text("", encoding="utf-8")
+
+
+def test_next_sem_porta_no_script_recebe_a_porta_declarada(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """`npm run dev` sobe na 3000 e, se estiver ocupada, escorrega para a 3001.
+
+    Dois projetos "sem conflito no cadastro" passam a disputar o mesmo número,
+    e o verificador mede a porta errada. Era o caso da maioria dos projetos:
+    Python, subprojeto e estático já recebiam a porta; Node não.
+    """
+    _node(projeto, framework="next")
+    _servico(projeto, session, 3006, key="app")
+
+    comando = servico.status(projeto).command
+
+    assert comando == "npm run dev -- -p 3006"
+
+
+def test_vite_ganha_strict_port_para_falhar_em_vez_de_escorregar(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """Sem `--strictPort` o Vite também desliza — e deslizar calado é o problema."""
+    _node(projeto, framework="vite", script="vite")
+    _servico(projeto, session, 5180, key="app")
+
+    assert servico.status(projeto).command == "npm run dev -- --port 5180 --strictPort"
+
+
+def test_yarn_nao_leva_o_separador(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """`yarn` repassa direto; `npm` e `pnpm` engoliriam a bandeira sem o `--`."""
+    _node(projeto, framework="astro", script="astro dev", manager_lock="yarn.lock")
+    _servico(projeto, session, 4321, key="app")
+
+    assert servico.status(projeto).command == "yarn dev --port 4321"
+
+
+def test_script_que_ja_fixa_a_porta_nao_e_sobrescrito(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """Decisão escrita no projeto vence adivinhação do painel.
+
+    O aviso de porta divergente existe justamente para este caso: dizer que o
+    comando e o cadastro discordam é útil; mudar o comando por baixo de quem o
+    escreveu, não.
+    """
+    _node(projeto, framework="next", script="next dev -p 4000")
+    _servico(projeto, session, 3006, key="app")
+
+    assert servico.status(projeto).command == "npm run dev"
+
+
+def test_framework_desconhecido_fica_como_estava(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """Sem saber a bandeira, inventar uma seria quebrar a subida para consertar a porta."""
+    _node(projeto, framework="alguma-coisa", script="node server.js")
+    _servico(projeto, session, 3006, key="app")
+
+    assert servico.status(projeto).command == "npm run dev"
+
+
+def test_a_porta_escolhida_e_a_da_aplicacao_nao_a_do_banco(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """Mandar o Next subir na porta do Postgres seria pior que não corrigir nada.
+
+    O banco entra declarado **antes** da aplicação de propósito: é a ordem que
+    fazia a regra antiga escolher 5432.
+    """
+    from app.models.project import ProjectService as ProjectServiceModel
+
+    _node(projeto, framework="next")
+    projeto.services.append(
+        ProjectServiceModel(key="db", label="Postgres", port=5432, health_kind="TCP")
+    )
+    projeto.services.append(
+        ProjectServiceModel(key="app", label="App", port=3006, health_kind="HTTP")
+    )
+    session.flush()
+
+    assert servico.status(projeto).command == "npm run dev -- -p 3006"
+
+
+def test_entre_dois_http_vale_a_ordem_declarada_nao_o_nome(servico, projeto, session) -> None:  # type: ignore[no-untyped-def]
+    """O caso da PLATAFORMA DE INGRESSOS.
+
+    Ela declara `backend` (o que o `runserver` sobe) e `web` (o do Docker).
+    Preferir `web` pelo nome trocava a porta do comando por uma que ele nunca
+    abre. Ordem é o que o projeto declarou; nome é o que o painel imagina.
+    """
+    from app.models.project import ProjectService as ProjectServiceModel
+
+    _node(projeto, framework="next")
+    projeto.services.append(
+        ProjectServiceModel(key="backend", label="Backend", port=3002, health_kind="HTTP")
+    )
+    projeto.services.append(
+        ProjectServiceModel(key="web", label="Web (Docker)", port=3017, health_kind="HTTP")
+    )
+    session.flush()
+
+    assert servico.status(projeto).command == "npm run dev -- -p 3002"

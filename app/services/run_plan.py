@@ -247,8 +247,48 @@ def _package_manager(project_dir: Path) -> str:
     return "npm"
 
 
-def plan_from_node(project_dir: Path) -> RunPlan | None:
-    """Deriva o comando do `package.json`, sem inventar script que não existe."""
+#: Como cada framework Node recebe a porta na linha de comando. `strictPort`
+#: do Vite entra de propósito: sem ele o Vite também desliza para a próxima
+#: porta livre, e deslizar em silêncio é o problema, não a solução.
+NODE_PORT_FLAGS = (
+    ("next", ["-p", "{porta}"]),
+    ("vite", ["--port", "{porta}", "--strictPort"]),
+    ("astro", ["--port", "{porta}"]),
+    ("nuxt", ["--port", "{porta}"]),
+    ("@remix-run/dev", ["--port", "{porta}"]),
+)
+
+_PORTA_NO_SCRIPT = re.compile(r"(?:-p|--port|--server-port|PORT)[= ]\s*\d{2,5}")
+
+
+def _framework_node(dados: dict) -> str | None:
+    """Qual framework o `package.json` declara, olhando as dependências.
+
+    Ler a dependência em vez do texto do script é o que faz isto funcionar em
+    projeto que embrulha o comando (`"dev": "node scripts/dev.mjs"`).
+    """
+    declaradas = {}
+    for campo in ("dependencies", "devDependencies"):
+        valor = dados.get(campo)
+        if isinstance(valor, dict):
+            declaradas.update(valor)
+
+    for nome, _ in NODE_PORT_FLAGS:
+        if nome in declaradas:
+            return nome
+    return None
+
+
+def plan_from_node(project_dir: Path, port: int | None = None) -> RunPlan | None:
+    """Deriva o comando do `package.json`, sem inventar script que não existe.
+
+    Recebe a porta declarada e a **fixa no comando** quando sabe como. Sem
+    isso, `npm run dev` de um projeto Next sobe na 3000 — e, se a 3000 estiver
+    ocupada, o Next escorrega para a 3001 sem avisar ninguém. O painel passa a
+    verificar uma porta e o projeto a atender em outra, dois projetos disputam
+    o mesmo número, e o diagnóstico vira adivinhação. Era o caso da maioria dos
+    projetos aqui: Python, subprojeto e estático já recebiam a porta; Node não.
+    """
     package = project_dir / "package.json"
     if not package.is_file():
         return None
@@ -270,10 +310,28 @@ def plan_from_node(project_dir: Path) -> RunPlan | None:
     # `yarn dev` e `bun run dev`; `npm`/`pnpm` querem o `run` no meio.
     argv = [manager, escolhido] if manager == "yarn" else [manager, "run", escolhido]
 
+    detalhe = f"package.json · scripts.{escolhido} ({manager})"
+    framework = _framework_node(dados)
+    bandeiras = dict(NODE_PORT_FLAGS).get(framework or "")
+    texto_do_script = str(scripts.get(escolhido) or "")
+
+    if port and bandeiras and not _PORTA_NO_SCRIPT.search(texto_do_script):
+        # `--` separa os argumentos do gerenciador dos do script. `yarn` e
+        # `bun` repassam direto; `npm` e `pnpm` engoliriam a bandeira.
+        if manager in ("npm", "pnpm"):
+            argv.append("--")
+        argv.extend(b.format(porta=port) for b in bandeiras)
+        detalhe += f" · porta {port} fixada pelo painel"
+    elif port and _PORTA_NO_SCRIPT.search(texto_do_script):
+        # O script já manda na porta. Sobrescrever seria o painel passando por
+        # cima de decisão escrita — e o aviso de porta divergente existe
+        # justamente para esse caso.
+        detalhe += " · porta definida no próprio script"
+
     return RunPlan(
         argv=_validate_argv(argv, origem="package.json"),
         source="node",
-        evidence=f"package.json · scripts.{escolhido} ({manager})",
+        evidence=detalhe,
     )
 
 
@@ -568,7 +626,7 @@ def resolve_run_plan(project_dir: Path, port: int | None = None) -> RunPlan | No
     # vence servir estático. O estático é o último porque um `index.html` numa
     # pasta de build acompanharia um projeto que tem forma melhor de subir.
     return (
-        plan_from_node(project_dir)
+        plan_from_node(project_dir, port=port)
         or plan_from_python(project_dir, port=port)
         or plan_from_subproject(project_dir, port=port)
         or plan_from_static(project_dir, port=port)

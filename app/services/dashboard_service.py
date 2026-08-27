@@ -68,6 +68,10 @@ class Dashboard:
     active_services: list[ActiveService] = field(default_factory=list)
     port_conflicts: list[PortConflict] = field(default_factory=list)
     recent_projects: list[RecentProject] = field(default_factory=list)
+    #: Projetos cujo estado de saúde o verificador já mediu ao menos uma vez.
+    #: Sem esta lista, a tela não consegue separar "nenhum serviço respondeu"
+    #: de "ninguém perguntou ainda" — e as duas coisas viravam "0 online".
+    checked_project_ids: list[str] = field(default_factory=list)
     generated_at: datetime = field(default_factory=utcnow)
     from_cache: bool = False
 
@@ -102,6 +106,7 @@ class DashboardService:
         active_services = self._active_services(projects)
 
         dashboard = Dashboard(
+            checked_project_ids=self._medidos(projects),
             totals=self._totals(projects, total, active_services),
             pending_changes=self._pending_changes(projects),
             active_services=active_services,
@@ -179,6 +184,20 @@ class DashboardService:
                 )
 
         return sorted(pendentes, key=lambda item: item.dirty_count, reverse=True)[:10]
+
+    def _medidos(self, projects: list[Project]) -> list[str]:
+        """Quem já passou pelo verificador — leitura de cache, sem tocar a rede.
+
+        O poller cobre projeto fixado e recente. Para os outros, "0 de 3 online"
+        é uma afirmação que ninguém apurou; a tela precisa poder dizer isso.
+        """
+        medidos = []
+        for project in projects:
+            for service in project.services:
+                if self.health.last_known(project.id, service.key).state != HealthState.UNKNOWN:
+                    medidos.append(project.id)
+                    break
+        return medidos
 
     def _active_services(self, projects: list[Project]) -> list[ActiveService]:
         """Serviços que respondem — separando os que são deste projeto.

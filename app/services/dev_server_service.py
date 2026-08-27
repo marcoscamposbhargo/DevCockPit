@@ -123,16 +123,30 @@ class DevServerService:
         ).scalar_one_or_none()
 
     def _declared_port(self, project: Project) -> int | None:
-        """A porta que o projeto declara, para passar ao comando quando cabe.
+        """A porta da **aplicação**, para passar ao comando quando cabe.
 
         Um `uvicorn` sem `--port` sobe em 8000 e o painel verifica outra coisa.
         Passar o número que já está no cadastro é o que faz o botão e a coluna
         de estado concordarem no primeiro clique.
+
+        A escolha não pode ser "a primeira porta declarada". Um projeto que
+        declara Postgres e aplicação faria o painel mandar o Next subir na
+        porta do banco — e aí o comando erra por causa da correção, que é pior
+        do que o problema. Serviço HTTP vem primeiro porque banco quase sempre
+        é TCP.
+
+        Entre dois HTTP, vale a ordem de declaração, e **não** um palpite pelo
+        nome. A tentativa de preferir `web` a `backend` escolheu 3017 na
+        PLATAFORMA DE INGRESSOS, onde `web` é o serviço do Docker e quem o
+        comando sobe é o `runserver` da 3002. Ordem é o que o projeto declarou;
+        nome é o que o painel imagina.
         """
-        for service in project.services:
-            if service.port:
-                return service.port
-        return None
+        candidatos = [s for s in project.services if s.port]
+        if not candidatos:
+            return None
+
+        http = [s for s in candidatos if (s.health_kind or "").upper() == "HTTP"]
+        return (http or candidatos)[0].port
 
     def plan(self, project: Project) -> RunPlan | None:
         """O que rodaria se alguém clicasse em ligar. `None` quando não dá para saber."""

@@ -424,3 +424,23 @@ def test_servico_ativo_traz_a_chave_e_nao_so_o_rotulo(client, projeto) -> None: 
 
     assert ativos, "o serviço deveria estar online com a porta escutando"
     assert ativos[0]["key"] == "backend"
+
+
+def test_dashboard_diz_quem_foi_medido(client, sample_project) -> None:  # type: ignore[no-untyped-def]
+    """"Nenhum serviço respondeu" e "ninguém perguntou" são fatos diferentes.
+
+    O card do projeto mostrava "0 de N online" nos dois casos. Sem esta lista,
+    a tela não tem como separá-los — é a mesma distinção que o grafo já faz
+    entre `parado` e `desconhecido`.
+    """
+    resposta = client.post(
+        "/api/projects", json={"path": str(sample_project)}, headers=WRITE_HEADERS
+    )
+    assert resposta.status_code == 201, resposta.text
+    projeto = resposta.json()
+
+    dados = client.get("/api/dashboard").json()
+
+    assert "checked_project_ids" in dados
+    # Recém-cadastrado, sem ciclo do poller: não medido.
+    assert projeto["id"] not in dados["checked_project_ids"]

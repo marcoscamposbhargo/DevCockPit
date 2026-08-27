@@ -327,6 +327,18 @@
   --tone-border: color-mix(in srgb, var(--status-warning) var(--tint-border-strength), transparent);
 }
 
+/* Não medido é diferente de medido e parado: cinza vazado, sem cor de estado,
+   porque atribuir cor a um fato não apurado é o que o chip veio evitar. */
+.signal[data-kind='unknown'] {
+  --tone-fg: var(--fg-muted);
+  border-style: dashed;
+}
+
+.signal[data-kind='unknown'] .signal__dot {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
 .signal[data-kind='off'] {
   --tone-fg: var(--fg-muted);
 }

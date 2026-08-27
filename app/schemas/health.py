@@ -190,6 +190,9 @@ class DashboardOut(BaseModel):
     active_services: list[ActiveServiceOut] = Field(default_factory=list)
     port_conflicts: list[PortConflictOut] = Field(default_factory=list)
     recent_projects: list[RecentProjectOut] = Field(default_factory=list)
+    #: Projetos que o verificador já mediu. Quem não está aqui não tem estado
+    #: apurado, e a tela diz isso em vez de mostrar "0 online".
+    checked_project_ids: list[str] = Field(default_factory=list)
     generated_at: datetime
     #: Explícito de propósito: a UI mostra a idade do dado em vez de fingir
     #: tempo real (decisão D-18).

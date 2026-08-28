@@ -314,3 +314,29 @@ def test_toda_recomendacao_carrega_um_fato(session: Session, projeto: Project) -
 
     for recomendacao in IntelligenceService(session).recomendacoes(projeto):
         assert recomendacao.porque, f"{recomendacao.titulo} não diz por quê"
+
+
+def test_nao_repete_o_mesmo_tema_duas_vezes(session: Session, projeto: Project) -> None:
+    """Duas recomendações sobre a mesma coisa gastam a atenção de quem lê.
+
+    Aconteceu no painel real: a tarefa em aberto vinha primeiro e o indicador
+    de tarefas repetia logo abaixo, dizendo "a aba lista as abertas por
+    prioridade" — que nem ação é.
+    """
+    session.add(AiTask(project_id=projeto.id, title="Fazer algo", priority=2))
+    session.add(AiTask(project_id=projeto.id, title="Outra", priority=2))
+    session.flush()
+
+    recomendacoes = IntelligenceService(session).recomendacoes(projeto)
+
+    sobre_tarefa = [r for r in recomendacoes if "tarefa" in r.porque.lower()]
+    assert len(sobre_tarefa) == 1
+
+
+def test_a_recomendacao_do_indicador_diz_do_que_se_trata(
+    session: Session, projeto: Project
+) -> None:
+    """Sem o rótulo na frente, a sugestão solta parecia uma dica de navegação."""
+    recomendacao = IntelligenceService(session).recomendacoes(projeto)[0]
+
+    assert recomendacao.titulo.startswith("Documentação: ")

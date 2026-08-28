@@ -34,6 +34,17 @@ from app.models.task import AiTask, TaskStatus
 #: projeto ativo.
 JANELA_DIAS = 14
 
+#: Onde o trabalho de cada indicador acontece. Mandar para a própria aba de
+#: Saúde seria mandar de volta para onde a pessoa já está.
+_ONDE_POR_INDICADOR = {
+    "ambiente": "server",
+    "atividade": "session",
+    "tarefas": "session",
+    "divida": "ai",
+    "documentacao": "",
+    "testes": "",
+}
+
 #: Arquivos que sustentam a afirmação "este projeto está documentado". Nenhum
 #: deles é lido: só a existência conta, porque avaliar qualidade de texto seria
 #: exatamente o tipo de nota inventada que este módulo recusa.
@@ -389,6 +400,11 @@ class IntelligenceService:
         resposta legítima.
         """
         recomendacoes: list[Recomendacao] = []
+        # Temas já cobertos. Duas recomendações sobre a mesma coisa gastam a
+        # atenção de quem lê e sugerem que o painel não sabe o que está
+        # dizendo — foi o que aconteceu: a tarefa em aberto vinha primeiro e o
+        # indicador de tarefas repetia logo abaixo.
+        temas: set[str] = set()
 
         # 1. O que você deixou escrito.
         ultima = self.session.execute(
@@ -406,6 +422,7 @@ class IntelligenceService:
                     onde="session",
                 )
             )
+            temas.add("sessao")
 
         # 2. A tarefa que você abriu, mais prioritária primeiro.
         tarefa = self.session.execute(
@@ -426,6 +443,7 @@ class IntelligenceService:
                     onde="session",
                 )
             )
+            temas.add("tarefas")
 
         # 3. Uma incoerência que o painel mediu vale mais que um indicador
         #    baixo: ela quebra o próprio painel, e o conserto é pequeno.
@@ -437,20 +455,24 @@ class IntelligenceService:
                     onde="server",
                 )
             )
+            temas.add("ambiente")
 
         # 4. O indicador medido mais baixo que tenha o que sugerir.
         medidos = [
             i
             for i in self.score(project).indicadores
-            if i.nota is not None and i.sugestao and i.nota < 70
+            if i.nota is not None and i.sugestao and i.nota < 70 and i.chave not in temas
         ]
         if medidos:
             pior = min(medidos, key=lambda i: i.nota or 0)
             recomendacoes.append(
                 Recomendacao(
-                    titulo=pior.sugestao,
-                    porque=f"{pior.rotulo} está em {pior.nota}: {pior.evidencia}",
-                    onde="intelligence",
+                    # A sugestão do indicador é a ação; o rótulo diz do que se
+                    # trata. Sem o rótulo na frente, "A aba lista as abertas por
+                    # prioridade" aparecia como se fosse a ação a executar.
+                    titulo=f"{pior.rotulo}: {pior.sugestao}",
+                    porque=f"{pior.rotulo} está em {pior.nota}. {pior.evidencia}",
+                    onde=_ONDE_POR_INDICADOR.get(pior.chave, "intelligence"),
                 )
             )
 

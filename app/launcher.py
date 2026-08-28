@@ -271,6 +271,63 @@ def porta_registrada(base: Path) -> int | None:
     return porta if isinstance(porta, int) and 1 <= porta <= 65535 else None
 
 
+def trazer_janela_para_frente(pid: int) -> bool:
+    """Traz a janela daquele processo ao topo. `False` se ele não tem janela.
+
+    Sem isto, clicar no atalho com o painel aberto abria uma **aba do
+    navegador** — duas telas do mesmo painel, e a janela nativa continuava
+    escondida atrás de tudo. O navegador vira alternativa, não resposta padrão.
+
+    Só Windows, que é onde o executável roda. Em qualquer outro lugar devolve
+    `False` e o navegador assume.
+    """
+    if sys.platform != "win32":
+        return False
+
+    try:
+        user32 = ctypes.windll.user32
+    except AttributeError:  # pragma: no cover - só ocorre fora do Windows
+        return False
+
+    encontrada: list[int] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    def _visitar(hwnd, _lparam):  # type: ignore[no-untyped-def]
+        dono = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(dono))
+        if dono.value == pid and user32.IsWindowVisible(hwnd):
+            encontrada.append(hwnd)
+            return False
+        return True
+
+    with contextlib.suppress(OSError, ValueError):
+        user32.EnumWindows(_visitar, 0)
+
+    if not encontrada:
+        return False
+
+    janela = encontrada[0]
+    SW_RESTORE = 9
+    with contextlib.suppress(OSError, ValueError):
+        user32.ShowWindow(janela, SW_RESTORE)
+        user32.SetForegroundWindow(janela)
+        return True
+    return False
+
+
+def pid_registrado(base: Path) -> int | None:
+    """O PID anotado pela instância viva, para achar a janela dela."""
+    import json
+
+    try:
+        dados = json.loads((base / ARQUIVO_DE_EXECUCAO).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+    pid = dados.get("pid") if isinstance(dados, dict) else None
+    return pid if isinstance(pid, int) and pid > 0 else None
+
+
 def encontrar_painel_no_ar(preferida: int, base: Path | None = None) -> int | None:
     """Em qual porta já existe um DevCockpit, se houver algum.
 
@@ -450,6 +507,15 @@ def main(argv: list[str] | None = None) -> int:
     aberto = encontrar_painel_no_ar(args.port, base)
     if aberto is not None:
         url = f"http://127.0.0.1:{aberto}"
+        pid = pid_registrado(base)
+        # A janela primeiro. Abrir o navegador com a janela nativa aberta dá
+        # duas telas do mesmo painel, e deixa escondida justamente a que a
+        # pessoa clicou para ver.
+        if pid is not None and trazer_janela_para_frente(pid):
+            _dizer("  o DevCockpit já está aberto; janela trazida para a frente")
+            return 0
+        # Sem janela — quem subiu em modo servidor, por exemplo: o navegador é
+        # a única porta de entrada, e ficar sem nada seria pior.
         _dizer(f"  o DevCockpit já está aberto em {url}")
         webbrowser.open(url)
         return 0

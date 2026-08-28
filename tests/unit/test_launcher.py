@@ -376,3 +376,62 @@ def test_a_instancia_que_sobe_anota_onde_esta(
         (tmp_path / launcher.ARQUIVO_DE_EXECUCAO).read_text(encoding="utf-8")
     )
     assert anotado["porta"] == 8899
+
+
+def test_janela_existente_vem_para_a_frente_em_vez_do_navegador(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abrir o navegador com a janela nativa aberta dá duas telas do mesmo painel.
+
+    E deixa escondida justamente a que a pessoa clicou para ver. O navegador é
+    alternativa, não resposta padrão.
+    """
+    import json
+
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    (tmp_path / launcher.ARQUIVO_DE_EXECUCAO).write_text(
+        json.dumps({"pid": 4242, "porta": 8765}), encoding="utf-8"
+    )
+    monkeypatch.setattr(launcher, "porta_disponivel", lambda _porta: False)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: True)
+
+    trazidos: list[int] = []
+
+    def trazer(pid: int) -> bool:
+        trazidos.append(pid)
+        return True
+
+    monkeypatch.setattr(launcher, "trazer_janela_para_frente", trazer)
+
+    abertos: list[str] = []
+    monkeypatch.setattr(launcher.webbrowser, "open", abertos.append)
+
+    assert launcher.main([]) == 0
+    assert trazidos == [4242]
+    assert abertos == [], "com a janela na frente, o navegador seria uma segunda tela"
+
+
+def test_instancia_sem_janela_ainda_abre_o_navegador(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Quem subiu em modo servidor não tem janela.
+
+    Ficar sem nada seria pior do que a aba do navegador — foi exatamente o que
+    aconteceu na máquina: o painel rodando sem janela, o atalho recusando abrir
+    um segundo, e nenhuma tela para o usuário.
+    """
+    import json
+
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    (tmp_path / launcher.ARQUIVO_DE_EXECUCAO).write_text(
+        json.dumps({"pid": 4242, "porta": 8765}), encoding="utf-8"
+    )
+    monkeypatch.setattr(launcher, "porta_disponivel", lambda _porta: False)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: True)
+    monkeypatch.setattr(launcher, "trazer_janela_para_frente", lambda _pid: False)
+
+    abertos: list[str] = []
+    monkeypatch.setattr(launcher.webbrowser, "open", abertos.append)
+
+    assert launcher.main([]) == 0
+    assert abertos == ["http://127.0.0.1:8765"]

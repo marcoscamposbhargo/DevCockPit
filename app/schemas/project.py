@@ -213,3 +213,27 @@ class ErrorBody(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorBody
+
+class IndicadorOut(BaseModel):
+    """Uma dimensão do Health Score.
+
+    `nota` é `None` quando não houve dado para calcular — e a tela mostra "não
+    medido", nunca zero. Zero é uma afirmação sobre o projeto; ausência é uma
+    afirmação sobre o que o painel sabe.
+    """
+
+    chave: str
+    rotulo: str
+    nota: int | None = None
+    evidencia: str
+    sugestao: str = ""
+
+
+class HealthScoreOut(BaseModel):
+    project_id: str
+    #: Média dos indicadores medidos. `None` quando nenhum foi.
+    score: int | None = None
+    #: "4 de 6" — quanto do score foi de fato calculado. Sem isto, dois números
+    #: iguais com bases diferentes pareceriam a mesma coisa.
+    cobertura: str
+    indicadores: list[IndicadorOut] = Field(default_factory=list)

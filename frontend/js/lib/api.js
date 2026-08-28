@@ -211,6 +211,7 @@ export const api = {
       opcoes
     ),
 
+  intelligence: (id) => request('GET', `/projects/${encodeURIComponent(id)}/intelligence`),
   globalMemory: (kind) => request('GET', '/ai/memory', { params: { kind } }),
   createGlobalMemory: (body) => request('POST', '/ai/memory', { body }),
   confirmMemory: (memoryId) => request('POST', `/ai/memory/${memoryId}/confirm`),

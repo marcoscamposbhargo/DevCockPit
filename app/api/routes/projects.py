@@ -17,6 +17,8 @@ from app.api.deps import (
 from app.models.project import Project
 from app.schemas.git import DetectionResult, PortDriftOut
 from app.schemas.project import (
+    HealthScoreOut,
+    IndicadorOut,
     ProjectCreate,
     ProjectDetail,
     ProjectList,
@@ -26,6 +28,7 @@ from app.schemas.project import (
 from app.services.dashboard_service import avaliar_dono
 from app.services.dev_server_service import DevServerService
 from app.services.health_service import HealthService
+from app.services.intelligence_service import IntelligenceService
 from app.services.port_discovery_service import PortDiscoveryService
 from app.services.project_service import ProjectService
 
@@ -221,5 +224,35 @@ def detect_project(
         port_drift=[
             PortDriftOut(key=d.key, label=d.label, declared=d.declared, detected=d.detected)
             for d in diff.port_drift
+        ],
+    )
+
+@router.get("/{project_id}/intelligence", response_model=HealthScoreOut)
+def project_intelligence(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> HealthScoreOut:
+    """Health Score do projeto, indicador a indicador.
+
+    Rota de projeto, e não de lista, de propósito: ela lê disco e agrega várias
+    consultas. Fazer isso por card na listagem é exatamente o que a NFR-010
+    proíbe.
+    """
+    project = service.get(project_id)
+    resultado = IntelligenceService(service.session).score(project)
+
+    return HealthScoreOut(
+        project_id=resultado.project_id,
+        score=resultado.score,
+        cobertura=resultado.cobertura,
+        indicadores=[
+            IndicadorOut(
+                chave=i.chave,
+                rotulo=i.rotulo,
+                nota=i.nota,
+                evidencia=i.evidencia,
+                sugestao=i.sugestao,
+            )
+            for i in resultado.indicadores
         ],
     )

@@ -10,6 +10,7 @@ import { renderDockerPanel } from './docker-panel.js';
 import { renderGitPanel } from './git-panel.js';
 import { renderManifestPanel } from './manifest-panel.js';
 import { renderChatPanel } from './chat-panel.js';
+import { renderIntelligencePanel } from './intelligence-panel.js';
 import { renderServerPanel } from './server-panel.js';
 import { renderSessionPanel } from './session-panel.js';
 import { renderServicesPanel } from './services-panel.js';
@@ -20,6 +21,9 @@ const TABS = [
   // terminar o dia, e a que responde "onde eu parei?".
   { key: 'session', label: 'Sessão' },
   { key: 'ai', label: 'IA' },
+  // Logo depois de IA: o score responde "como está este projeto?", que é a
+  // pergunta que se faz antes de decidir o que fazer nele.
+  { key: 'intelligence', label: 'Saúde' },
   // Server vem antes de Docker porque é a aba do dia a dia: subir o backend e
   // ler o que ele cuspiu acontece dezenas de vezes; mexer em container, não.
   { key: 'server', label: 'Server' },
@@ -310,6 +314,8 @@ export async function renderProject(container, params, query) {
     await renderSessionPanel(panel, project);
   } else if (activeTab === 'ai') {
     await renderChatPanel(panel, project);
+  } else if (activeTab === 'intelligence') {
+    await renderIntelligencePanel(panel, project);
   } else if (activeTab === 'server') {
     await renderServerPanel(panel);
   } else if (activeTab === 'git') {

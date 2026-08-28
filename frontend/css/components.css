@@ -2816,3 +2816,97 @@
   color: var(--fg-muted);
   font-size: var(--fs-xs);
 }
+
+/* --- Health Score (Fase 4) --------------------------------------------- */
+
+.score-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.score-head__number {
+  font-size: 2.75rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--status-unknown);
+}
+
+.score-head[data-kind='on'] .score-head__number { color: var(--status-running); }
+.score-head[data-kind='partial'] .score-head__number { color: var(--status-warning); }
+.score-head[data-kind='off'] .score-head__number { color: var(--status-error); }
+
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.score-item {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.score-item__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.score-item__label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.score-item__value {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+.score-item[data-kind='on'] .score-item__value { color: var(--status-running); }
+.score-item[data-kind='partial'] .score-item__value { color: var(--status-warning); }
+.score-item[data-kind='off'] .score-item__value { color: var(--status-error); }
+
+/* A trilha do indicador não medido fica **vazia e tracejada**: barra cheia de
+   cor nenhuma ainda se leria como zero, que é o oposto do que se quer dizer. */
+.score-item__track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  overflow: hidden;
+  margin-bottom: var(--sp-2);
+}
+
+.score-item[data-kind='unknown'] .score-item__track {
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+.score-item__fill {
+  height: 100%;
+  background: var(--status-unknown);
+}
+
+.score-item[data-kind='on'] .score-item__fill { background: var(--status-running); }
+.score-item[data-kind='partial'] .score-item__fill { background: var(--status-warning); }
+.score-item[data-kind='off'] .score-item__fill { background: var(--status-error); }
+
+.score-item__why {
+  font-size: var(--fs-xs);
+  color: var(--fg-secondary);
+  margin: 0;
+}
+
+.score-item__hint {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  margin: var(--sp-2) 0 0;
+}

@@ -417,8 +417,16 @@ export function dockerChip(project, { running = null, onChanged } = {}) {
   if (!hasDocker(project)) return null;
 
   const noAr = typeof running === 'number' && running > 0;
-  const texto =
-    running === null ? 'containers' : noAr ? `${running} no ar` : 'containers parados';
+  // Sem número. O que chega aqui é a contagem de **serviços que respondem**, e
+  // o chip fala de **containers** — dois fatos diferentes que coincidem por
+  // acaso quando todo serviço do projeto vive em container. Num projeto com
+  // aplicação nativa e um container, ele dizia "2 no ar" para um container só.
+  //
+  // Contar container de verdade custaria um `docker ps` por card, que é o que
+  // a NFR-010 proíbe na lista. Entre um número preciso e errado e uma
+  // afirmação verdadeira sem número, a segunda. O card já mostra "5/6 online"
+  // logo acima, então nada se perde.
+  const texto = running === null ? 'containers' : noAr ? 'ambiente no ar' : 'containers parados';
 
   const chip = el(
     'button',
@@ -429,7 +437,7 @@ export function dockerChip(project, { running = null, onChanged } = {}) {
       disabled: !noAr,
       title: noAr
         ? 'Derrubar os containers deste projeto.'
-        : 'Nenhum container deste projeto está no ar.',
+        : 'Nada deste projeto respondeu na última verificação.',
       'aria-label': noAr
         ? `Derrubar os containers de ${project.name}`
         : `${project.name}: containers parados`,

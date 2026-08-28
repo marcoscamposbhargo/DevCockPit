@@ -1257,6 +1257,13 @@
   background: var(--status-error);
 }
 
+/* Sem medição não é "parado": é "não sei". O ponto vazado diz isso sem
+   ocupar espaço nenhum a mais. */
+.rail-card[data-state='unknown'] .rail-card__dot {
+  background: transparent;
+  border: 1px solid var(--status-unknown);
+}
+
 .rail-card__name {
   min-width: 0;
   overflow: hidden;

@@ -533,3 +533,34 @@ def test_trocar_porta_de_servico_fica_na_auditoria(client: TestClient, projeto: 
     assert entrada["action"] == "services.replace"
     assert entrada["project_id"] == projeto
     assert "3000" in entrada["message"] and "3010" in entrada["message"]
+
+
+def test_dashboard_diz_quem_ja_foi_medido(client, sample_project) -> None:  # type: ignore[no-untyped-def]
+    """"Nenhum serviço respondeu" e "ninguém perguntou" são fatos diferentes.
+
+    O serviço calculava a lista, o schema a declarava, e a rota esquecia de
+    passá-la: o campo chegava sempre vazio, e toda tela lia "ninguém mediu" —
+    inclusive para projeto recém-verificado. A distinção existia no código e
+    não existia na tela.
+    """
+    from app.services.health_service import HealthResult
+
+    criado = client.post(
+        "/api/projects", json={"path": str(sample_project)}, headers=WRITE_HEADERS
+    ).json()
+    client.put(
+        f"/api/projects/{criado['id']}/services",
+        json={"items": [{"key": "api", "label": "API", "port": 8123, "health_kind": "TCP"}]},
+        headers=WRITE_HEADERS,
+    )
+
+    client.app.state.health_service.cache.set(
+        f"health:{criado['id']}:api",
+        HealthResult(project_id=criado["id"], key="api", state="OFFLINE"),
+    )
+
+    dados = client.get("/api/dashboard").json()
+
+    assert criado["id"] in dados["checked_project_ids"], (
+        "medido e sem resposta é 'parado', não 'não verificado'"
+    )

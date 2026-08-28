@@ -67,9 +67,18 @@ function railActions(project, servico) {
   ]);
 }
 
-function railCard(project, { online, total, servico, git, onChanged }) {
+function railCard(project, { online, total, medido, servico, git, onChanged }) {
   const ligado = online > 0;
-  const estado = project.status === 'MISSING' ? 'missing' : ligado ? 'on' : 'off';
+  // Sem medição não há "desligado": há "não sei". O ponto fica neutro em vez de
+  // afirmar que o projeto está parado.
+  const estado =
+    project.status === 'MISSING'
+      ? 'missing'
+      : ligado
+        ? 'on'
+        : medido || total === 0
+          ? 'off'
+          : 'unknown';
 
   return el('article', { class: 'rail-card', dataset: { state: estado } }, [
     el('div', { class: 'rail-card__head' }, [
@@ -86,8 +95,13 @@ function railCard(project, { online, total, servico, git, onChanged }) {
       total > 0
         ? el('span', {
             class: 'rail-card__count',
-            text: `${online}/${total} online`,
-            title: `${online} de ${total} serviço(s) responderam na última verificação.`,
+            text: medido
+              ? `${online}/${total} online`
+              : `${total} serviço(s) · não verificado`,
+            title: medido
+              ? `${online} de ${total} serviço(s) responderam na última verificação.`
+              : 'O verificador roda para projetos fixados e recentes. Este ainda não foi ' +
+                'medido — abra o projeto para ver o estado agora.',
           })
         : el('span', { class: 'rail-card__count', text: 'sem serviço declarado' }),
       git && git.dirty_count > 0
@@ -115,10 +129,21 @@ function railSection(titulo, cards, { dica = null } = {}) {
 }
 
 /** Cruza a lista de projetos com o cache do dashboard. */
-function combinar(projetos, dashboard) {
+/** Cruza a lista de projetos com o cache do dashboard.
+ *
+ * Exportada para teste: é aqui que se decide o que a lateral **afirma** sobre
+ * cada projeto, e afirmação errada nesta função aparece como "0/1 online" num
+ * projeto que está no ar.
+ */
+export function combinar(projetos, dashboard) {
   const online = new Map();
   const servico = new Map();
   const git = new Map();
+  // Quem o verificador já mediu. Fora desta lista, "0 online" seria afirmação
+  // que ninguém apurou — o poller só cobre projeto fixado e recente. A página
+  // de Projects já fazia esta distinção; a lateral, não, e era ela que dizia
+  // "0/1 online · Desligado" para um projeto com os containers de pé.
+  const medidos = new Set(dashboard?.checked_project_ids ?? []);
 
   for (const item of dashboard?.active_services ?? []) {
     if (item.proven === false) continue;
@@ -135,6 +160,7 @@ function combinar(projetos, dashboard) {
     project,
     online: online.get(project.id) ?? 0,
     total: project.services_total ?? 0,
+    medido: medidos.has(project.id),
     servico: servico.get(project.id) ?? null,
     git: git.get(project.id) ?? null,
   }));

@@ -180,6 +180,12 @@ def porta_disponivel(porta: int) -> bool:
     return True
 
 
+#: Quantas portas o painel considera a partir da preferida. Uma constante, e
+#: não dois números iguais em lugares diferentes: a busca por um painel já
+#: aberto precisa cobrir exatamente onde a escolha pode tê-lo colocado.
+FAIXA_DE_PORTAS = 20
+
+
 def escolher_porta(preferida: int) -> int | None:
     """A porta preferida, ou a primeira livre depois dela.
 
@@ -187,13 +193,13 @@ def escolher_porta(preferida: int) -> int | None:
     `WinError 10048` — que para quem abriu com dois cliques é indistinguível de
     "o programa não funciona".
     """
-    for porta in range(preferida, preferida + 20):
+    for porta in range(preferida, preferida + FAIXA_DE_PORTAS):
         if porta_disponivel(porta):
             return porta
     return None
 
 
-def painel_ja_no_ar(porta: int) -> bool:
+def painel_ja_no_ar(porta: int, timeout_s: float = 0.5) -> bool:
     """Já existe um DevCockpit atendendo nesta porta?
 
     A pergunta importa porque a resposta muda o que fazer. Porta ocupada por
@@ -216,13 +222,78 @@ def painel_ja_no_ar(porta: int) -> bool:
 
     try:
         with urllib.request.urlopen(
-            f"http://127.0.0.1:{porta}/api/health", timeout=1.5
+            f"http://127.0.0.1:{porta}/api/health", timeout=timeout_s
         ) as resposta:
             dados = json.loads(resposta.read().decode("utf-8", errors="replace"))
     except (OSError, urllib.error.URLError, ValueError):
         return False
 
     return isinstance(dados, dict) and "tools" in dados and "allowed_roots" in dados
+
+
+#: Onde a instância viva anuncia em que porta está. Fica no diretório de dados,
+#: que é compartilhado por qualquer instância — é o que torna a checagem
+#: independente de porta.
+ARQUIVO_DE_EXECUCAO = "runtime.json"
+
+
+def registrar_execucao(base: Path, porta: int) -> None:
+    """Anota porta e PID desta instância, para a próxima abertura encontrá-la.
+
+    Sem isto, achar o painel já aberto dependia de adivinhar a porta. Varrer
+    uma faixa a partir da preferida cobre o caso comum e falha no caso real:
+    quem abre com `--port 8790` fica fora de qualquer faixa razoável, e a
+    abertura seguinte sobe uma segunda instância contra o mesmo banco.
+
+    Falha ao escrever não impede o painel de subir. Perder a anotação degrada a
+    checagem para a varredura; não conseguir abrir o painel por causa dela
+    seria trocar um defeito por outro pior.
+    """
+    import json
+
+    with contextlib.suppress(OSError):
+        (base / ARQUIVO_DE_EXECUCAO).write_text(
+            json.dumps({"pid": os.getpid(), "porta": porta}),
+            encoding="utf-8",
+        )
+
+
+def porta_registrada(base: Path) -> int | None:
+    """A porta anotada pela instância anterior, se o arquivo existir e servir."""
+    import json
+
+    try:
+        dados = json.loads((base / ARQUIVO_DE_EXECUCAO).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+    porta = dados.get("porta") if isinstance(dados, dict) else None
+    return porta if isinstance(porta, int) and 1 <= porta <= 65535 else None
+
+
+def encontrar_painel_no_ar(preferida: int, base: Path | None = None) -> int | None:
+    """Em qual porta já existe um DevCockpit, se houver algum.
+
+    Duas fontes, nesta ordem: a porta que a instância viva **anotou**, e depois
+    a varredura da faixa. A anotação cobre quem subiu em porta arbitrária; a
+    varredura cobre instância de versão antiga, que não anotava nada.
+
+    A anotação sozinha não basta como prova: o arquivo sobrevive a um
+    encerramento abrupto. Quem decide é sempre a resposta do `/api/health`.
+
+    Só porta ocupada é sondada; porta livre não tem ninguém para responder. Na
+    prática isso é uma ou duas sondagens, não vinte.
+    """
+    anotada = porta_registrada(base) if base is not None else None
+    if anotada is not None and not porta_disponivel(anotada) and painel_ja_no_ar(anotada):
+        return anotada
+
+    for porta in range(preferida, preferida + FAIXA_DE_PORTAS):
+        if porta == anotada or porta_disponivel(porta):
+            continue
+        if painel_ja_no_ar(porta):
+            return porta
+    return None
 
 
 def abrir_navegador_quando_subir(url: str, timeout_s: float = 20.0) -> None:
@@ -374,9 +445,11 @@ def main(argv: list[str] | None = None) -> int:
     for criado in semear_configuracao(base):
         _dizer(f"  criado: {criado}")
 
-    # Painel já aberto: traz aquele para a frente em vez de subir um segundo.
-    if not porta_disponivel(args.port) and painel_ja_no_ar(args.port):
-        url = f"http://127.0.0.1:{args.port}"
+    # Painel já aberto, em qualquer porta da faixa: traz aquele para a frente
+    # em vez de subir um segundo contra o mesmo banco.
+    aberto = encontrar_painel_no_ar(args.port, base)
+    if aberto is not None:
+        url = f"http://127.0.0.1:{aberto}"
         _dizer(f"  o DevCockpit já está aberto em {url}")
         webbrowser.open(url)
         return 0
@@ -399,6 +472,8 @@ def main(argv: list[str] | None = None) -> int:
         aplicar_migracoes()
     except Exception as erro:  # noqa: BLE001 - a mensagem é o produto aqui
         return _falhar(f"Erro ao preparar o banco:\n\n{erro}")
+
+    registrar_execucao(base, porta)
 
     url = f"http://127.0.0.1:{porta}"
     _dizer(f"  no ar em {url}")

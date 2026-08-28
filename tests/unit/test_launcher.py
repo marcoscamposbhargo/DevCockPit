@@ -260,3 +260,119 @@ def test_porta_ocupada_por_estranho_faz_o_painel_mudar_de_porta(
 
     assert launcher.main(["--no-browser"]) == 0
     assert registrado["port"] == 8766
+
+
+def test_painel_aberto_fora_da_porta_preferida_tambem_conta(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """O painel não fica sempre na 8765.
+
+    Quando a porta preferida está ocupada no momento em que ele sobe, ele vai
+    para a próxima livre — 8790, no caso real. Liberada a 8765 depois, a
+    checagem que olhava **só** a preferida a encontrava livre e subia uma
+    segunda instância: o defeito que ela existia para impedir, intacto.
+
+    Reproduzido na máquina antes de existir este teste: duas instâncias, dois
+    pollers contra o mesmo SQLite.
+    """
+    import json
+
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    # A instância viva anotou onde está. 8790 fica fora de qualquer faixa
+    # razoável a partir da 8765 — é por isso que a anotação existe.
+    (tmp_path / launcher.ARQUIVO_DE_EXECUCAO).write_text(
+        json.dumps({"pid": 4242, "porta": 8790}), encoding="utf-8"
+    )
+    monkeypatch.setattr(launcher, "porta_disponivel", lambda porta: porta != 8790)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda porta: porta == 8790)
+
+    def nao_deveria(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("nao pode subir um segundo servidor")
+
+    monkeypatch.setattr(launcher, "aplicar_migracoes", nao_deveria)
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", nao_deveria)
+
+    abertos: list[str] = []
+    monkeypatch.setattr(launcher.webbrowser, "open", abertos.append)
+
+    assert launcher.main([]) == 0
+    assert abertos == ["http://127.0.0.1:8790"]
+
+
+def test_porta_ocupada_por_estranho_no_meio_da_faixa_nao_engana(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Varrer a faixa não pode transformar qualquer servidor em "o painel"."""
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    monkeypatch.setattr(launcher, "porta_disponivel", lambda porta: porta not in (8765, 8766))
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: False)
+    monkeypatch.setattr(launcher, "aplicar_migracoes", lambda: None)
+
+    registrado: dict[str, object] = {}
+
+    def uvicorn_falso(app, host, port, log_level):  # type: ignore[no-untyped-def]
+        registrado["port"] = port
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", uvicorn_falso)
+
+    assert launcher.main(["--no-browser"]) == 0
+    assert registrado["port"] == 8767, "as duas ocupadas foram puladas, e nada foi confundido"
+
+
+def test_anotacao_velha_nao_engana(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """O arquivo sobrevive a um encerramento abrupto.
+
+    Confiar nele sem perguntar nada mandaria a pessoa para uma porta morta e
+    deixaria o painel sem subir. Quem decide é sempre a resposta do
+    `/api/health`.
+    """
+    import json
+
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    (tmp_path / launcher.ARQUIVO_DE_EXECUCAO).write_text(
+        json.dumps({"pid": 4242, "porta": 8790}), encoding="utf-8"
+    )
+    monkeypatch.setattr(launcher, "porta_disponivel", lambda _porta: True)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: False)
+    monkeypatch.setattr(launcher, "aplicar_migracoes", lambda: None)
+
+    registrado: dict[str, object] = {}
+
+    def uvicorn_falso(app, host, port, log_level):  # type: ignore[no-untyped-def]
+        registrado["port"] = port
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", uvicorn_falso)
+
+    assert launcher.main(["--no-browser"]) == 0
+    assert registrado["port"] == 8765, "subiu normalmente, ignorando a anotação morta"
+
+
+def test_a_instancia_que_sobe_anota_onde_esta(
+    tmp_path: Path, ambiente_limpo: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sem a anotação, a próxima abertura teria de adivinhar a porta."""
+    import json
+
+    monkeypatch.setattr(launcher, "diretorio_de_dados", lambda: tmp_path)
+    monkeypatch.setattr(launcher, "escolher_porta", lambda _preferida: 8899)
+    monkeypatch.setattr(launcher, "painel_ja_no_ar", lambda _porta: False)
+    monkeypatch.setattr(launcher, "aplicar_migracoes", lambda: None)
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+
+    assert launcher.main(["--no-browser"]) == 0
+
+    anotado = json.loads(
+        (tmp_path / launcher.ARQUIVO_DE_EXECUCAO).read_text(encoding="utf-8")
+    )
+    assert anotado["porta"] == 8899

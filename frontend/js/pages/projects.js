@@ -3,7 +3,7 @@ import { api, ApiError } from '../lib/api.js';
 import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
 import { icon } from '../lib/icons.js';
-import { dockerChip, hasDocker, powerToggle } from '../lib/power.js';
+import { aplicacaoNoAr, dockerChip, hasDocker, powerToggle } from '../lib/power.js';
 import {
   emptyState,
   pageHeader,
@@ -299,11 +299,10 @@ function projectCard(project, { onDelete, onTogglePin, onPowerChanged, onDetect,
               }),
             ])
           : powerToggle(project, {
-              // `app_running` vem do servidor e fala da **aplicação**. Antes
-              // daqui saía "algum serviço responde", e num projeto cujo banco
-              // vive em container o banco continua respondendo com a aplicação
-              // parada: o botão anunciava "Ligado" logo depois de desligar.
-              on: project.app_running ?? (signals.online.get(project.id) ?? 0) > 0,
+              // A regra mora em `power.js`, e a lateral usa a mesma: as duas
+              // telas mostram o mesmo botão e não podem discordar sobre o
+              // estado dele.
+              on: aplicacaoNoAr(project, { online: signals.online.get(project.id) ?? 0 }),
               onChanged: onPowerChanged,
             }),
         // O chip só sabe se **algum** serviço do projeto responde — o dashboard

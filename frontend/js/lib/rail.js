@@ -11,7 +11,7 @@
 import { api } from './api.js';
 import { el, mount } from './dom.js';
 import { icon } from './icons.js';
-import { hasDocker, powerToggle } from './power.js';
+import { aplicacaoNoAr, hasDocker, powerToggle } from './power.js';
 import { toggleRail } from './shell.js';
 import { showError, toast } from './ui.js';
 
@@ -68,7 +68,9 @@ function railActions(project, servico) {
 }
 
 function railCard(project, { online, total, medido, servico, git, onChanged }) {
-  const ligado = online > 0;
+  // A mesma pergunta que a página de Projects faz, com a mesma resposta. Aqui
+  // era "algum serviço responde", que dizia "Ligado" com só o banco de pé.
+  const ligado = aplicacaoNoAr(project, { online });
   // Sem medição não há "desligado": há "não sei". O ponto fica neutro em vez de
   // afirmar que o projeto está parado.
   const estado =

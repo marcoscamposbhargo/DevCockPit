@@ -301,6 +301,33 @@ const DICA = {
  * @param {boolean} options.compact    só o ícone, para o trilho lateral
  * @param {Function} options.onChanged chamado depois que a operação termina
  */
+/** A aplicação deste projeto está no ar?
+ *
+ * Uma pergunta, uma resposta — e é a resposta que o **botão** dá, então ela
+ * precisa valer para as duas telas que o mostram. Estavam divergindo:
+ *
+ * - a página de Projects olhava só `app_running`, o **processo nativo**, e
+ *   dizia "Desligado" para uma aplicação servida por container;
+ * - a barra lateral olhava "algum serviço responde", e diria "Ligado" com só o
+ *   Postgres atendendo e o backend parado — a confusão do caso ZAPBOT, que o
+ *   chip do Docker existe para evitar.
+ *
+ * A ordem é de evidência: o que foi **medido** sobre a aplicação primeiro
+ * (`app_online`), o processo nativo depois, e "algum serviço" só como último
+ * recurso — para quem chamar isto sem os campos da listagem.
+ *
+ * O botão para aplicação em container também (`environmentDown` devolve
+ * `stopped: 'docker'`), então dizer "Desligado" ali não era só impreciso: era
+ * esconder o desligar de quem queria desligar.
+ */
+export function aplicacaoNoAr(project, { online = 0 } = {}) {
+  if (project.app_online === true) return true;
+  if (project.app_running === true) return true;
+  if (project.app_online === false || project.app_running === false) return false;
+  return online > 0;
+}
+
+
 export function powerToggle(project, { on = false, compact = false, onChanged } = {}) {
   const missing = project.status === 'MISSING';
   const docker = hasDocker(project);

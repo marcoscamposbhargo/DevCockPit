@@ -51,3 +51,26 @@ test('serviço provado conta', () => {
   assert.equal(linha.online, 1);
   assert.equal(linha.medido, true);
 });
+
+const { aplicacaoNoAr } = await import(
+  new URL('../../frontend/js/lib/power.js', import.meta.url).href
+);
+
+test('aplicação em container conta como no ar', () => {
+  // A página de Projects dizia "Desligado" para um backend servido por
+  // container, porque olhava só o processo nativo — e o botão desliga
+  // container também.
+  assert.equal(aplicacaoNoAr({ app_running: false, app_online: true }), true);
+});
+
+test('banco de pé com a aplicação parada não é "Ligado"', () => {
+  // A lateral dizia "Ligado" nesse caso: contava qualquer serviço. É a
+  // confusão do ZAPBOT, que o chip do Docker existe para evitar.
+  assert.equal(aplicacaoNoAr({ app_running: false, app_online: false }, { online: 3 }), false);
+});
+
+test('sem medição nenhuma, "algum serviço responde" ainda vale', () => {
+  // Último recurso, para quem chamar isto sem os campos da listagem.
+  assert.equal(aplicacaoNoAr({}, { online: 1 }), true);
+  assert.equal(aplicacaoNoAr({}, { online: 0 }), false);
+});

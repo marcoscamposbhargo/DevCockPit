@@ -564,3 +564,41 @@ def test_dashboard_diz_quem_ja_foi_medido(client, sample_project) -> None:  # ty
     assert criado["id"] in dados["checked_project_ids"], (
         "medido e sem resposta é 'parado', não 'não verificado'"
     )
+
+
+def test_a_contagem_de_servicos_no_ar_nao_depende_de_um_teto_de_exibicao(
+    session, workspace: Path
+) -> None:  # type: ignore[no-untyped-def]
+    """Havia um `[:20]` no serviço, e ele não era só de exibição.
+
+    A barra lateral e o card de projeto **contam** a partir desta lista. Com
+    projetos suficientes no ar, um projeto inteiramente de pé apareceria como
+    "3/6 online" — número errado, e nada na tela dizendo que algo foi omitido.
+    """
+    from app.core.cache import TTLCache
+    from app.models.project import Project
+    from app.models.project import ProjectService as ProjectServiceModel
+    from app.services.dashboard_service import DashboardService
+    from app.services.health_service import HealthResult, HealthService, HealthState
+
+    saude = HealthService(cache=TTLCache(ttl_seconds=300))
+    for indice in range(8):
+        pasta = workspace / f"p{indice}"
+        pasta.mkdir()
+        projeto = Project(id=f"p{indice}", name=f"P{indice}", path=str(pasta))
+        for porta in range(4):
+            chave = f"s{porta}"
+            projeto.services.append(
+                ProjectServiceModel(key=chave, label=chave, port=4000 + indice * 10 + porta)
+            )
+            saude.cache.set(
+                f"health:{projeto.id}:{chave}",
+                HealthResult(project_id=projeto.id, key=chave, state=HealthState.ONLINE),
+            )
+        session.add(projeto)
+    session.flush()
+
+    servico = DashboardService(session=session, cache=TTLCache(ttl_seconds=0), health=saude)
+    dashboard = servico.build()
+
+    assert len(dashboard.active_services) == 32, "nada pode ser omitido em silêncio"

@@ -391,7 +391,10 @@ export async function renderDashboard(container) {
         // Duas contagens diferentes na mesma tela para a mesma pergunta é como
         // se perde a confiança no painel inteiro.
         count: data.active_services.filter((s) => s.proven !== false).length,
-        body: activeServices(data.active_services),
+        // A lista pode ser longa; a tela mostra as primeiras e o cabeçalho
+        // continua contando todas. O corte é de exibição, e por isso mora aqui
+        // e não no serviço — quem conta são outras telas.
+        body: activeServices(data.active_services.slice(0, 20)),
       }),
       panel({
         title: 'Portas em uso',
@@ -406,7 +409,7 @@ export async function renderDashboard(container) {
         ? panel({
             title: 'Alterações pendentes',
             count: data.pending_changes.length,
-            body: pendingChanges(data.pending_changes),
+            body: pendingChanges(data.pending_changes.slice(0, 10)),
           })
         : null,
       panel({

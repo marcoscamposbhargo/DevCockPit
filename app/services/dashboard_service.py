@@ -222,7 +222,10 @@ class DashboardService:
                     )
                 )
 
-        return sorted(pendentes, key=lambda item: item.dirty_count, reverse=True)[:10]
+        # Sem corte, pela mesma razão: a página de Projects lê esta lista para o
+        # chip de Git de **cada** card, e um projeto fora dos dez primeiros
+        # aparecia sem branch nenhuma, como se estivesse limpo.
+        return sorted(pendentes, key=lambda item: item.dirty_count, reverse=True)
 
     def _medidos(self, projects: list[Project]) -> list[str]:
         """Quem já passou pelo verificador — leitura de cache, sem tocar a rede.
@@ -279,8 +282,15 @@ class DashboardService:
                 )
 
         # Provados primeiro: é o que a pessoa foi ver.
+        #
+        # Sem corte. Havia um `[:20]` aqui, e ele não era só de exibição: a
+        # barra lateral e o card de projeto **contam** a partir desta lista.
+        # Com projetos suficientes no ar, um projeto inteiramente de pé passaria
+        # a aparecer como "3/6 online" — número errado, sem nada na tela
+        # dizendo que algo foi omitido. Quem limita quantas linhas mostra é a
+        # tela que as mostra.
         ativos.sort(key=lambda item: not item.proven)
-        return ativos[:20]
+        return ativos
 
 
 

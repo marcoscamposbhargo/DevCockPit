@@ -162,9 +162,9 @@ capacidade nova nenhuma (D-A3), verificada por teste.
 
 | # | Item |
 |---|------|
-| 4.1 | Tela Project Intelligence |
-| 4.2 | Health Score com critérios mensuráveis |
-| 4.3 | Recomendação de próxima ação a partir de fatos + memória |
+| 4.1 | ~~Tela Project Intelligence~~ ✅ |
+| 4.2 | ~~Health Score com critérios mensuráveis~~ ✅ |
+| 4.3 | ~~Recomendação de próxima ação a partir de fatos + memória~~ ✅ |
 
 Critérios do score, todos derivados de algo que o painel já mede — **sem número
 inventado**:
@@ -180,6 +180,28 @@ inventado**:
 
 Indicador sem dado **não vira zero**: vira "não medido", e o score agregado diz
 sobre quanto foi calculado. Zero é uma afirmação; ausência não é.
+
+**Critério de saída — Fase 4 verificada em 2026-08-28**, no painel real: o
+AgilContabil abre a aba Saúde com score **67** e "5 de 6 indicador(es)
+medido(s)"; Dívida técnica aparece cinza, fora da média, porque nada foi
+registrado. A próxima ação lista a tarefa aberta e o indicador mais baixo, cada
+uma com o fato que a motiva.
+
+**Seis indicadores, e não os seis da tabela acima linha a linha.** Git ficou de
+fora: `dirty_count` alto é sinal de trabalho em andamento, não de projeto ruim,
+e transformar isso em nota puniria exatamente quem está no meio de uma tarefa.
+Cobertura de teste também: só a existência de arquivo é lida, porque rodar a
+suíte de um projeto alheio para medir saúde é caro e invasivo.
+
+**Média simples, sem peso.** Peso seria a primeira coisa a virar palpite: nada
+nesta máquina diz que documentação vale o dobro de teste.
+
+**A 4.3 não chama modelo**, e isso é decisão. A ordem é de força da evidência: o
+que a pessoa escreveu ao fechar a sessão, a tarefa que ela abriu, uma
+incoerência medida, e por último o indicador mais baixo. A única coisa pior que
+não recomendar nada é recomendar por cima de uma decisão que o dono do projeto
+já tomou. Sem fato para citar, não há recomendação — lista vazia é resposta
+legítima, com teste.
 
 ---
 

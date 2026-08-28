@@ -386,10 +386,9 @@ teste removidos.
 
 ## Em andamento
 
-Nada. Do Cockpit AI, a **Fase 3 está inteira** (`docs/ai/`), junto com as Fases
-1 e 2. Faltam a Fase 4 (Project Intelligence e Health Score), a Fase 5 (dados e
-automação) e o item 17 do prompt de visão — integração com VS Code / Claude
-Code, adiada de propósito para depois da 3.
+Nada. Do Cockpit AI, as Fases 1, 2, 3 e **4 estão inteiras** (`docs/ai/`).
+Falta a Fase 5 (dados e automação) e o item 17 do prompt de visão — integração
+com VS Code / Claude Code, adiada de propósito para depois da 3.
 
 Do HyperBrain (`docs/ai/HYPERBRAIN.md`), os MVPs 1 e 2 estão entregues, em 2D. O
 MVP 3 — tarefas, sessões, decisões e serviços como nós — espera **uso real da

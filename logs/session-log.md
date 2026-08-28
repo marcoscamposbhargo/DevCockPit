@@ -3763,10 +3763,40 @@ driver do SQLite não abre transação de verdade antes da primeira escrita — 
 sessão com leitura aberta vê o que outra gravou depois, verificado por
 experimento. Fica registrado como conferido, para não voltar como suspeita.
 
+### O conserto que funcionou contra o usuário
+
+Durante os testes o painel ficou rodando com `--no-browser` — servidor sem
+janela. Aí a checagem de instância única fez exatamente o que devia e o
+resultado foi péssimo: o atalho recusou abrir um segundo painel, e não havia
+tela nenhuma para o usuário. "O executável não está pegando."
+
+Duas coisas saíram disso. O painel voltou com janela, e o comportamento mudou:
+com um painel já aberto, o atalho **traz a janela existente para a frente**
+(`EnumWindows` filtrando pelo PID anotado). O navegador continua como
+alternativa, para quem subiu em modo servidor — ficar sem nada é pior.
+
+Verificado no painel real: segunda abertura respondeu "janela trazida para a
+frente", nenhuma instância nova.
+
+**Ponta solta assumida:** o Windows recusa `SetForegroundWindow` para processo
+em segundo plano em certas situações. Quando isso acontecer, o certo é piscar o
+ícone na barra em vez de fingir que trouxe. Não foi implementado porque não foi
+reproduzido.
+
+### Risco latente medido, e não consertado
+
+`_app_service_key` escolhe a aplicação pelo **primeiro serviço com porta**, sem
+pular TCP — enquanto `_declared_port` pula de propósito. Se um projeto declarar
+o banco antes da aplicação, o ambiente trataria o banco como app e esperaria a
+porta do app antes de subi-lo: espera que nunca termina.
+
+Medido nos 19 projetos: **nenhum** cai nesse caso hoje. Fica anotado como risco,
+não como defeito — consertar sem dano observado seria mexer por palpite.
+
 ### Situação ao encerrar
 
-Publicado até `e1d8bd5`. 702 testes, 55 no frontend, ruff limpo. Painel
-instalado igual ao build, uma instância.
+Publicado até `79119b9`. 704 testes, 55 no frontend, ruff limpo. Painel
+instalado igual ao build, uma instância com janela.
 
 ### Próximo passo
 

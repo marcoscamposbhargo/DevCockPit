@@ -231,3 +231,86 @@ def test_teste_em_subpasta_de_monorepo_conta(session: Session, projeto: Project)
 
     assert testes.nota == 100
     assert "backend/tests" in testes.evidencia
+
+
+# --- próxima ação (4.3) ----------------------------------------------------
+
+
+def test_sem_fato_nenhum_nao_ha_recomendacao(session: Session, workspace: Path) -> None:
+    """Lista vazia é resposta legítima.
+
+    Recomendação sem fato para citar seria o palpite que este módulo recusa, e
+    o custo de inventar é alto: uma sugestão errada some com a confiança nas
+    certas.
+
+    O caso é o projeto cuja pasta sumiu — nada pôde ser medido. Um projeto
+    vazio **com** pasta é diferente: "não tem README" é fato, e vira
+    recomendação com razão.
+    """
+    project = Project(id="sumido", name="Sumido", path=str(workspace / "nao-existe"))
+    session.add(project)
+    session.flush()
+
+    assert IntelligenceService(session).recomendacoes(project) == []
+
+
+def test_projeto_vazio_com_pasta_recomenda_pelo_que_foi_medido(
+    session: Session, projeto: Project
+) -> None:
+    """"Falta README" é fato apurado, não palpite — e por isso pode recomendar."""
+    recomendacoes = IntelligenceService(session).recomendacoes(projeto)
+
+    assert len(recomendacoes) == 1
+    assert "Documentação está em 0" in recomendacoes[0].porque
+
+
+def test_o_que_voce_escreveu_vem_antes_de_tudo(session: Session, projeto: Project) -> None:
+    """A única coisa pior que não recomendar nada é recomendar por cima de uma
+    decisão que o dono do projeto já tomou."""
+    session.add(
+        AiSession(
+            id="s",
+            project_id=projeto.id,
+            started_at=utcnow() - timedelta(days=1),
+            ended_at=utcnow() - timedelta(days=1),
+            next_steps="Trocar o driver do banco\nDepois: revisar o schema",
+        )
+    )
+    session.add(AiTask(project_id=projeto.id, title="Outra coisa", priority=1))
+    session.flush()
+
+    primeira = IntelligenceService(session).recomendacoes(projeto)[0]
+
+    assert primeira.titulo == "Trocar o driver do banco"
+    assert "declarou isso ao fechar a sessão" in primeira.porque
+
+
+def test_tarefa_aberta_entra_com_a_prioridade_como_motivo(
+    session: Session, projeto: Project
+) -> None:
+    session.add(AiTask(project_id=projeto.id, title="Baixa", priority=3))
+    session.add(AiTask(project_id=projeto.id, title="Alta", priority=1))
+    session.flush()
+
+    titulos = [r.titulo for r in IntelligenceService(session).recomendacoes(projeto)]
+
+    assert "Alta" in titulos and "Baixa" not in titulos, "uma tarefa por vez, a mais urgente"
+
+
+def test_aviso_de_porta_vira_recomendacao_com_o_texto_do_aviso(
+    session: Session, projeto: Project
+) -> None:
+    """Incoerência medida vale mais que indicador baixo: ela quebra o painel."""
+    aviso = "O comando sobe na porta 3001, mas o serviço está cadastrado na 3013."
+
+    recomendacoes = IntelligenceService(session).recomendacoes(projeto, aviso_de_porta=aviso)
+
+    assert any(r.porque == aviso and r.onde == "server" for r in recomendacoes)
+
+
+def test_toda_recomendacao_carrega_um_fato(session: Session, projeto: Project) -> None:
+    session.add(AiTask(project_id=projeto.id, title="Fazer algo", priority=2))
+    session.flush()
+
+    for recomendacao in IntelligenceService(session).recomendacoes(projeto):
+        assert recomendacao.porque, f"{recomendacao.titulo} não diz por quê"

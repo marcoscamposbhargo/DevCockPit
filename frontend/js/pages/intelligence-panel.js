@@ -47,6 +47,26 @@ function barra(indicador) {
   ]);
 }
 
+/** Uma recomendação, com o fato que a motiva logo abaixo.
+ *
+ * O fato não é enfeite: é o que separa "arrume a documentação" de "você
+ * declarou isso ao fechar a sessão de 26/08". A primeira se ignora; a segunda,
+ * não.
+ */
+function recomendacao(item, project) {
+  const destino = item.onde
+    ? `#/projects/${encodeURIComponent(project.id)}?tab=${item.onde}`
+    : null;
+
+  return el('article', { class: 'next-item' }, [
+    destino
+      ? el('a', { class: 'next-item__title', href: destino, text: item.titulo })
+      : el('span', { class: 'next-item__title', text: item.titulo }),
+    el('p', { class: 'next-item__why', text: item.porque }),
+  ]);
+}
+
+
 export async function renderIntelligencePanel(container, project) {
   let dados;
   try {
@@ -73,6 +93,14 @@ export async function renderIntelligencePanel(container, project) {
         }),
       ]),
       el('div', { class: 'panel__body' }, [
+        // A próxima ação vem antes do score: quem abre esta aba quer saber o
+        // que fazer, e o número é o argumento, não a resposta.
+        dados.recomendacoes.length
+          ? el('div', { class: 'next-block' }, [
+              el('h3', { class: 'next-block__title', text: 'Próxima ação' }),
+              ...dados.recomendacoes.map((item) => recomendacao(item, project)),
+            ])
+          : null,
         el('div', { class: 'score-head', dataset: { kind: faixa(dados.score) } }, [
           el('span', {
             class: 'score-head__number',

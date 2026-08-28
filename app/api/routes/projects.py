@@ -24,6 +24,7 @@ from app.schemas.project import (
     ProjectList,
     ProjectSummary,
     ProjectUpdate,
+    RecomendacaoOut,
 )
 from app.services.dashboard_service import avaliar_dono
 from app.services.dev_server_service import DevServerService
@@ -231,6 +232,7 @@ def detect_project(
 def project_intelligence(
     project_id: str,
     service: ProjectService = Depends(get_project_service),
+    servers: DevServerService = Depends(get_dev_server_service),
 ) -> HealthScoreOut:
     """Health Score do projeto, indicador a indicador.
 
@@ -239,12 +241,22 @@ def project_intelligence(
     proíbe.
     """
     project = service.get(project_id)
-    resultado = IntelligenceService(service.session).score(project)
+    inteligencia = IntelligenceService(service.session)
+    resultado = inteligencia.score(project)
+
+    # O aviso de porta vem do serviço que sabe montar o comando; a inteligência
+    # não conhece plano de execução, e não deveria passar a conhecer só para
+    # citar um fato que outro já apurou.
+    aviso = servers.status(project).port_warning
 
     return HealthScoreOut(
         project_id=resultado.project_id,
         score=resultado.score,
         cobertura=resultado.cobertura,
+        recomendacoes=[
+            RecomendacaoOut(titulo=r.titulo, porque=r.porque, onde=r.onde)
+            for r in inteligencia.recomendacoes(project, aviso_de_porta=aviso)
+        ],
         indicadores=[
             IndicadorOut(
                 chave=i.chave,

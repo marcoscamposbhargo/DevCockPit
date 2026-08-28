@@ -2910,3 +2910,46 @@
   color: var(--fg-muted);
   margin: var(--sp-2) 0 0;
 }
+
+/* A próxima ação vem antes do score: quem abre a aba quer saber o que fazer,
+   e o número é o argumento, não a resposta. */
+.next-block {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.next-block__title {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.next-item + .next-item {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
+.next-item__title {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-primary);
+}
+
+a.next-item__title:hover {
+  color: var(--accent);
+}
+
+.next-item__why {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}

@@ -40,6 +40,16 @@ JANELA_DIAS = 14
 DOCUMENTOS = ("README.md", "readme.md", "README.MD")
 
 
+def _primeira_linha(texto: str, limite: int = 120) -> str:
+    """O próximo passo pode ser um parágrafo; o cartão mostra a primeira linha.
+
+    Cortar no meio de uma palavra deixaria a frase sem sentido, então o corte
+    é no fim do que couber, com reticência dizendo que há mais.
+    """
+    primeira = next((linha.strip() for linha in texto.splitlines() if linha.strip()), "")
+    return primeira if len(primeira) <= limite else primeira[: limite - 1].rstrip() + "…"
+
+
 @dataclass(frozen=True)
 class Indicador:
     """Uma dimensão do score.
@@ -57,6 +67,21 @@ class Indicador:
     #: O que este projeto ganharia se o indicador subisse. Vazio quando já está
     #: no teto ou quando não há ação óbvia.
     sugestao: str = ""
+
+
+@dataclass(frozen=True)
+class Recomendacao:
+    """O que fazer em seguida, com o fato que a motiva.
+
+    `porque` não é enfeite: é o que separa uma recomendação de um palpite. Se
+    não houver fato para citar, a recomendação não deveria existir.
+    """
+
+    titulo: str
+    porque: str
+    #: Aba do projeto onde a ação acontece, quando existe uma. Vazio quando o
+    #: trabalho é fora do painel.
+    onde: str = ""
 
 
 @dataclass
@@ -343,3 +368,90 @@ class IntelligenceService:
             evidencia=f"{abertas} item(ns) de dívida ou bug na memória.",
             sugestao="" if abertas < 3 else "Fechar os mais antigos costuma render mais.",
         )
+
+    # --- próxima ação (4.3) ---
+
+    def recomendacoes(
+        self, project: Project, *, aviso_de_porta: str | None = None
+    ) -> list[Recomendacao]:
+        """O que fazer em seguida, em ordem de força da evidência.
+
+        Sem chamada de modelo, e isso é decisão, não economia. O que a pessoa
+        **escreveu** ao fechar a última sessão vale mais que qualquer inferência
+        sobre o repositório; a tarefa que ela mesma abriu vem depois; e só então
+        entram os indicadores que o painel mediu.
+
+        A ordem é essa porque a única coisa pior que não recomendar nada é
+        recomendar por cima de uma decisão que o dono do projeto já tomou.
+
+        Toda recomendação carrega o fato que a motiva. Recomendação sem fato
+        seria exatamente o palpite que este módulo recusa — e a lista vazia é
+        resposta legítima.
+        """
+        recomendacoes: list[Recomendacao] = []
+
+        # 1. O que você deixou escrito.
+        ultima = self.session.execute(
+            select(AiSession)
+            .where(AiSession.project_id == project.id, AiSession.next_steps.is_not(None))
+            .order_by(AiSession.started_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if ultima is not None and ultima.next_steps:
+            quando = ultima.ended_at or ultima.started_at
+            recomendacoes.append(
+                Recomendacao(
+                    titulo=_primeira_linha(ultima.next_steps),
+                    porque=f"Você declarou isso ao fechar a sessão de {quando:%d/%m}.",
+                    onde="session",
+                )
+            )
+
+        # 2. A tarefa que você abriu, mais prioritária primeiro.
+        tarefa = self.session.execute(
+            select(AiTask)
+            .where(
+                AiTask.project_id == project.id,
+                AiTask.status.in_((TaskStatus.OPEN.value, TaskStatus.DOING.value)),
+            )
+            .order_by(AiTask.priority.asc(), AiTask.id.asc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if tarefa is not None:
+            nomes = {1: "alta", 2: "média", 3: "baixa"}
+            recomendacoes.append(
+                Recomendacao(
+                    titulo=tarefa.title,
+                    porque=f"Tarefa em aberto, prioridade {nomes.get(tarefa.priority, '—')}.",
+                    onde="session",
+                )
+            )
+
+        # 3. Uma incoerência que o painel mediu vale mais que um indicador
+        #    baixo: ela quebra o próprio painel, e o conserto é pequeno.
+        if aviso_de_porta:
+            recomendacoes.append(
+                Recomendacao(
+                    titulo="Acertar a porta do servidor",
+                    porque=aviso_de_porta,
+                    onde="server",
+                )
+            )
+
+        # 4. O indicador medido mais baixo que tenha o que sugerir.
+        medidos = [
+            i
+            for i in self.score(project).indicadores
+            if i.nota is not None and i.sugestao and i.nota < 70
+        ]
+        if medidos:
+            pior = min(medidos, key=lambda i: i.nota or 0)
+            recomendacoes.append(
+                Recomendacao(
+                    titulo=pior.sugestao,
+                    porque=f"{pior.rotulo} está em {pior.nota}: {pior.evidencia}",
+                    onde="intelligence",
+                )
+            )
+
+        return recomendacoes

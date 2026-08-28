@@ -229,6 +229,19 @@ class IndicadorOut(BaseModel):
     sugestao: str = ""
 
 
+class RecomendacaoOut(BaseModel):
+    """O que fazer em seguida, com o fato que motiva.
+
+    `porque` não é enfeite: sem fato para citar, a recomendação seria palpite —
+    e lista vazia é resposta legítima.
+    """
+
+    titulo: str
+    porque: str
+    #: Aba do projeto onde a ação acontece; vazio quando é trabalho fora daqui.
+    onde: str = ""
+
+
 class HealthScoreOut(BaseModel):
     project_id: str
     #: Média dos indicadores medidos. `None` quando nenhum foi.
@@ -237,3 +250,4 @@ class HealthScoreOut(BaseModel):
     #: iguais com bases diferentes pareceriam a mesma coisa.
     cobertura: str
     indicadores: list[IndicadorOut] = Field(default_factory=list)
+    recomendacoes: list[RecomendacaoOut] = Field(default_factory=list)

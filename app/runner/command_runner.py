@@ -106,8 +106,12 @@ class SubprocessCommandRunner:
         start_new_session = False
         if _IS_WINDOWS:
             # Cria um grupo de processos para que o timeout possa encerrar a
-            # árvore inteira, não só o filho direto.
-            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            # árvore inteira, não só o filho direto. `CREATE_NO_WINDOW` evita
+            # que cada comando de polling (métricas, docker ps) pisque um
+            # console no desktop — a saída já vem pelos pipes.
+            creation_flags = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            )
         else:
             start_new_session = True
 

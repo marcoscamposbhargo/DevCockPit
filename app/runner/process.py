@@ -25,7 +25,12 @@ logger = logging.getLogger(__name__)
 _IS_WINDOWS = os.name == "nt"
 
 # Criar o filho em grupo próprio é o que permite encerrar a árvore inteira.
-CREATION_FLAGS = subprocess.CREATE_NEW_PROCESS_GROUP if _IS_WINDOWS else 0
+# `CREATE_NO_WINDOW` impede que o filho aloque um console visível.
+CREATION_FLAGS = (
+    subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    if _IS_WINDOWS
+    else 0
+)
 
 
 def kill_tree(pid: int, *, timeout_s: float = 5.0) -> bool:
@@ -47,6 +52,7 @@ def _kill_tree_windows(pid: int, *, timeout_s: float) -> bool:
             text=True,
             timeout=timeout_s,
             shell=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         logger.warning(

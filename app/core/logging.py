@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 import sys
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
+
+#: Teto de cada arquivo de log e quantos arquivos antigos ficam guardados.
+#: 10 MB x 5 limita o log a ~60 MB: sem isso o arquivo cresce sem fim (o de
+#: desenvolvimento passou de 57 MB), e o polling escreve algumas linhas por
+#: segundo.
+LOG_MAX_BYTES = 10 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
 
 _correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
@@ -78,7 +86,14 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
-def configure_logging(level: str = "INFO", log_file: Path | None = None, fmt: str = "json") -> None:
+def configure_logging(
+    level: str = "INFO",
+    log_file: Path | None = None,
+    fmt: str = "json",
+    *,
+    max_bytes: int = LOG_MAX_BYTES,
+    backup_count: int = LOG_BACKUP_COUNT,
+) -> None:
     root = logging.getLogger()
     root.setLevel(level.upper())
     root.handlers.clear()
@@ -95,7 +110,12 @@ def configure_logging(level: str = "INFO", log_file: Path | None = None, fmt: st
 
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
         file_handler.setFormatter(formatter)
         root.addHandler(file_handler)
 

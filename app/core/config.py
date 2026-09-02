@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file: Path = Path("./logs/devcockpit.log")
     log_format: str = "json"
+    #: Rotação: o arquivo vira quando passa de `log_max_bytes` e só os
+    #: `log_backup_count` anteriores sobrevivem.
+    log_max_bytes: int = 10 * 1024 * 1024
+    log_backup_count: int = 5
 
     # --- arquivos de configuração ---
     roots_file: Path = Path("./configs/roots.yml")

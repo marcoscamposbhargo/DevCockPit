@@ -76,6 +76,8 @@ def create_app(
         level=settings.log_level,
         log_file=settings.resolve(settings.log_file),
         fmt=settings.log_format,
+        max_bytes=settings.log_max_bytes,
+        backup_count=settings.log_backup_count,
     )
     assert_registry_is_safe()
 

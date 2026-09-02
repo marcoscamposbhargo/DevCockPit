@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Gera o executável do DevCockpit em dist\DevCockpit.
 
@@ -110,8 +110,34 @@ if ($Install) {
     # So o programa e substituido. data\, logs\ e configs\ ficam onde estao: e
     # onde vivem os projetos cadastrados, e uma atualizacao que os apaga e pior
     # que nao atualizar.
+    # O DevCockpit em execucao segura o proprio .exe: sem fechar, a copia falha.
+    Get-Process DevCockpit -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "Encerrando DevCockpit (PID $($_.Id)) para substituir o programa." -ForegroundColor DarkGray
+        $_ | Stop-Process -Force
+    }
+
+    # Outro programa pode ter uma DLL do pacote mapeada -- o VS Code mantem
+    # VCRUNTIME140.dll aberta quando o repositorio esta aberto nele. Apagar
+    # falha, mas renomear funciona mesmo sob lock: o nome sai da frente, o
+    # arquivo novo entra, e o antigo some no proximo build.
     $antigo = Join-Path $instalado '_internal'
-    if (Test-Path $antigo) { Remove-Item $antigo -Recurse -Force }
+    if (Test-Path $antigo) {
+        Get-ChildItem $antigo -Filter '*.travado-*' -Recurse -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+
+        foreach ($arquivo in Get-ChildItem $antigo -Recurse -File) {
+            try {
+                $fluxo = [System.IO.File]::Open($arquivo.FullName, 'Open', 'ReadWrite', 'None')
+                $fluxo.Close()
+                Remove-Item $arquivo.FullName -Force
+            } catch {
+                $carimbo = Get-Date -Format 'yyyyMMdd-HHmmss'
+                Rename-Item $arquivo.FullName "$($arquivo.Name).travado-$carimbo" -ErrorAction Stop
+                Write-Host "  $($arquivo.Name) esta em uso por outro programa; contornado." -ForegroundColor DarkYellow
+            }
+        }
+    }
+
     Copy-Item (Join-Path $saida '_internal') $instalado -Recurse -Force
     Copy-Item (Join-Path $saida 'DevCockpit.exe') $instalado -Force
 

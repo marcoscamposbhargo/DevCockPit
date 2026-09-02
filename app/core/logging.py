@@ -17,6 +17,34 @@ from pathlib import Path
 LOG_MAX_BYTES = 10 * 1024 * 1024
 LOG_BACKUP_COUNT = 5
 
+#: Rotas que a interface consulta em laço e que não dizem nada quando dão
+#: certo. `/api/system/metrics` sozinha era 64% do log de acesso; com
+#: `/api/health` passa de 70%. Só o sucesso é descartado: erro nelas continua
+#: aparecendo, que é quando a linha tem valor.
+QUIET_ACCESS_PATHS = ("/api/system/metrics", "/api/health")
+
+
+class PollingAccessFilter(logging.Filter):
+    """Descarta acesso bem-sucedido às rotas de polling.
+
+    O `uvicorn.access` não expõe rota e status em campos próprios — a linha
+    já vem formatada. Casar por texto é feio, mas é o que existe sem
+    reimplementar o middleware de acesso.
+    """
+
+    def __init__(self, paths: tuple[str, ...] = QUIET_ACCESS_PATHS) -> None:
+        super().__init__()
+        self._paths = paths
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        mensagem = record.getMessage()
+        if not mensagem.endswith((" 200", " 204", " 304")):
+            return True
+        return not any(
+            f" {path} " in mensagem or f"{path} HTTP" in mensagem for path in self._paths
+        )
+
+
 _correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
 #: Quem pediu a ação desta requisição: `None` (a pessoa, pelo botão) ou a tripla
@@ -93,6 +121,7 @@ def configure_logging(
     *,
     max_bytes: int = LOG_MAX_BYTES,
     backup_count: int = LOG_BACKUP_COUNT,
+    quiet_polling: bool = True,
 ) -> None:
     root = logging.getLogger()
     root.setLevel(level.upper())
@@ -118,6 +147,11 @@ def configure_logging(
         )
         file_handler.setFormatter(formatter)
         root.addHandler(file_handler)
+
+    acesso = logging.getLogger("uvicorn.access")
+    acesso.filters.clear()
+    if quiet_polling:
+        acesso.addFilter(PollingAccessFilter())
 
 
 def log_with(logger: logging.Logger, level: int, message: str, **fields: object) -> None:

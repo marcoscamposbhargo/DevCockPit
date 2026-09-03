@@ -58,8 +58,12 @@ Se a frase não indicar um projeto da lista, use "project_id": null.
 Se nenhuma ação da lista servir, use "action": null."""
 
 
-def _normalizar(texto: str) -> str:
-    """Minúsculas e sem acento, para casar 'ALTERAÇÃO' com 'alteracao'."""
+def normalizar(texto: str) -> str:
+    """Minúsculas e sem acento, para casar 'ALTERAÇÃO' com 'alteracao'.
+
+    Pública porque `classifier.py` normaliza do mesmo jeito, e duas versões
+    disso divergiriam na primeira palavra com cedilha.
+    """
     sem_acento = unicodedata.normalize("NFKD", texto or "")
     sem_acento = "".join(c for c in sem_acento if not unicodedata.combining(c))
     return sem_acento.lower()
@@ -105,7 +109,7 @@ class Orchestrator:
     # --- caminho 1: regra ---
 
     def _por_regra(self, pergunta: str) -> Acao | None:
-        texto = _normalizar(pergunta)
+        texto = normalizar(pergunta)
         for padrao, chave in REGRAS:
             if re.search(padrao, texto):
                 return POR_CHAVE[chave]
@@ -121,11 +125,11 @@ class Orchestrator:
         Se dois projetos casam com o mesmo trecho, ninguém vence: propor no
         projeto errado é pior que não propor.
         """
-        texto = _normalizar(pergunta)
+        texto = normalizar(pergunta)
         casados = [
             (pid, nome)
             for pid, nome in self.projetos
-            if _normalizar(nome) in texto or _normalizar(pid) in texto
+            if normalizar(nome) in texto or normalizar(pid) in texto
         ]
         if not casados:
             return None

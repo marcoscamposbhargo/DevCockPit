@@ -3,7 +3,7 @@ import { el, mount } from '../lib/dom.js';
 import { relativeTime } from '../lib/format.js';
 import { icon } from '../lib/icons.js';
 import { getTheme, setTheme, THEME_LABELS, THEME_VALUES } from '../lib/theme.js';
-import { loading, pageHeader, showError, toast } from '../lib/ui.js';
+import { loading, pageHeader, showError, techChip, toast } from '../lib/ui.js';
 
 function toolRow(name, available) {
   return el('tr', {}, [
@@ -116,6 +116,174 @@ function runningSection(servidores, aoMudar) {
   ]);
 }
 
+// --- providers de IA (REQ-14) ---------------------------------------------
+//
+// Esta seção mostra **estado**, e nada além disso. O único campo relacionado à
+// chave que a rota devolve é `api_key_env` — o *nome* da variável de ambiente
+// —, e é ele que aparece: saber onde mexer é o que resolve "não configurado".
+// Valor de chave não passa por aqui nem em pedaço, e nada aqui é editável: a
+// chave vive no ambiente e a interface não a escreve (P-05).
+//
+// Também não há botão de reverificar. Não é esquecimento: a chave é lida do
+// ambiente na abertura do processo, então reconsultar sem reabrir o painel
+// mostraria o mesmo estado com cara de novidade.
+
+const ESTADO_ROTULO = {
+  conectado: 'conectado',
+  nao_configurado: 'não configurado',
+  desligado: 'desligado',
+  indisponivel: 'indisponível',
+};
+
+const TIPO_ROTULO = { local: 'local', cloud: 'nuvem' };
+
+function estadoBadge(estado) {
+  return el('span', { class: 'status-badge', dataset: { estado } }, [
+    el('span', { class: 'status-badge__dot' }),
+    ESTADO_ROTULO[estado] ?? estado,
+  ]);
+}
+
+/** Latência da última sondagem.
+ *
+ * Ausência vira "não medido", nunca "0 ms": não existe latência de quem não
+ * respondeu, e um zero com cara de medição é pior que a falta do número
+ * (P-02). Zero medido de verdade — provider local na mesma máquina — continua
+ * sendo zero, e por isso a comparação é com `null`, não com falsidade.
+ */
+function latenciaTexto(ms) {
+  return ms === null || ms === undefined ? 'não medido' : `${ms} ms`;
+}
+
+/** O que fazer com este provider, quando há o que fazer.
+ *
+ * `nao_configurado` é o único estado que a pessoa resolve sozinha, e o texto
+ * dele é montado aqui nomeando a variável que falta — mesmo que a rota não
+ * mande motivo. Rótulo mudo justamente aqui desperdiçaria a única informação
+ * acionável da tela.
+ */
+function detalheDoEstado(provider) {
+  const variavel = provider.api_key_env || 'a variável declarada em configs/ai.yml';
+
+  switch (provider.estado) {
+    case 'nao_configurado':
+      return (
+        `Falta ${variavel} no ambiente. Defina-a no .env, na pasta do painel, ` +
+        'e reabra o DevCockpit.'
+      );
+    case 'desligado':
+      return provider.motivo || 'Desligado em configs/ai.yml (`enabled: false`).';
+    case 'indisponivel':
+      return provider.motivo || 'Não respondeu à sondagem e não disse por quê.';
+    default:
+      return '';
+  }
+}
+
+function providerRow(provider, sonda) {
+  const modelos = provider.modelos ?? [];
+  const detalhe = detalheDoEstado(provider);
+  const latencia = sonda ? sonda.latencia_ms : null;
+  const medido = latencia !== null && latencia !== undefined;
+
+  return el('tr', {}, [
+    el('td', {}, [
+      el('div', { class: 'mono', text: provider.id }),
+      el('div', { class: 'field__hint', text: TIPO_ROTULO[provider.type] ?? provider.type }),
+    ]),
+    el('td', {}, [
+      estadoBadge(provider.estado),
+      detalhe ? el('div', { class: 'field__hint', text: detalhe }) : null,
+    ]),
+    el('td', {}, [
+      modelos.length
+        ? el('div', { class: 'chip-row' }, modelos.map((id) => techChip(id)))
+        : el('span', { class: 'field__hint', text: 'nenhum declarado' }),
+    ]),
+    el('td', {
+      // Cinza quando não há medição: o mesmo tratamento do Health Score, para
+      // "não medido" nunca se ler como um valor apurado.
+      class: medido ? 'table__num' : 'table__num field__hint',
+      text: latenciaTexto(latencia),
+      title: medido
+        ? 'Ida e volta da última sondagem deste provider.'
+        : 'Ninguém mediu: o provider não respondeu à sondagem.',
+    }),
+    el('td', {}, [
+      provider.api_key_env
+        ? el('span', {
+            class: 'mono',
+            text: provider.api_key_env,
+            title: 'Nome da variável de ambiente. O valor fica no ambiente, e não vem para cá.',
+          })
+        : el('span', { class: 'field__hint', text: 'não usa chave' }),
+    ]),
+  ]);
+}
+
+function coluna(rotulo) {
+  return el('th', { scope: 'col', text: rotulo });
+}
+
+/**
+ * A tabela de providers.
+ *
+ * `registro` é a resposta de `GET /api/ai/providers`, ou `{ falha }` quando a
+ * chamada não voltou. `saude` é a de `GET /api/ai/health`, ou `null` — sem ela
+ * a latência fica "não medido", que é exatamente o que ela é.
+ */
+export function providersSection(registro, saude) {
+  const sondas = new Map((saude?.items ?? []).map((item) => [item.id, item]));
+  const itens = registro?.items ?? [];
+
+  let corpo;
+  if (registro?.falha) {
+    corpo = el('p', {
+      class: 'field__hint',
+      text: `Não foi possível ler o registro de providers: ${registro.falha}`,
+    });
+  } else if (registro?.erro) {
+    corpo = el('p', {
+      class: 'field__hint',
+      text: `configs/ai.yml não pôde ser lido: ${registro.erro}`,
+    });
+  } else if (!itens.length) {
+    corpo = el('p', {
+      class: 'field__hint',
+      text:
+        'Nenhum provider declarado. Copie configs/ai.example.yml para configs/ai.yml e ' +
+        'liste os providers. O painel funciona inteiro sem isso — só sem IA.',
+    });
+  } else {
+    corpo = el('div', { class: 'table-wrap', style: 'overflow-x:auto' }, [
+      el('table', { class: 'table' }, [
+        el('thead', {}, [
+          el('tr', {}, [
+            coluna('Provider'),
+            coluna('Estado'),
+            coluna('Modelos declarados'),
+            coluna('Latência'),
+            coluna('Chave'),
+          ]),
+        ]),
+        el('tbody', {}, itens.map((item) => providerRow(item, sondas.get(item.id)))),
+      ]),
+    ]);
+  }
+
+  return el('section', { id: 'ai-providers-section', style: 'margin-top:var(--sp-6)' }, [
+    el('h2', { class: 'section-title', text: 'AI Providers' }),
+    el('p', {
+      class: 'field__hint',
+      style: 'margin-bottom:var(--sp-3)',
+      text:
+        'Declarados em configs/ai.yml e ligados por variável de ambiente. O painel mostra o ' +
+        'nome da variável, nunca o valor da chave — e não há como editar a chave por aqui.',
+    }),
+    corpo,
+  ]);
+}
+
 export async function renderSettings(container) {
   mount(container, loading());
 
@@ -129,6 +297,15 @@ export async function renderSettings(container) {
 
   // Opcional: uma falha aqui não pode derrubar a tela de configuração inteira.
   const servidores = await api.runningServers().then((r) => r.items).catch(() => []);
+
+  // As duas rotas de IA em paralelo, e nenhuma obrigatória: `/providers`
+  // classifica o estado, `/health` é quem mediu a latência. Em paralelo porque
+  // as duas sondam, e em série a tela pagaria dois timeouts em fila. Falha de
+  // qualquer uma vira estado exibido, não tela quebrada (P-06).
+  const [registroDeIa, saudeDaIa] = await Promise.all([
+    api.aiProviders().catch((error) => ({ falha: error.message })),
+    api.aiHealth().catch(() => null),
+  ]);
   const recarregar = () => renderSettings(container);
 
   const roots = health.allowed_roots.length
@@ -173,6 +350,7 @@ export async function renderSettings(container) {
       ]),
     ]),
 
+    providersSection(registroDeIa, saudeDaIa),
     runningSection(servidores, recarregar),
     themeSection()
   );

@@ -507,6 +507,17 @@
 .status-badge[data-status="MISSING"] .status-badge__dot { background: var(--status-error); }
 .status-badge[data-status="UNKNOWN"] .status-badge__dot { background: var(--status-unknown); }
 
+/* Estado de provider de IA (REQ-14). Vocabulário próprio em vez de reaproveitar
+   `data-status`: "não configurado" não é "MISSING", e forçar um no outro faria a
+   tela afirmar coisa que a rota não disse. Amarelo em "não configurado" porque é
+   o único estado em que a pessoa resolve sozinha. */
+.status-badge[data-estado="conectado"] .status-badge__dot { background: var(--status-running); }
+.status-badge[data-estado="indisponivel"] .status-badge__dot { background: var(--status-error); }
+.status-badge[data-estado="nao_configurado"] .status-badge__dot {
+  background: var(--status-warning);
+}
+.status-badge[data-estado="desligado"] .status-badge__dot { background: var(--status-stopped); }
+
 .status-badge[data-status="MISSING"] {
   background: color-mix(in srgb, var(--status-error) var(--tint-strength), transparent);
   color: var(--status-error);

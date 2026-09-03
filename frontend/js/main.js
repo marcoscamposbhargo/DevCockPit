@@ -9,6 +9,7 @@ import { applyTheme, cycleTheme, getTheme, THEME_LABELS, watchSystemTheme } from
 import { shortcutsHint, wireShortcuts } from './lib/shortcuts.js';
 import { emptyState, showError, toast } from './lib/ui.js';
 import { renderActivity } from './pages/activity.js';
+import { renderAiUsage } from './pages/ai-usage.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderDay } from './pages/day.js';
 import { renderDiscovery } from './pages/discovery.js';
@@ -29,6 +30,7 @@ register('project', '/projects/:id', renderProject);
 register('hyperbrain', '/hyperbrain', renderHyperbrain);
 register('ports', '/ports', renderPorts);
 register('activity', '/activity', renderActivity);
+register('ai-usage', '/ai-usage', renderAiUsage);
 register('settings', '/settings', renderSettings);
 
 setNotFound((container) => {

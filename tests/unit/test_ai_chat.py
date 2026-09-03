@@ -7,25 +7,32 @@ deles não é "teste vermelho": é dado do usuário indo para fora sem consentim
 
 from __future__ import annotations
 
+import textwrap
+
 import pytest
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models.ai import MemoryKind
+from app.models.ai_run import AiRun
 from app.models.project import Project
 from app.services.ai import redaction
 from app.services.ai.chat_service import AiDisabled, BudgetExceeded, ChatService
 from app.services.ai.context_engine import ContextEngine
 from app.services.ai.providers import (
     AIRequest,
+    AIUsage,
     AnthropicProvider,
     FakeProvider,
     LocalProvider,
     Message,
     OpenAIProvider,
+    ProviderError,
     ProviderNotConfigured,
     build_provider,
 )
+from app.services.ai.registry import AiConfig
+from app.services.ai.runner import PerguntaRecusada
 from app.services.memory_service import MemoryService
 from app.services.session_service import SessionService
 from app.services.task_service import TaskService
@@ -567,3 +574,238 @@ def test_a_pergunta_e_liberada_antes_do_stream_comecar(
     )
 
     list(fluxo)
+
+
+# --- T-12: o chat ligado ao Runner (REQ-06 a REQ-11 no caminho real) -------
+#
+# Estes testes não injetam `provider=`: é o único jeito de exercitar o caminho
+# novo, porque `self.provider` injetado vence sempre e nem chega a classificar
+# ou rotear (ver `ChatService._preparar_execucao`). O registro vem de um
+# `ai.yml` de teste, e a fábrica de provedor do Runner é substituída por
+# monkeypatch — sem rede, sem chave, sem Ollama (**P-06**).
+
+REGISTRO_COM_FALLBACK = """
+    providers:
+      - id: nuvem-a
+        enabled: true
+        type: cloud
+        base_url: http://127.0.0.1:9
+        api_key_env: DEVCOCKPIT_AI_KEY_TESTE_A
+      - id: nuvem-b
+        enabled: true
+        type: cloud
+        base_url: http://127.0.0.1:9
+        api_key_env: DEVCOCKPIT_AI_KEY_TESTE_B
+
+    modelos:
+      - id: rapido
+        model: modelo-rapido
+        capabilities: [simple_task, coding, debugging, architecture, documentation,
+                        testing, qa, planning, refactoring]
+        providers: [nuvem-a]
+        cost_tier: low
+        context_window: 64000
+      - id: reserva
+        model: modelo-reserva
+        capabilities: [simple_task, coding, debugging, architecture, documentation,
+                        testing, qa, planning, refactoring]
+        providers: [nuvem-b]
+        cost_tier: high
+        context_window: 200000
+
+    roteamento:
+      limiar_complexidade: 40
+      modelo_padrao: rapido
+"""
+
+
+class ProvedorRoteirizado(FakeProvider):
+    """`FakeProvider` que responde, ou levanta o erro combinado no `stream`."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        resposta: str = "resposta boa",
+        erro: Exception | None = None,
+        tokens: tuple[int, int] = (0, 0),
+    ) -> None:
+        super().__init__(model=f"{name}-modelo", resposta=resposta)
+        self.name = name
+        self.erro = erro
+        self.last_usage = AIUsage(tokens_in=tokens[0], tokens_out=tokens[1])
+
+    def stream(self, request: AIRequest):  # type: ignore[no-untyped-def]
+        self.last_request = request
+        if self.erro is not None:
+            raise self.erro
+        for parte in self.resposta.split(" "):
+            yield parte + " "
+
+
+@pytest.fixture
+def registro_com_fallback(tmp_path) -> AiConfig:  # type: ignore[no-untyped-def]
+    caminho = tmp_path / "ai.yml"
+    caminho.write_text(textwrap.dedent(REGISTRO_COM_FALLBACK), encoding="utf-8")
+    return AiConfig.load(caminho)
+
+
+def _monkeypatch_fabrica(monkeypatch, roteiro: dict[str, FakeProvider]) -> None:
+    """Substitui `construir_provider` pelo roteiro do teste, dentro do Runner.
+
+    `Runner` sem `fabrica=` explícita monta o cliente chamando
+    `runner.construir_provider` — é esse nome, dentro do módulo do Runner, que
+    o `ChatService` real usa em produção (ele não injeta fábrica nenhuma).
+    """
+
+    def falso_construir_provider(candidato, settings):  # type: ignore[no-untyped-def]
+        provedor = roteiro.get(candidato.provider_id)
+        if provedor is None:
+            raise ProviderNotConfigured(
+                f"O provider {candidato.provider_id!r} não tem chave no ambiente."
+            )
+        return provedor
+
+    monkeypatch.setattr(
+        "app.services.ai.runner.construir_provider", falso_construir_provider
+    )
+
+
+def test_pergunta_com_fallback_grava_tentativas_e_devolve_resposta(
+    session: Session, projeto: Project, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """Sem `provider=` injetado, o chat vai pelo Runner: cadeia, `ai_run`, resposta."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado(
+            "nuvem-a", erro=ProviderError("O provedor respondeu 503. serviço indisponível")
+        ),
+        "nuvem-b": ProvedorRoteirizado(
+            "nuvem-b", resposta="a resposta que chegou", tokens=(50, 20)
+        ),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    saida = "".join(chat.ask(projeto, "como está o projeto?"))
+
+    assert "a resposta que chegou" in saida
+    linhas = session.query(AiRun).order_by(AiRun.attempt).all()
+    assert len(linhas) == 2, "a tentativa que falhou e a que deu certo, as duas gravadas"
+    assert linhas[0].status == "error"
+    assert linhas[0].provider == "nuvem-a"
+    assert linhas[1].status == "ok"
+    assert linhas[1].provider == "nuvem-b"
+    assert linhas[1].tokens_in == 50 and linhas[1].tokens_out == 20
+
+
+def test_pergunta_marcada_local_sem_modelo_local_e_recusada_sem_tentar_provider(
+    session: Session, projeto: Project, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """REQ-07 item 1: sem modelo local habilitado, recusa — nunca a nuvem."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado("nuvem-a"),
+        "nuvem-b": ProvedorRoteirizado("nuvem-b"),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    with pytest.raises(PerguntaRecusada, match="não vai para a nuvem"):
+        list(chat.ask(projeto, "isso é confidencial, não pode sair da máquina"))
+
+    assert roteiro["nuvem-a"].last_request is None
+    assert roteiro["nuvem-b"].last_request is None
+
+
+def test_orcamento_estourado_interrompe_antes_de_classificar_ou_rotear(
+    session: Session, projeto: Project, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """Orçamento não é falha de provedor: nem a primeira tentativa acontece."""
+    roteiro = {"nuvem-a": ProvedorRoteirizado("nuvem-a"), "nuvem-b": ProvedorRoteirizado("nuvem-b")}
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(
+        session,
+        config(ai_provider="none", ai_daily_token_budget=10),
+        registry=registro_com_fallback,
+    )
+    chat.usage.add(tokens_in=8, tokens_out=5)
+
+    with pytest.raises(BudgetExceeded, match="orçamento"):
+        list(chat.ask(projeto, "como está o projeto?"))
+
+    assert roteiro["nuvem-a"].last_request is None
+    assert roteiro["nuvem-b"].last_request is None
+    assert session.query(AiRun).count() == 0, "cadeia esgotada não grava linha nenhuma"
+
+
+def test_registro_vazio_continua_indo_pelo_env_sem_runner(
+    session: Session, projeto: Project
+) -> None:
+    """REQ-04: sem `configs/ai.yml`, o comportamento de hoje não muda."""
+    SessionService(session, git=None).start(projeto)
+    falso = FakeProvider(resposta="respondido pelo .env")
+    chat = ChatService(session, config(), provider=falso)
+
+    saida = "".join(chat.ask(projeto, "como está o projeto?"))
+
+    assert "respondido pelo .env" in saida
+    assert session.query(AiRun).count() == 0, "caminho do .env não grava ai_run"
+
+
+# --- T-12.1: `ask_quick` ligado ao Runner (REQ-09, REQ-10 no segundo caminho) -
+
+
+def test_pergunta_rapida_com_fallback_grava_tentativas_e_devolve_resposta(
+    session: Session, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """Sem `provider=` injetado, `ask_quick` também vai pelo Runner."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado(
+            "nuvem-a", erro=ProviderError("O provedor respondeu 503. serviço indisponível")
+        ),
+        "nuvem-b": ProvedorRoteirizado(
+            "nuvem-b", resposta="a resposta que chegou", tokens=(50, 20)
+        ),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    saida = "".join(chat.ask_quick("como desfaço um commit?"))
+
+    assert "a resposta que chegou" in saida
+    linhas = session.query(AiRun).order_by(AiRun.attempt).all()
+    assert len(linhas) == 2, "a tentativa que falhou e a que deu certo, as duas gravadas"
+    assert linhas[0].status == "error"
+    assert linhas[0].provider == "nuvem-a"
+    assert linhas[1].status == "ok"
+    assert linhas[1].provider == "nuvem-b"
+    assert linhas[1].tokens_in == 50 and linhas[1].tokens_out == 20
+
+
+def test_pergunta_rapida_marcada_local_sem_modelo_local_e_recusada_sem_tentar_provider(
+    session: Session, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """REQ-07 item 1: sem modelo local habilitado, recusa — nunca a nuvem."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado("nuvem-a"),
+        "nuvem-b": ProvedorRoteirizado("nuvem-b"),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    with pytest.raises(PerguntaRecusada, match="não vai para a nuvem"):
+        list(chat.ask_quick("isso é confidencial, não pode sair da máquina"))
+
+    assert roteiro["nuvem-a"].last_request is None
+    assert roteiro["nuvem-b"].last_request is None
+
+
+def test_pergunta_rapida_com_registro_vazio_continua_indo_pelo_env_sem_runner(
+    session: Session,
+) -> None:
+    """REQ-04: sem `configs/ai.yml`, `ask_quick` continua no `.env`, sem provider injetado."""
+    chat = ChatService(session, config(ai_provider="fake", ai_model="fake-1"))
+
+    saida = "".join(chat.ask_quick("como vejo a porta 3000?"))
+
+    assert saida
+    assert session.query(AiRun).count() == 0, "caminho do .env não grava ai_run"

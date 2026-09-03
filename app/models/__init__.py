@@ -1,4 +1,5 @@
 from app.models.ai import AiMemory, AiMessage, AiSession, AiUsageDay, MemoryKind, MemorySource
+from app.models.ai_run import STATUS_DE_FALHA, AiRun, RunDecision, RunStatus
 from app.models.base import Base, create_session_factory, session_scope, utcnow
 from app.models.project import (
     ActivityLog,
@@ -20,6 +21,7 @@ __all__ = [
     "ActivityLog",
     "AiMemory",
     "AiMessage",
+    "AiRun",
     "AiSession",
     "AiTask",
     "AiUsageDay",
@@ -36,6 +38,9 @@ __all__ = [
     "ProjectService",
     "ProjectStatus",
     "ProjectTechnology",
+    "RunDecision",
+    "RunStatus",
+    "STATUS_DE_FALHA",
     "TaskPriority",
     "TaskStatus",
     "TechnologySource",

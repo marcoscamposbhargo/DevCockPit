@@ -7,25 +7,42 @@ que o painel observou e do que a pessoa declarou.
 
 from __future__ import annotations
 
+import asyncio
 import json
-from dataclasses import asdict
+import os
+import time
+from dataclasses import asdict, dataclass
+from datetime import timedelta
 
+import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 from app.api.deps import (
     get_briefing_service,
     get_chat_service,
     get_memory_service,
     get_project_service,
+    get_session,
     get_session_service,
     get_task_service,
 )
 from app.core.errors import DomainError
 from app.models.ai import AiMemory, AiMessage, AiSession
+from app.models.base import utcnow
 from app.models.task import AiTask
+from app.repositories.ai_repository import RunRepository
 from app.schemas.ai import (
+    AiHealthOut,
+    AiModelList,
+    AiModelOut,
+    AiProviderHealthOut,
+    AiProviderList,
+    AiProviderOut,
     AiStatusOut,
+    AiUsageIndicadores,
+    AiUsageOut,
     BriefingOut,
     ChatAsk,
     ChatHistoryOut,
@@ -59,6 +76,7 @@ from app.services.ai.especialistas import (
 )
 from app.services.ai.orchestrator import Orchestrator, Proposta
 from app.services.ai.propostas import REGISTRO
+from app.services.ai.registry import AiConfig, ProviderDeclarado, get_ai_config
 from app.services.briefing_service import BriefingService
 from app.services.memory_service import MemoryService
 from app.services.project_service import ProjectService
@@ -566,4 +584,327 @@ def start_my_day(briefing: BriefingService = Depends(get_briefing_service)) -> B
             for item in dados.items
         ],
         suggestion=dados.suggestion,
+    )
+
+
+# --- registro de providers, modelos e saúde -------------------------------
+#
+# As três rotas desta seção leem o registro declarativo (`configs/ai.yml`) e
+# sondam quem está de pé. Nenhuma delas devolve o valor de uma chave, nem
+# parcialmente mascarado: o que sai é o **nome** da variável de ambiente
+# (P-05). Sem o arquivo no disco, elas respondem registro vazio — arquivo
+# ausente é estado normal, não erro (REQ-04).
+
+#: Teto de espera de uma sondagem de saúde. Conversa espera 120 s porque modelo
+#: pensa devagar; sondagem, não: quem espera aqui é a tela de configurações
+#: abrindo, e provider fora do ar não pode segurar o painel (REQ-13).
+TIMEOUT_HEALTH_S = 2.5
+
+#: Onde cada tipo de provider lista o que serve. É um GET barato, que não gera
+#: token nenhum: `/api/tags` no Ollama, `/v1/models` em quem fala o formato
+#: OpenAI (DeepSeek e Kimi inclusive).
+CAMINHO_DE_SONDAGEM = {"local": "/api/tags", "cloud": "/v1/models"}
+
+
+@dataclass(frozen=True)
+class _Sondagem:
+    """O que a sondagem mediu. `motivo` só existe quando não respondeu."""
+
+    disponivel: bool
+    motivo: str = ""
+    latencia_ms: int | None = None
+    modelos: tuple[str, ...] = ()
+
+
+def _chave_presente(provider: ProviderDeclarado) -> bool:
+    """A variável de `api_key_env` existe no ambiente?
+
+    Lê só para saber se está lá. O valor não sai desta função — nem para log,
+    nem para mensagem de erro.
+    """
+    if not provider.api_key_env:
+        # Provider local não usa chave: ausência de `api_key_env` é o normal
+        # dele, não falta de configuração.
+        return True
+    return bool(os.environ.get(provider.api_key_env, "").strip())
+
+
+def _cabecalho_de_sondagem(provider: ProviderDeclarado) -> dict[str, str]:
+    chave = os.environ.get(provider.api_key_env, "").strip() if provider.api_key_env else ""
+    return {"Authorization": f"Bearer {chave}"} if chave else {}
+
+
+def _modelos_listados(dados: object) -> tuple[str, ...]:
+    """Os nomes que o provider disse servir, nos dois formatos que existem.
+
+    Formato desconhecido devolve vazio em vez de inventar: a tela mostra que ele
+    respondeu, sem afirmar um catálogo que ninguém leu (P-02).
+    """
+    if not isinstance(dados, dict):
+        return ()
+    itens = dados.get("data") if isinstance(dados.get("data"), list) else dados.get("models")
+    if not isinstance(itens, list):
+        return ()
+    nomes = []
+    for item in itens:
+        if isinstance(item, dict):
+            nome = item.get("id") or item.get("name") or item.get("model")
+            if nome:
+                nomes.append(str(nome))
+    return tuple(nomes)
+
+
+def _motivo_do_status(codigo: int, provider: ProviderDeclarado) -> str:
+    """Explica o código sem ecoar o corpo da resposta.
+
+    O corpo fica de fora de propósito: há provedor que devolve a requisição
+    inteira dentro do erro, cabeçalho de autorização junto, e esta mensagem vira
+    linha de log (P-05).
+    """
+    if codigo in (401, 403):
+        variavel = provider.api_key_env or "a chave"
+        return f"O provider recusou a chave. Confira {variavel} no seu `.env`."
+    if codigo == 404:
+        return (
+            f"O provider respondeu 404 em {CAMINHO_DE_SONDAGEM[provider.type]}. "
+            "Confira `base_url` em configs/ai.yml."
+        )
+    return f"O provider respondeu {codigo}."
+
+
+async def _sondar(provider: ProviderDeclarado) -> _Sondagem:
+    """Pergunta ao provider o que ele serve. Falha é resposta, não exceção."""
+    if not provider.base_url:
+        return _Sondagem(False, "O provider não declara `base_url` em configs/ai.yml.")
+
+    url = provider.base_url.rstrip("/") + CAMINHO_DE_SONDAGEM[provider.type]
+    inicio = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_HEALTH_S) as cliente:
+            resposta = await cliente.get(url, headers=_cabecalho_de_sondagem(provider))
+    except (httpx.HTTPError, httpx.InvalidURL) as erro:
+        # A mensagem nomeia o tipo do erro, nunca o cabeçalho que foi enviado.
+        return _Sondagem(
+            False,
+            f"Não respondeu em até {TIMEOUT_HEALTH_S:g}s ({type(erro).__name__}).",
+        )
+
+    latencia_ms = int((time.perf_counter() - inicio) * 1000)
+    if resposta.status_code >= 400:
+        return _Sondagem(False, _motivo_do_status(resposta.status_code, provider), latencia_ms)
+
+    try:
+        listados = _modelos_listados(resposta.json())
+    except ValueError:
+        listados = ()
+    return _Sondagem(True, "", latencia_ms, listados)
+
+
+async def _sondar_todos(providers: tuple[ProviderDeclarado, ...]) -> dict[str, _Sondagem]:
+    """Sonda em paralelo: três providers em série seriam três timeouts em fila."""
+    resultados = await asyncio.gather(*(_sondar(item) for item in providers))
+    return {item.id: sonda for item, sonda in zip(providers, resultados, strict=True)}
+
+
+def _modelos_declarados(config: AiConfig, provider_id: str) -> list[str]:
+    return [modelo.id for modelo in config.modelos if provider_id in modelo.providers]
+
+
+@global_router.get("/providers", response_model=AiProviderList)
+async def listar_providers(config: AiConfig = Depends(get_ai_config)) -> AiProviderList:
+    """Os providers declarados e o estado de cada um (REQ-14).
+
+    O estado é o que a tela de configurações mostra: conectado, não
+    configurado, desligado ou indisponível. O valor da chave não aparece aqui
+    nem mascarado — o que sai é o nome da variável de ambiente (P-05).
+    """
+    sondaveis = tuple(item for item in config.providers_habilitados() if _chave_presente(item))
+    sondagens = await _sondar_todos(sondaveis)
+
+    items = []
+    for provider in config.providers:
+        sonda = sondagens.get(provider.id)
+        if not provider.enabled:
+            estado, motivo = "desligado", "Desligado em configs/ai.yml (`enabled: false`)."
+        elif not _chave_presente(provider):
+            estado, motivo = (
+                "nao_configurado",
+                f"A variável {provider.api_key_env} não está definida no ambiente.",
+            )
+        elif sonda is not None and sonda.disponivel:
+            estado, motivo = "conectado", ""
+        else:
+            estado, motivo = "indisponivel", sonda.motivo if sonda else ""
+        items.append(
+            AiProviderOut(
+                id=provider.id,
+                type=provider.type,
+                enabled=provider.enabled,
+                base_url=provider.base_url,
+                api_key_env=provider.api_key_env,
+                estado=estado,
+                motivo=motivo or None,
+                modelos=_modelos_declarados(config, provider.id),
+            )
+        )
+    return AiProviderList(items=items, ativo=config.ativo, erro=config.erro or None)
+
+
+@global_router.get("/models", response_model=AiModelList)
+def listar_modelos(config: AiConfig = Depends(get_ai_config)) -> AiModelList:
+    """O registro de modelos: capacidades, providers em ordem e faixa de custo.
+
+    Sem `configs/ai.yml` a lista vem vazia com `ativo: false`, e nada quebra.
+    """
+    return AiModelList(
+        items=[
+            AiModelOut(
+                id=modelo.id,
+                model=modelo.model,
+                capabilities=list(modelo.capabilities),
+                providers=list(modelo.providers),
+                cost_tier=modelo.cost_tier,
+                context_window=modelo.context_window,
+            )
+            for modelo in config.modelos
+        ],
+        ativo=config.ativo,
+        erro=config.erro or None,
+    )
+
+
+@global_router.get("/health", response_model=AiHealthOut)
+async def saude_dos_providers(config: AiConfig = Depends(get_ai_config)) -> AiHealthOut:
+    """Quem responde agora, e o que cada um diz servir (REQ-13).
+
+    Devolve 200 mesmo com provider fora do ar: indisponibilidade é dado, e
+    transformá-la em erro da rota faria um serviço de que o painel nem depende
+    impedir a tela de abrir (P-06). Só entram os habilitados — provider
+    `enabled: false` está fora de toda decisão, e sondá-lo seria ruído.
+    """
+    habilitados = config.providers_habilitados()
+    sondaveis = tuple(item for item in habilitados if _chave_presente(item))
+    sondagens = await _sondar_todos(sondaveis)
+
+    items = []
+    for provider in habilitados:
+        sonda = sondagens.get(provider.id) or _Sondagem(
+            False, f"A variável {provider.api_key_env} não está definida no ambiente."
+        )
+        items.append(
+            AiProviderHealthOut(
+                id=provider.id,
+                type=provider.type,
+                disponivel=sonda.disponivel,
+                motivo=sonda.motivo or None,
+                latencia_ms=sonda.latencia_ms,
+                modelos=list(sonda.modelos),
+            )
+        )
+    return AiHealthOut(checked_at=utcnow(), timeout_s=TIMEOUT_HEALTH_S, items=items)
+
+
+# --- consumo do período ----------------------------------------------------
+#
+# Uma rota, uma leitura agregada e nenhuma regra de negócio: por isso ela fala
+# com `RunRepository` direto, sem serviço no meio. O que existe de decisão aqui
+# está em duas linhas — quem é "local" e o que conta como "fallback acionado" —
+# e as duas estão comentadas onde acontecem.
+
+#: Janela padrão da tela de consumo. Sete dias é o que responde "como foi a
+#: semana", que é a pergunta que a tela existe para responder.
+DIAS_DE_CONSUMO_PADRAO = 7
+
+
+def _providers_locais(config: AiConfig) -> list[str]:
+    """Quem é `type: local` no registro — **inclusive o desligado**.
+
+    A linha de `ai_run` não guarda se o provedor era local ou de nuvem, de
+    propósito: isso é declaração de `configs/ai.yml`, e congelá-la na linha
+    criaria uma cópia que envelhece. Em compensação, a classificação é sempre a
+    de *agora*.
+
+    Provider `enabled: false` entra assim mesmo: desligar o Ollama hoje não
+    transforma em nuvem o que ele processou ontem — isso inverteria o número que
+    a tela usa justamente para mostrar quanto ficou na máquina.
+    """
+    return [provider.id for provider in config.providers if provider.local]
+
+
+def _motivo_sem_medicao(config: AiConfig, days: int) -> str:
+    """O que falta para o período poder ser medido (**P-02**).
+
+    Sem registro utilizável a resposta é outra: não é que não se usou a IA, é
+    que ela não tem como rodar — e dizer "0 chamadas" esconderia exatamente a
+    causa.
+    """
+    if not config.ativo:
+        return (
+            "A IA não tem registro utilizável (configs/ai.yml): nenhuma execução "
+            "pode ser registrada até um provider estar declarado e habilitado."
+        )
+    return (
+        f"Nenhuma execução de IA registrada nos últimos {days} dias. "
+        "Os indicadores aparecem depois da primeira pergunta respondida."
+    )
+
+
+@global_router.get("/usage", response_model=AiUsageOut)
+def consumo_do_periodo(
+    days: int = Query(default=DIAS_DE_CONSUMO_PADRAO, ge=1, le=90),
+    session: Session = Depends(get_session),
+    config: AiConfig = Depends(get_ai_config),
+) -> AiUsageOut:
+    """Chamadas, tokens, local × nuvem, custo, latência, falhas e fallbacks.
+
+    Período sem nenhuma tentativa gravada devolve `medido: false` e **todos** os
+    indicadores em `null`, com o motivo em texto (**P-02**). O caminho do zero
+    não existe aqui: um período sem registro não é um período de graça e sem
+    erro, é um período que ninguém mediu.
+
+    Custo e latência seguem anuláveis mesmo com dados: o custo é `null` quando
+    nenhum modelo do período tinha preço declarado, e `chamadas_sem_custo` diz
+    quantas tentativas ficaram de fora da conta, para a tela poder dizer
+    "parcial" em vez de apresentar o total como se fosse completo (REQ-11).
+    """
+    until = utcnow()
+    since = until - timedelta(days=days)
+    resumo = RunRepository(session).aggregate(
+        since=since, until=until, local_providers=_providers_locais(config)
+    )
+
+    if resumo.attempts == 0:
+        return AiUsageOut(
+            since=since,
+            until=until,
+            days=days,
+            medido=False,
+            motivo=_motivo_sem_medicao(config, days),
+        )
+
+    return AiUsageOut(
+        since=since,
+        until=until,
+        days=days,
+        medido=True,
+        indicadores=AiUsageIndicadores(
+            chamadas=resumo.attempts,
+            perguntas=resumo.questions,
+            tokens_in=resumo.tokens_in,
+            tokens_out=resumo.tokens_out,
+            chamadas_local=resumo.local_attempts,
+            tokens_local=resumo.local_tokens,
+            chamadas_cloud=resumo.cloud_attempts,
+            tokens_cloud=resumo.cloud_tokens,
+            # `estimated_cost`, `price_date` e `avg_latency_ms` chegam do
+            # repositório já podendo ser `None`, e passam assim: trocar por 0
+            # aqui seria desfazer, na última linha do caminho, o cuidado que a
+            # tabela e a consulta tiveram desde o começo.
+            custo_estimado=resumo.estimated_cost,
+            price_date=resumo.price_date,
+            chamadas_sem_custo=resumo.attempts_without_cost,
+            latencia_media_ms=resumo.avg_latency_ms,
+            falhas=resumo.failures,
+            fallbacks=resumo.fallbacks,
+        ),
     )

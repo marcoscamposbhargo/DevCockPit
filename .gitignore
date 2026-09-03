@@ -6,6 +6,10 @@
 # roots.yml contém paths reais da máquina; só o exemplo é versionado
 configs/roots.yml
 
+# ai.yml nomeia variáveis de ambiente e reflete o que está instalado aqui;
+# só configs/ai.example.yml é versionado
+configs/ai.yml
+
 # --- Dados locais ------------------------------------------------------
 data/
 *.db
@@ -98,3 +102,7 @@ logs/*
 # investigação, não do projeto.
 .qa/
 .design-shots/
+
+# Arquivo solto de chave na raiz. Nunca foi commitado; entrou aqui para que
+# um `git add .` distraido nao o versione. Chave de verdade vive no .env.
+chave.txt

@@ -141,6 +141,13 @@ class Settings(BaseSettings):
     #: Teto de tokens por dia. Zero desliga o teto — desaconselhado: custo
     #: invisível é o que um dia assusta.
     ai_daily_token_budget: int = 200_000
+    #: Registro declarativo de providers e modelos. Arquivo ausente não é erro:
+    #: sem ele o Cockpit AI segue montando um provider único a partir das
+    #: variáveis acima, como antes (REQ-04).
+    ai_config_file: Path = Path("./configs/ai.yml")
+    #: Teto de tentativas da cadeia de fallback numa mesma pergunta. Existe para
+    #: a cadeia terminar mesmo quando o arquivo declara muitos modelos.
+    ai_max_attempts: int = 3
 
     # --- binários externos; vazio resolve pelo PATH ---
     git_bin: str = ""

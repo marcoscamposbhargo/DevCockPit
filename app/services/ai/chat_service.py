@@ -12,12 +12,29 @@ este arquivo existir:
    lidos; segredo em código sai como `[REDIGIDO]`.
 
 Falhar em qualquer uma delas é recusa com explicação, nunca chamada silenciosa.
+
+**T-12 — o caminho real passa pelo Runner.** Sem provedor injetado (produção,
+não teste), a pergunta é classificada (`classifier.classificar`) e roteada
+(`model_router.escolher`) antes de tocar em qualquer modelo. Três desfechos:
+
+- decisão **recusada** (REQ-07, item 1: `privacy: local` sem modelo local) —
+  a pergunta não vai a lugar nenhum, nem tenta o `.env`;
+- decisão **com candidatos** — o `Runner` (T-09) percorre a cadeia, grava uma
+  linha por tentativa em `ai_run` e devolve a resposta;
+- decisão **vazia** (REQ-04: sem `configs/ai.yml`, ou registro sem candidato
+  algum) — cai no caminho de sempre, `build_provider` a partir do `.env`, sem
+  Runner e sem `ai_run`. É o comportamento de antes desta task, intacto.
+
+O orçamento (`_exigir_orcamento`) continua sendo a primeira coisa, antes de
+classificar ou rotear: estourar o teto não é falha de provedor, e não pode
+gastar nem a primeira tentativa da cadeia.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -28,9 +45,14 @@ from app.models.ai import AiMessage, AiSession
 from app.models.base import utcnow
 from app.models.project import Project
 from app.repositories.ai_repository import MessageRepository, SessionRepository, UsageRepository
+from app.services.ai.classifier import classificar
 from app.services.ai.context_engine import ContextEngine
 from app.services.ai.especialistas import VERSAO_DOS_PROMPTS, escolher
-from app.services.ai.providers import AIRequest, Message
+from app.services.ai.model_router import Decisao, EscolhaManual
+from app.services.ai.model_router import escolher as rotear
+from app.services.ai.providers import AIProvider, AIRequest, Message
+from app.services.ai.registry import AiConfig, get_ai_config
+from app.services.ai.runner import PerguntaRecusada, Runner
 
 logger = logging.getLogger(__name__)
 
@@ -95,16 +117,35 @@ class RespostaDoChat:
     model: str
 
 
+@dataclass
+class Rota:
+    """Como esta pergunta vai ser respondida: pelo Runner, ou pelo `.env`.
+
+    `decisao` presente é o sinal de "vai pelo Runner": `provedor` fica vazio
+    nesse caso, e vice-versa. Os dois nunca coexistem — é o `Decisao` vazio do
+    router (REQ-04) que decide qual dos dois `ask` usa.
+    """
+
+    task_type: str
+    decisao: Decisao | None  # presente só quando tem candidato para tentar
+    provedor: AIProvider | None  # presente só no caminho do `.env`
+
+
 class ChatService:
     def __init__(
         self,
         session: Session,
         settings,  # type: ignore[no-untyped-def]
         provider=None,  # type: ignore[no-untyped-def]
+        registry: AiConfig | None = None,
     ) -> None:
         self.session = session
         self.settings = settings
         self.provider = provider
+        #: O registro declarativo (T-01). `registry` existe para o teste
+        #: injetar um `AiConfig` sem tocar no arquivo do disco; sem ele vale o
+        #: desta instalação — vazio quando `configs/ai.yml` não existe (REQ-04).
+        self.registry = registry if registry is not None else get_ai_config()
         #: Um provedor por perfil de modelo. Construir é barato, mas repetir a
         #: cada pergunta desperdiçaria a conexão que o cliente HTTP reaproveita.
         self._por_perfil: dict[str, object] = {}
@@ -167,8 +208,11 @@ class ChatService:
             raise ValidationError("Faça uma pergunta.")
 
         self._exigir_liberado(project)
-        provedor = self._exigir_provedor(perfil)
+        # Orçamento é a primeira coisa, antes de classificar, rotear ou tocar
+        # em qualquer provedor: estourar o teto não é falha de provedor, e não
+        # pode gastar nem a primeira tentativa da cadeia de fallback (REQ-09).
         self._exigir_orcamento()
+        rota = self._preparar_execucao(texto, estado, perfil)
 
         contexto = self.context.build(project, texto, estado=estado)
         sessao = self.sessions.open_for(project.id)
@@ -197,14 +241,29 @@ class ChatService:
         comeco = time.monotonic()
         partes: list[str] = []
 
-        for pedaco in provedor.stream(pedido):
-            partes.append(pedaco)
-            yield pedaco
+        if rota.decisao is not None:
+            runner = Runner(self.session, self.settings, config=self.registry)
+            execucao = runner.executar(
+                rota.decisao,
+                pedido,
+                task_type=rota.task_type,
+                correlation_id=str(uuid.uuid4()),
+            )
+            for pedaco in execucao.stream():
+                partes.append(pedaco)
+                yield pedaco
+            resultado = execucao.resultado
+            tokens_in = resultado.tokens_in if resultado else contexto.tokens
+            tokens_out = resultado.tokens_out if resultado else 0
+        else:
+            for pedaco in rota.provedor.stream(pedido):
+                partes.append(pedaco)
+                yield pedaco
+            uso = getattr(rota.provedor, "last_usage", None)
+            tokens_in = getattr(uso, "tokens_in", 0) or contexto.tokens
+            tokens_out = getattr(uso, "tokens_out", 0) or 0
 
         resposta = "".join(partes)
-        uso = getattr(provedor, "last_usage", None)
-        tokens_in = getattr(uso, "tokens_in", 0) or contexto.tokens
-        tokens_out = getattr(uso, "tokens_out", 0) or 0
 
         self._gravar(
             project,
@@ -250,14 +309,21 @@ class ChatService:
         no histórico de um projeto qualquer sujaria o registro que existe para
         responder "o que eu fiz aqui?". O **gasto**, esse é contabilizado — o
         teto do dia não teria sentido com uma porta de saída.
+
+        **T-12.1 — mesmo padrão de `ask` (T-12).** `self.provider` injetado
+        continua vencendo sempre, sem passar por classificador, router ou
+        Runner: é o caminho de todo teste desta suíte, e não muda. Sem
+        provedor injetado, `classificar()` e `escolher()` decidem — recusa
+        vira `PerguntaRecusada`, candidatos vão pelo `Runner` (grava
+        `ai_run`), e registro vazio cai no `.env` de sempre, sem `Runner`.
         """
         texto = (pergunta or "").strip()
         if not texto:
             raise ValidationError("Faça uma pergunta.")
 
         self._exigir_ia_ligada()
-        provedor = self._exigir_provedor(perfil)
         self._exigir_orcamento()
+        rota = self._preparar_execucao_rapida(texto, perfil)
 
         pedido = AIRequest(
             messages=[Message(role="user", content=texto)],
@@ -272,15 +338,30 @@ class ChatService:
         )
 
         partes: list[str] = []
-        for pedaco in provedor.stream(pedido):
-            partes.append(pedaco)
-            yield pedaco
 
-        uso = getattr(provedor, "last_usage", None)
-        self.usage.add(
-            tokens_in=getattr(uso, "tokens_in", 0) or 0,
-            tokens_out=getattr(uso, "tokens_out", 0) or 0,
-        )
+        if rota.decisao is not None:
+            runner = Runner(self.session, self.settings, config=self.registry)
+            execucao = runner.executar(
+                rota.decisao,
+                pedido,
+                task_type=rota.task_type,
+                correlation_id=str(uuid.uuid4()),
+            )
+            for pedaco in execucao.stream():
+                partes.append(pedaco)
+                yield pedaco
+            resultado = execucao.resultado
+            tokens_in = resultado.tokens_in if resultado else 0
+            tokens_out = resultado.tokens_out if resultado else 0
+        else:
+            for pedaco in rota.provedor.stream(pedido):
+                partes.append(pedaco)
+                yield pedaco
+            uso = getattr(rota.provedor, "last_usage", None)
+            tokens_in = getattr(uso, "tokens_in", 0) or 0
+            tokens_out = getattr(uso, "tokens_out", 0) or 0
+
+        self.usage.add(tokens_in=tokens_in, tokens_out=tokens_out)
 
     def history(self, project: Project, limit: int = 50) -> list[AiMessage]:
         sessao = self.sessions.open_for(project.id) or self.sessions.last_closed(project.id)
@@ -393,6 +474,63 @@ class ChatService:
                 f"O orçamento de {teto} tokens do dia acabou ({gasto} usados). "
                 "Aumente DEVCOCKPIT_AI_DAILY_TOKEN_BUDGET ou espere amanhã."
             )
+
+    def _preparar_execucao(self, texto: str, estado: dict | None, perfil: str) -> Rota:
+        """Classifica, roteia e decide entre o Runner e o `.env` (T-12).
+
+        `self.provider` injetado vence sempre — dublê de teste não é trocado
+        por cliente HTTP real por causa do roteamento, mesma doutrina de
+        `_exigir_provedor`. É o caminho de praticamente todo teste desta
+        suíte, e o Runner nem chega a ser considerado.
+
+        Sem provedor injetado, a decisão do router manda: `Decisao.recusada`
+        vira `PerguntaRecusada` sem tentar nada (REQ-07, item 1); com
+        candidatos, o Runner assume; sem nenhum candidato — registro ausente
+        ou sem modelo que sirva esta pergunta — cai no provedor único do
+        `.env`, comportamento idêntico ao de antes desta task (REQ-04).
+        """
+        classificacao = classificar(texto, estado=estado)
+
+        if self.provider is not None:
+            return Rota(classificacao.task_type, None, self.provider)
+
+        # `perfil` ("default"/"alt") escolhe entre os dois modelos do `.env`
+        # (`ai_model`/`ai_model_alt`) — vocabulário do caminho antigo, não os
+        # ids lógicos de `configs/ai.yml`. Os dois catálogos não se traduzem
+        # entre si, então o perfil não vira `EscolhaManual`: o modo AUTO do
+        # router decide, e o REQ-08 (escolha explícita de modelo do registro)
+        # fica para quando a tela mandar um id do registro, fora desta task.
+        decisao = rotear(classificacao, EscolhaManual(), self.registry)
+        if decisao.recusada:
+            raise PerguntaRecusada(decisao.recusa)
+        if decisao.candidatos:
+            return Rota(classificacao.task_type, decisao, None)
+
+        # Registro vazio ou sem candidato para esta pergunta: o caminho de
+        # sempre, sem Runner e sem linha em `ai_run`.
+        return Rota(classificacao.task_type, None, self._exigir_provedor(perfil))
+
+    def _preparar_execucao_rapida(self, texto: str, perfil: str) -> Rota:
+        """A mesma decisão de `_preparar_execucao`, para a pergunta sem projeto (T-12.1).
+
+        Existe separada porque `ask_quick` não tem `estado` (não há tela de
+        projeto por trás) — fora isso, é a doutrina de `_preparar_execucao`
+        aplicada sem alteração: `self.provider` injetado vence sempre, e sem
+        ele `classificar()` + `escolher()` decidem entre recusa, Runner e o
+        `.env` de sempre (REQ-04).
+        """
+        classificacao = classificar(texto)
+
+        if self.provider is not None:
+            return Rota(classificacao.task_type, None, self.provider)
+
+        decisao = rotear(classificacao, EscolhaManual(), self.registry)
+        if decisao.recusada:
+            raise PerguntaRecusada(decisao.recusa)
+        if decisao.candidatos:
+            return Rota(classificacao.task_type, decisao, None)
+
+        return Rota(classificacao.task_type, None, self._exigir_provedor(perfil))
 
     # --- persistência ---
 

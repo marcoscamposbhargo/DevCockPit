@@ -1,0 +1,159 @@
+# Registro declarativo de providers e modelos do Cockpit AI
+#
+# Copie para configs/ai.yml e ajuste. O arquivo é OPCIONAL: sem ele, o Cockpit
+# AI monta um provider único a partir do .env (DEVCOCKPIT_AI_PROVIDER,
+# DEVCOCKPIT_AI_MODEL, DEVCOCKPIT_AI_API_KEY), exatamente como antes (REQ-04).
+#
+# IMPORTANTE — NENHUMA CHAVE DE API ENTRA AQUI.
+# O arquivo nomeia a variável de ambiente que carrega a chave (`api_key_env`);
+# o valor é lido do ambiente na hora de montar o provider. A carga RECUSA o
+# arquivo, com erro nomeando-o, se encontrar um campo chamado `api_key`, `key`,
+# `token`, `secret` (e afins) ou um valor com cara de chave ("sk-..."). É a
+# defesa D-A5 e o princípio P-05 da constituição.
+#
+# configs/ai.yml está no .gitignore, como configs/roots.yml: ele reflete o que
+# está instalado nesta máquina. Só este exemplo é versionado.
+#
+# Arquivo malformado não derruba o painel: a IA reporta "não configurada" com o
+# erro de parse e o resto do DevCockpit segue funcionando (P-06).
+
+# --- Providers ------------------------------------------------------------
+#
+# Quem serve modelo. `enabled: false` tira o provider de TODA decisão de
+# roteamento e da cadeia de fallback — não é só um aviso na tela.
+#
+#   id           identificador usado pelos modelos abaixo
+#   enabled      false remove o provider do roteamento inteiro
+#   type         local | cloud — `local` é o que atende pergunta com
+#                privacy: local, e é o último elo quando não há internet
+#   base_url     endereço da API
+#   api_key_env  NOME da variável de ambiente com a chave. Nunca o valor.
+#                Variável ausente = provider "não configurado", excluído do
+#                roteamento, sem erro na abertura.
+
+providers:
+  - id: deepseek
+    enabled: true
+    type: cloud
+    # A CONFIRMAR NA T-14, junto com o usuário, no painel do fornecedor.
+    # Nada aqui foi verificado contra a documentação da DeepSeek.
+    base_url: "<confirmar-na-T-14>"
+    api_key_env: DEVCOCKPIT_AI_KEY_DEEPSEEK
+
+  - id: moonshot
+    enabled: true
+    type: cloud
+    # A CONFIRMAR NA T-14. Idem: endereço não verificado.
+    base_url: "<confirmar-na-T-14>"
+    api_key_env: DEVCOCKPIT_AI_KEY_MOONSHOT
+
+  - id: local
+    enabled: true
+    type: local
+    # Ollama nesta máquina. É o único endereço confirmado deste arquivo.
+    base_url: http://127.0.0.1:11434
+    # Provider local não usa chave: api_key_env fica ausente.
+
+# --- Modelos --------------------------------------------------------------
+#
+#   id              identificador lógico NOSSO, estável. É por ele que a cadeia
+#                   de fallback, a tabela de preço e o router se referem ao
+#                   modelo — trocar o nome real do fornecedor é editar uma linha
+#   model           nome real do modelo na API do fornecedor
+#   capabilities    para que ele serve: coding, debugging, architecture,
+#                   documentation, testing, qa, planning, refactoring,
+#                   simple_task
+#   providers       quem sabe servi-lo, EM ORDEM DE PREFERÊNCIA
+#   cost_tier       free | low | high — o router usa isto para "o mais barato"
+#   context_window  janela em tokens; o router usa para "o de janela maior"
+#                   acima do limiar de complexidade
+
+modelos:
+  - id: deepseek-principal
+    # A CONFIRMAR NA T-14: o identificador real do modelo sai do painel da
+    # DeepSeek, com o usuário. Não inventar — nome errado vira "modelo não
+    # encontrado" e dispara fallback sem ninguém entender por quê.
+    model: "<confirmar-na-T-14>"
+    capabilities: [coding, debugging, refactoring, testing, qa, simple_task]
+    providers: [deepseek]
+    cost_tier: low
+    context_window: 0  # a confirmar na T-14
+
+  - id: kimi-principal
+    # A CONFIRMAR NA T-14. O identificador do Kimi (Moonshot) não está
+    # confirmado — ver "Perguntas em aberto", item 3, da spec.
+    model: "<confirmar-na-T-14>"
+    capabilities: [architecture, planning, documentation, qa, coding]
+    providers: [moonshot]
+    cost_tier: high
+    context_window: 0  # a confirmar na T-14
+
+  - id: local-codigo
+    # Confirmado: é o que está instalado nesta máquina. Medido em 24 a 32
+    # tok/s, sem GPU dedicada — pergunta com contexto real leva minutos. Ele
+    # está na cadeia por privacidade e por ser o último elo sem internet, não
+    # por economia.
+    model: qwen2.5-coder:7b
+    capabilities: [coding, debugging, simple_task, refactoring]
+    providers: [local]
+    cost_tier: free
+    context_window: 32768
+
+# --- Tabela de preço ------------------------------------------------------
+#
+# Preço por MILHÃO de tokens, com a data em que foi anotado. A data aparece na
+# tela junto do custo: preço muda, e custo sem data afirma o que não mediu.
+#
+# Modelo AUSENTE desta tabela grava estimated_cost = null e a tela mostra
+# "não medido" — nunca zero, nunca um valor chutado (P-02).
+#
+# deepseek-principal e kimi-principal ficam de fora DE PROPÓSITO: o preço
+# vigente de cada um sai do painel do fornecedor na T-14. Enquanto não sair,
+# o custo deles aparece como "não medido".
+
+precos:
+  local-codigo:
+    # Zero aqui é medição, não ausência de dado: o modelo roda nesta máquina e
+    # não há cobrança por token. O que a tela não pode fazer é mostrar zero
+    # para modelo cujo preço ninguém anotou.
+    input_por_milhao: 0.0
+    output_por_milhao: 0.0
+    anotado_em: "2026-09-03"
+
+# --- Cadeia de fallback ---------------------------------------------------
+#
+# Ordem em que o runner tenta, de cima para baixo, quando a tentativa anterior
+# falha por timeout, erro de rede, erro do provider ou modelo inexistente.
+# Nenhum provider é tentado duas vezes na mesma execução, e o teto é
+# DEVCOCKPIT_AI_MAX_ATTEMPTS (padrão 3).
+#
+# Erro que não adianta repetir — chave inválida, orçamento estourado, pergunta
+# recusada por política — não anda na cadeia.
+#
+# O local fica por último: é o mais lento desta máquina, e existe aqui como
+# rede de segurança para quando não há internet.
+
+fallback:
+  - deepseek-principal
+  - kimi-principal
+  - local-codigo
+
+# --- Roteamento -----------------------------------------------------------
+#
+# Os limiares do Model Router são configuração, não constante espalhada pelo
+# código (REQ-07).
+#
+#   limiar_complexidade  até este valor (0–100), o router escolhe o modelo mais
+#                        barato entre os que têm a capacidade pedida; acima
+#                        dele, o de maior janela de contexto
+#   modelo_padrao        onde a escolha cai quando nenhum modelo declara a
+#                        capacidade pedida — cair no padrão em vez de falhar
+#
+# Pergunta classificada como privacy: local vai para modelo local SEMPRE, sem
+# consultar complexidade. Sem modelo local habilitado, ela é RECUSADA com
+# explicação — nunca promovida para a nuvem. Isso é regra do router, não
+# configuração, e por isso não tem chave aqui.
+
+roteamento:
+  limiar_complexidade: 40
+  modelo_padrao: deepseek-principal

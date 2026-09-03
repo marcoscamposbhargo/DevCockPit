@@ -164,6 +164,28 @@ export const api = {
   deleteTask: (taskId) => request('DELETE', `/ai/tasks/${taskId}`),
 
   aiStatus: () => request('GET', '/ai/status'),
+
+  /** Os providers declarados e o estado de cada um (REQ-14).
+   *
+   * O campo `api_key_env` é o **nome** da variável de ambiente, nunca o valor:
+   * é o que a tela precisa para dizer onde mexer quando falta configuração
+   * (P-05). Chave não atravessa esta rota nem mascarada.
+   */
+  aiProviders: () => request('GET', '/ai/providers'),
+
+  /** Quem respondeu à sondagem agora, e em quanto tempo.
+   *
+   * Sempre 200: provider fora do ar é dado, não erro. `latencia_ms` vem `null`
+   * quando ninguém respondeu — e `null` não é zero (P-02).
+   */
+  aiHealth: () => request('GET', '/ai/health'),
+
+  /** Consumo de IA do período: chamadas, tokens, custo, latência, falhas (REQ-12).
+   *
+   * `medido: false` com todos os indicadores em `null` é resposta legítima —
+   * janela sem execução registrada, não "rodou de graça e sem erro" (P-02).
+   */
+  aiUsage: (days = 7) => request('GET', '/ai/usage', { params: { days } }),
   /** Os chapéus e os botões de cada um, já resolvidos para este projeto. */
   especialistas: (projectId) =>
     request('GET', '/ai/specialists', { params: { project_id: projectId } }),

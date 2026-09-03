@@ -266,3 +266,174 @@ class ChatMessageOut(BaseModel):
 
 class ChatHistoryOut(BaseModel):
     items: list[ChatMessageOut] = Field(default_factory=list)
+
+
+# --- registro de providers e modelos (REQ-13) -----------------------------
+#
+# Nada nesta seção devolve o valor de uma chave, nem parte dele. O máximo que
+# sai daqui é o **nome** da variável de ambiente que a carrega: o valor vive no
+# ambiente e não atravessa rota nenhuma (P-05, defesa D-A5).
+
+
+#: Vocabulário fechado do estado de um provider, que a tela de configurações
+#: exibe como está (REQ-14). Estado fora desta lista é engano de código, e o
+#: `Literal` faz o erro aparecer aqui em vez de na tela.
+EstadoDoProvider = Literal["conectado", "nao_configurado", "desligado", "indisponivel"]
+
+
+class AiProviderOut(BaseModel):
+    """Um provider declarado e o estado em que ele está.
+
+    `desligado` é `enabled: false` no arquivo; `nao_configurado` é a variável
+    de `api_key_env` ausente do ambiente; `indisponivel` é habilitado e
+    configurado, mas sem resposta na sondagem.
+    """
+
+    id: str
+    #: local | cloud
+    type: str
+    enabled: bool
+    base_url: str = ""
+    #: O NOME da variável de ambiente. Nunca o valor.
+    api_key_env: str = ""
+    estado: EstadoDoProvider
+    #: Por que não está conectado, em texto para a tela. `None` quando está.
+    motivo: str | None = None
+    #: Ids dos modelos que o registro declara para este provider, na ordem do
+    #: arquivo.
+    modelos: list[str] = Field(default_factory=list)
+
+
+class AiProviderList(BaseModel):
+    items: list[AiProviderOut] = Field(default_factory=list)
+    #: Há registro utilizável? Sem `configs/ai.yml` a lista vem vazia e isto vem
+    #: `false` — arquivo ausente é estado normal, não erro (REQ-04).
+    ativo: bool = False
+    #: Erro de carga do registro, quando houve. A tela diz *por que* está sem
+    #: registro em vez de só dizer que está.
+    erro: str | None = None
+
+
+class AiModelOut(BaseModel):
+    """Um modelo declarado: identificador nosso, nome real e para que serve."""
+
+    id: str
+    model: str
+    capabilities: list[str] = Field(default_factory=list)
+    #: Quem sabe servi-lo, na ordem de preferência declarada no arquivo.
+    providers: list[str] = Field(default_factory=list)
+    #: free | low | high
+    cost_tier: str
+    context_window: int = 0
+
+
+class AiModelList(BaseModel):
+    items: list[AiModelOut] = Field(default_factory=list)
+    ativo: bool = False
+    erro: str | None = None
+
+
+class AiProviderHealthOut(BaseModel):
+    """Se o provider respondeu agora, e o que ele disse que serve."""
+
+    id: str
+    type: str
+    disponivel: bool
+    #: Por que não respondeu. `None` quando respondeu.
+    motivo: str | None = None
+    #: Ida e volta medida, em milissegundos. `None` quando não respondeu — não
+    #: existe latência de quem não respondeu, e zero seria mentira (P-02).
+    latencia_ms: int | None = None
+    #: Os modelos que o **próprio provider** listou. Vazio quando ele não
+    #: respondeu ou não devolveu lista legível.
+    modelos: list[str] = Field(default_factory=list)
+
+
+class AiHealthOut(BaseModel):
+    """Saúde dos providers habilitados. Sempre 200: um fora do ar é dado.
+
+    Provider indisponível é relatado como indisponível, com motivo, e os demais
+    seguem normais — derrubar a resposta inteira impediria o painel de abrir por
+    causa de um serviço que ele nem precisa (REQ-13, P-06).
+    """
+
+    checked_at: datetime
+    #: Teto de espera de cada sondagem, para a tela poder explicar o "não
+    #: respondeu".
+    timeout_s: float
+    items: list[AiProviderHealthOut] = Field(default_factory=list)
+
+
+# --- consumo do período (REQ-12) ------------------------------------------
+#
+# Toda a seção existe para não afirmar o que ninguém mediu (**P-02**). Por isso
+# os indicadores moram num objeto separado, e **todos** são anuláveis: período
+# sem nenhuma execução registrada devolve o bloco inteiro em `null`, com
+# `medido: false` e o motivo em texto. Zero seria uma afirmação — "custou nada",
+# "não falhou nada" —, e ninguém mediu isso.
+
+
+class AiUsageIndicadores(BaseModel):
+    """Os números do período. `None` em qualquer campo é "não medido".
+
+    Campo anulável aqui não é descuido de tipagem: é o contrato que permite à
+    tela pintar o indicador em cinza em vez de estampar um zero que a pessoa
+    leria como medição.
+    """
+
+    #: Tentativas de execução — uma pergunta com fallback conta mais de uma.
+    chamadas: int | None = None
+    #: Perguntas distintas: `correlation_id` diferentes no período.
+    perguntas: int | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+
+    #: Local × nuvem sai do registro declarativo (`type: local` em
+    #: `configs/ai.yml`), não de coluna do banco — um provedor pode mudar de
+    #: lado sem que o histórico mude de significado.
+    chamadas_local: int | None = None
+    tokens_local: int | None = None
+    chamadas_cloud: int | None = None
+    tokens_cloud: int | None = None
+
+    #: Soma do que foi possível calcular. `None` quando nenhuma tentativa do
+    #: período tinha preço declarado (REQ-11).
+    custo_estimado: float | None = None
+    #: A data em que o preço usado foi anotado. Vai junto do custo aonde ele
+    #: aparecer: custo sem data envelhece sem avisar.
+    price_date: str | None = None
+    #: Quantas tentativas entraram na conta sem custo conhecido. Maior que zero
+    #: significa que `custo_estimado` é **parcial**, e a tela diz isso em vez de
+    #: apresentar o total como se fosse tudo.
+    chamadas_sem_custo: int | None = None
+
+    #: Média só das tentativas executadas. `skipped` fica de fora: candidato que
+    #: a cadeia nem chegou a tentar não tem latência, e contá-lo como 0 puxaria
+    #: a média para baixo inventando velocidade.
+    latencia_media_ms: float | None = None
+    #: `timeout` e `error`. `skipped` não é falha.
+    falhas: int | None = None
+    #: Perguntas que precisaram de mais de uma tentativa — é esta a definição de
+    #: "fallback acionado" desta rota, e é o que o número na tela conta. Uma
+    #: pergunta que passou por três provedores conta **uma** vez: o que se mede
+    #: é quantas vezes a cadeia precisou existir, não o tamanho dela.
+    fallbacks: int | None = None
+
+
+class AiUsageOut(BaseModel):
+    """O consumo de IA de um período (REQ-12).
+
+    `medido: false` com todos os indicadores em `null` é resposta legítima, e a
+    mais comum numa instalação nova: significa que não há execução registrada na
+    janela, não que a IA rodou de graça e sem erro.
+    """
+
+    since: datetime
+    until: datetime
+    #: O tamanho da janela pedida, para a tela rotular o que está mostrando.
+    days: int
+    #: Houve alguma execução registrada no período?
+    medido: bool
+    #: O que falta para haver medição. `None` quando há (**P-02**).
+    motivo: str | None = None
+    indicadores: AiUsageIndicadores = Field(default_factory=AiUsageIndicadores)

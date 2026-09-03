@@ -4,11 +4,17 @@ O DevCockpit não se acopla a um fornecedor. A troca é de configuração, não 
 código, e existe um provedor **local** de propósito: para quem não pode mandar
 código para fora, ele é a única forma de usar o Cockpit AI.
 
-Três implementações reais (Anthropic, OpenAI e Ollama) e uma dublê. Todas
-falam o mesmo protocolo interno; a diferença entre elas mora só na montagem do
-corpo e na leitura do stream.
+Três formatos reais (Anthropic, `/v1/chat/completions` e Ollama) e uma dublê.
+Todos falam o mesmo protocolo interno; a diferença entre eles mora só na
+montagem do corpo e na leitura do stream.
 
-Nenhuma delas guarda chave: a chave vem de `Settings`, que vem de variável de
+Formato não é fornecedor: `/v1/chat/completions` virou padrão de fato, e um
+mesmo cliente atende OpenAI, DeepSeek e Kimi — o que muda é `base_url`, chave e
+`name`, tudo vindo da configuração. Por isso `name` é atributo de instância com
+padrão de classe: dois provedores da mesma classe precisam aparecer com
+identidade própria no registro de execuções e na mensagem de erro.
+
+Nenhum deles guarda chave: a chave vem de `Settings`, que vem de variável de
 ambiente. Nunca do banco, nunca de uma resposta HTTP (defesa D-A5).
 """
 
@@ -16,13 +22,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
 from app.core.errors import DomainError
+
+if TYPE_CHECKING:
+    from app.services.ai.model_router import Candidato
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +95,23 @@ class _HttpProvider:
     e vive aqui.
     """
 
+    #: Padrão de classe. `name` de verdade é o de instância, montado abaixo.
     name = "http"
 
-    def __init__(self, *, api_key: str, model: str, base_url: str, timeout_s: float = 120.0):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        base_url: str,
+        timeout_s: float = 120.0,
+        name: str = "",
+    ):
+        # Identidade é dado, não classe: o mesmo cliente serve dois fornecedores
+        # com o mesmo formato de API, e cada um precisa se registrar com o
+        # próprio nome. Sem `name`, vale o padrão da classe — nada muda para
+        # quem já construía o provedor sem passar nada (REQ-05).
+        self.name = name or type(self).name
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -255,8 +279,22 @@ class AnthropicProvider(_HttpProvider):
         )
 
 
-class OpenAIProvider(_HttpProvider):
-    name = "openai"
+class OpenAICompatibleProvider(_HttpProvider):
+    """Qualquer API que fale `/v1/chat/completions`.
+
+    OpenAI, DeepSeek e Kimi (Moonshot) expõem o mesmo formato: mesmo caminho,
+    mesma autenticação por `Bearer`, mesmo SSE de `choices[].delta.content`,
+    mesma contagem em `usage.prompt_tokens`/`completion_tokens` e o mesmo
+    `stream_options.include_usage` para receber a contagem no stream. Servir
+    cada um é questão de `base_url`, chave e `name` — nunca de classe nova, que
+    seriam três cópias do mesmo código divergindo com o tempo.
+
+    Se algum fornecedor divergir em um ponto (a leitura do uso, o campo de
+    erro), a divergência vira subclasse pequena sobrescrevendo só o método em
+    questão, como `OpenAIProvider` faz com o nome.
+    """
+
+    name = "openai-compatible"
 
     def _url(self) -> str:
         return f"{self.base_url}/v1/chat/completions"
@@ -306,6 +344,17 @@ class OpenAIProvider(_HttpProvider):
             ),
             model=str(dados.get("model") or self.model),
         )
+
+
+class OpenAIProvider(OpenAICompatibleProvider):
+    """A OpenAI é um caso do formato compatível, não o contrário.
+
+    Existe como classe própria porque o `.env` de hoje nomeia `openai` e os
+    testes a importam por nome — e porque o registro da execução precisa dizer
+    `openai`, não `openai-compatible`.
+    """
+
+    name = "openai"
 
 
 class LocalProvider(_HttpProvider):
@@ -492,4 +541,67 @@ def build_provider(settings, model: str = "") -> AIProvider:  # type: ignore[no-
         model=model or settings.ai_model or MODELO_PADRAO[nome],
         base_url=settings.ai_base_url or BASE_URL_PADRAO[nome],
         timeout_s=settings.ai_timeout,
+    )
+
+
+# --- a construção do provedor a partir do registro (`configs/ai.yml`) -----
+#
+# Vive ao lado de `build_provider` porque é a mesma responsabilidade — candidato
+# ou configuração vira cliente `AIProvider` — só que a partir do registro
+# declarativo (T-01) em vez do `.env`. Nasceu em `runner.py` (T-09), porque a
+# T-02 fechou antes de o registro existir; move para cá depois, sem mudar
+# comportamento, para as duas montagens do provedor morarem juntas.
+#
+# `Candidato` só entra como type hint (`TYPE_CHECKING`): não há import circular
+# hoje entre `providers.py` e `model_router.py`/`registry.py`, mas este módulo é
+# a camada mais baixa da árvore de IA, e não há motivo para ele carregar em
+# runtime o registro declarativo só para um nome de tipo.
+
+#: Formato de wire por id de provider declarado. Quem não estiver aqui fala
+#: `/v1/chat/completions` (nuvem) ou o formato do Ollama (local) — que é o que
+#: DeepSeek e Kimi usam, e a razão de `OpenAICompatibleProvider` existir.
+FORMATOS_POR_PROVIDER: dict[str, type] = {
+    "anthropic": AnthropicProvider,
+    "openai": OpenAIProvider,
+}
+
+
+def construir_provider(candidato: Candidato, settings) -> AIProvider:  # type: ignore[no-untyped-def]
+    """Monta o cliente do candidato. Levanta quando falta peça.
+
+    A chave sai do ambiente pelo nome declarado em `api_key_env`, e de lugar
+    nenhum mais: o registro nomeia a variável, nunca guarda o valor (**P-05**).
+    """
+    declarado = candidato.provider
+    modelo = candidato.modelo.model
+
+    if declarado.local:
+        return LocalProvider(
+            api_key="",
+            model=modelo,
+            base_url=declarado.base_url or BASE_URL_PADRAO["local"],
+            timeout_s=settings.ai_timeout,
+            name=declarado.id,
+        )
+
+    if not declarado.base_url:
+        raise ProviderNotConfigured(
+            f"O provider {declarado.id!r} não declara 'base_url' em configs/ai.yml."
+        )
+
+    chave = os.environ.get(declarado.api_key_env, "").strip() if declarado.api_key_env else ""
+    if not chave:
+        raise ProviderNotConfigured(
+            f"O provider {declarado.id!r} precisa da variável "
+            f"{declarado.api_key_env or 'declarada em api_key_env'} no ambiente. "
+            "A chave nunca é guardada no banco nem editável pela tela."
+        )
+
+    classe = FORMATOS_POR_PROVIDER.get(declarado.id, OpenAICompatibleProvider)
+    return classe(
+        api_key=chave,
+        model=modelo,
+        base_url=declarado.base_url,
+        timeout_s=settings.ai_timeout,
+        name=declarado.id,
     )

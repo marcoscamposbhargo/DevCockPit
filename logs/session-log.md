@@ -4014,3 +4014,169 @@ qualquer código.
 
 Uma observação para quem voltar aqui: a confirmação visual do fim do piscar é do
 usuário, não minha. Eu medi processo e log; quem olha o desktop é ele.
+
+## 2026-09-03 — Sessão 35: AI Harness, ciclo spec-driven completo
+
+Ponto de partida: dois documentos soltos na raiz do repositório (`PRD —
+DEVCOCKPIT AI HARNESS / HYPERBRAIN.MD` e o "Prompt Mestre" de implementação)
+pedindo uma infraestrutura de IA com serviço FastAPI separado, PostgreSQL,
+Redis, Docker Compose, RAG, múltiplos agentes e Developer Agent que edita
+arquivo. O primeiro trabalho da sessão foi medir o que já existia antes de
+aceitar esse escopo: `app/services/ai/` já tinha 1.984 linhas rodando —
+provider abstraction, três especialistas, catálogo fechado de ações, teto
+diário de tokens, auditoria com `actor=ai`. O PRD, ao pé da letra, colidia
+frontalmente com ADR-002 (SQLite), ADR-005 (frontend sem build) e a defesa D-A3
+(a IA não ganha capacidade nova) — e o app é um `.exe` PyInstaller de um
+usuário só, não um produto multiserviço.
+
+Depois de apresentar esse recorte e receber aprovação para seguir só com o
+delta dentro da arquitetura existente, rodou o ciclo `/spec-driven` completo:
+constituição → spec → plano → tasks → implementação em ondas → auditoria.
+
+### Fase 0 — Constituição
+
+`docs/constitution.md` (v1.0.0), sete princípios destilados dos nove ADRs, do
+modelo de segurança e das defesas D-A1/D-A3 — nada inventado, só consolidado.
+P-01 (sem capacidade nova), P-02 (nunca afirma o que não mediu), P-03 (um
+processo, sem build), P-05 (segredo só no ambiente) foram os que mais
+seguraram decisão ao longo da sessão.
+
+### Fases 1-4 — Spec, plano, tasks, implementação
+
+Spec `docs/specs/ai-harness-mvp/spec.md`: 15 requisitos (REQ-01 a REQ-15)
+cobrindo registro declarativo de providers/modelos, task classifier por regra,
+model router com fallback, custo estimado datado, e `.project-ai/` no
+contexto. Fora de escopo explicitamente dividido em "barrado por princípio"
+(serviço separado, Developer Agent, chave visível) e "adiado por fase" (RAG,
+Judge, multi-agent, roteamento adaptativo).
+
+Decisão que mudou o meio do ciclo: o usuário pediu DeepSeek e Kimi (Moonshot)
+como modelos de trabalho em vez do "local first" original do PRD. Medido nesta
+máquina — 24 a 32 tok/s no `qwen2.5-coder:7b`, sem GPU — a meta de 70-80% local
+do PRD nunca foi realista aqui. A spec registrou isso como premissa corrigida,
+não como meta perdida: o local ficou na cadeia só por privacidade (REQ-07 item
+1, recusa em vez de promover para nuvem) e como último elo sem internet.
+
+Tasks: 14 tasks em 5 ondas, executadas por `spec-implementer`/`frontend-builder`
+em paralelo dentro de cada onda. Concluídas nesta sessão: T-01 a T-13, mais
+T-12.1 (adicionada no meio do ciclo, ver achados).
+
+### Achados
+
+**`qa` tinha dois significados no mesmo serviço.** A T-03 (task classifier)
+definiu `task_type: qa` como "pergunta e resposta genérica" e o tornou padrão.
+Mas `app/services/ai/especialistas.py:104` já define `QA` como quality
+assurance (testes, bugs, regressão) — mesmo sentido do PRD §24. Do jeito que
+ficou, toda pergunta solta seria roteada para o especialista de testes. É o
+mesmo padrão de defeito da sessão 31/32 (quatro definições de "qual serviço é
+a aplicação"). Corrigido: `qa` voltou a ser quality assurance com gatilhos
+próprios, escopados a frase para não colidir com `debugging`/`testing`
+("o que pode quebrar" contém `quebrar`, mas não é debugging); `simple_task`
+virou o padrão sem condição.
+
+**Corpo de resposta do provider podia vazar prompt para o banco.**
+`_HttpProvider._explicar` incluía até 200 caracteres do corpo bruto da
+resposta na mensagem de erro — um provider que ecoasse parte do prompt
+("não entendi: <trecho>") levaria isso para `ai_run.error`, violando REQ-10.
+A T-09 separou `Falha.motivo` (frase de catálogo, vai pro banco) de
+`Falha.detalhe` (mensagem mascarada, só log). Achado da própria agente, não
+pedido explícito da task.
+
+**Ambiguidade real entre REQ-07 e REQ-08.** A spec não dizia o que acontece
+quando a pessoa escolhe manualmente um modelo de nuvem numa pergunta marcada
+como `privacy: local`. A T-06 resolveu para o lado seguro — escolha manual
+vence *qual modelo*, nunca *se a pergunta pode sair da máquina* — e a spec foi
+desambiguada no ato para registrar isso como regra, não como interpretação de
+uma agente.
+
+**Divergência de plano descoberta na T-09, corrigida por agente dedicado.** O
+plano previa que `build_provider` em `providers.py` ganhasse o caminho
+registry→cliente; por ordem de conclusão das tasks (T-02 fechou antes da T-01
+existir), a T-09 duplicou essa lógica em `runner.py`. A agente sinalizou a
+divergência em vez de decidir sozinha; um agente à parte unificou em
+`providers.py`, com cuidado explícito de import circular (resolvido com
+`TYPE_CHECKING`), sem regressão nos 956 testes da época.
+
+**`ask_quick` ficou fora do fallback na primeira passada.** A T-12 ligou só
+`ask()` (chat com histórico) ao runner, porque era o alvo explícito dos
+critérios de aceite. `ask_quick()` — único chamador real: `POST /api/ai/chat`
+— ficou sem fallback nem gravação de `ai_run`. Não era caso teórico: é rota em
+produção. Decisão do usuário foi fechar isso na hora, task T-12.1 adicionada
+ao ciclo e executada antes de encerrar.
+
+**`chave.txt` solto na raiz, nunca commitado mas não ignorado.** Duas agentes
+diferentes tropeçaram nele sem abrir o conteúdo. Confirmado: nunca entrou no
+histórico do git (`git log --all -- chave.txt` vazio), mas aparecia como `??`
+— um `git add .` distraído o teria versionado. Adicionado ao `.gitignore` na
+hora; o arquivo em si fica para o usuário mover o conteúdo para `.env` e
+apagar, na T-14.
+
+**Tela de consumo sem link de navegação.** A T-13 construiu `ai-usage.js`
+funcional, mas só listou `router.js` nos arquivos da task — a página ficou
+alcançável só por URL direta. Adicionado o item "AI Usage" na sidebar
+(`frontend/index.html`) com ícone novo (`gauge`, mesmo traço dos demais) fora
+do ciclo de tasks, por ser lacuna óbvia de usabilidade.
+
+**Busca web trouxe nomes de modelo não verificáveis.** Ao preparar o passo a
+passo da T-14, uma pesquisa automatizada trouxe `deepseek-v4-flash`/`v4-pro` e
+`kimi-k3`/`k2.6` como identificadores reais — possivelmente corretos, mas
+vistos só por resumo de IA sobre a página, não a documentação crua, e
+posteriores ao corte de conhecimento do assistente. Decisão: não escrever isso
+em `configs/ai.yml` sem o usuário confirmar direto no painel/billing de cada
+fornecedor. Documentado como passo 1 obrigatório da T-14.
+
+### Fase 5 — Auditoria
+
+`docs/specs/ai-harness-mvp/audit.md`: 15 de 15 REQ cumpridos, 0 violações de
+constituição, 0 escopo indevido, convergência na primeira rodada — sem
+necessidade de fase 6. Único achado: `.env.example` não documentava as quatro
+variáveis novas que o plano prometia (`DEVCOCKPIT_AI_KEY_DEEPSEEK`,
+`DEVCOCKPIT_AI_KEY_MOONSHOT`, `DEVCOCKPIT_AI_CONFIG_FILE`,
+`DEVCOCKPIT_AI_MAX_ATTEMPTS`) — severidade baixa, nada quebrava em runtime.
+Corrigido na hora.
+
+### Verificação executada
+
+```
+pytest -q                              → 963 passed, 3 skipped, 3 deselected (92s)
+ruff check .                           → All checks passed
+node --test tests/frontend/*.test.mjs  → 89 passed, 0 failed
+```
+
+Os 3 skips são `os.symlink` em `.project-ai/` e `context_engine.py`, que
+exigem Modo de Desenvolvedor/administrador no Windows — a regra que eles
+testariam foi coberta por caminho alternativo (junction de diretório, testado
+à mão pela agente da T-05).
+
+### Situação ao encerrar
+
+Working tree com 43 arquivos alterados/novos, ainda não commitados (checkpoint
+desta sessão vai commitar). Nenhum arquivo de segredo staged — conferido
+`.env.example` e `.gitignore`, só nome de variável, nenhum valor.
+
+**14 tasks automatizadas concluídas** (T-01 a T-13 + T-12.1). Falta só
+**T-14**, exclusivamente manual, documentada passo a passo em
+`docs/specs/ai-harness-mvp/t14-passo-a-passo.md`:
+
+1. Confirmar identificador real e preço de DeepSeek e Kimi direto no
+   painel/billing de cada fornecedor (não usar os nomes que a busca trouxe
+   sem validar).
+2. Escrever `configs/ai.yml` a partir do exemplo.
+3. Colocar as duas chaves no `.env`; apagar `chave.txt`.
+4. Aplicar migração 010 no banco de produção **e** reconstruir/reinstalar o
+   `.exe` na mesma sessão (senão o painel instalado quebra com erro de
+   revisão).
+5. Verificação ao vivo: pergunta real por DeepSeek/Kimi com custo aparecendo;
+   Ollama parado + pergunta privada deve recusar, nunca ir pra nuvem; chave
+   errada não repete tentativa.
+
+### Próximo passo
+
+T-14, pelo usuário, seguindo o passo a passo. Depois dela, a spec
+`ai-harness-mvp` está encerrada de ponta a ponta. O que ficou de fora por
+decisão de escopo (RAG, Judge/multi-agent, roteamento adaptativo, Groq/
+OpenRouter/Gemini como classes próprias, `write_summary` sem fallback) segue
+registrado em "Fora de escopo" da spec para quando fizer sentido reabrir.
+
+Nada do HyperBrain MVP 3/4 nem da Fase 5 do Cockpit AI foi tocado nesta
+sessão — seguem exatamente onde a sessão 33 deixou.

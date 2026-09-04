@@ -89,10 +89,16 @@ temp/
 *.bak
 *.orig
 
-# Log de sessao e versionado (convencao de trabalho); o resto de logs/ nao
+# Log de sessão é versionado (convenção de trabalho); o resto de logs/ não.
+# Um arquivo por sessão em logs/sessions/ desde 2026-09-04 (session-log.md
+# virou só o índice) — o log operacional de runtime (devcockpit.log etc.)
+# continua fora.
 !logs/
 logs/*
 !logs/session-log.md
+!logs/sessions/
+logs/sessions/*
+!logs/sessions/*.md
 
 # Artefatos de build do setuptools
 *.egg-info/

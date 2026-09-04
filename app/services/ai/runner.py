@@ -486,8 +486,16 @@ class Execucao:
             except ERROS_DE_PROVEDOR as erro:
                 ultima = classificar_erro(erro)
                 self._registrar_falha(candidato, ultima, comeco)
-                if not ultima.repetivel:
-                    raise self._esgotada(ultima) from erro
+                # `repetivel` decide se VALERIA A PENA tentar o MESMO provider
+                # de novo — mas `_fila()` já nunca repete provider (REQ-09), e
+                # o próximo candidato é sempre outro endereço. Chave inválida
+                # ou saldo esgotado na DeepSeek não diz nada sobre o Kimi: são
+                # contas e providers diferentes. Corrigido em 2026-09-04 pela
+                # verificação ao vivo da T-14 — um `raise` aqui parava a
+                # cadeia inteira no primeiro erro de configuração, mesmo com
+                # um provider saudável logo depois. O que continua parando
+                # tudo é `_exigir_orcamento()`, que roda antes da cadeia
+                # inteira: aquele é limite nosso, não falha de um provider.
                 if partes:
                     # Texto já entregue de uma resposta que não terminou. Ele
                     # não vira `Resultado.texto` — mas está na tela, e emendar

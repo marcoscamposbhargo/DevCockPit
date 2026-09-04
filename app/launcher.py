@@ -61,6 +61,7 @@ def preparar_ambiente(base: Path) -> None:
     os.environ.setdefault("DEVCOCKPIT_LOG_FILE", str(base / "logs" / "devcockpit.log"))
     os.environ.setdefault("DEVCOCKPIT_ROOTS_FILE", str(base / "configs" / "roots.yml"))
     os.environ.setdefault("DEVCOCKPIT_DEFAULTS_FILE", str(base / "configs" / "defaults.yml"))
+    os.environ.setdefault("DEVCOCKPIT_AI_CONFIG_FILE", str(base / "configs" / "ai.yml"))
 
     _carregar_env(base / ".env")
 

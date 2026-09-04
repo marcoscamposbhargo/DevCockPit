@@ -25,6 +25,7 @@ def ambiente_limpo(monkeypatch: pytest.MonkeyPatch) -> None:
         "DEVCOCKPIT_LOG_FILE",
         "DEVCOCKPIT_ROOTS_FILE",
         "DEVCOCKPIT_DEFAULTS_FILE",
+        "DEVCOCKPIT_AI_CONFIG_FILE",
         "DEVCOCKPIT_PORT",
     ):
         monkeypatch.delenv(chave, raising=False)
@@ -41,6 +42,24 @@ def test_prepara_pastas_e_aponta_settings(tmp_path: Path, ambiente_limpo: None) 
 
     assert os.environ["DEVCOCKPIT_DATABASE_URL"].endswith("devcockpit.db")
     assert Path(os.environ["DEVCOCKPIT_ROOTS_FILE"]).parent == tmp_path / "configs"
+    assert Path(os.environ["DEVCOCKPIT_AI_CONFIG_FILE"]) == tmp_path / "configs" / "ai.yml"
+
+
+def test_ai_config_file_aponta_para_a_pasta_ao_lado_do_exe(
+    tmp_path: Path, ambiente_limpo: None
+) -> None:
+    """Achado da T-14: faltava este `setdefault`, e o caminho relativo do
+    `.env` (`./configs/ai.yml`) resolvia contra `sys._MEIPASS` — o diretório
+    temporário do PyInstaller, não a pasta ao lado do `.exe`. O registro
+    parecia vazio (`ativo: false`) mesmo com o arquivo existindo, sem erro
+    nenhum: exatamente o modo de falha que `test_env_ao_lado_do_executavel_e_lido`
+    já bloqueia para o `.env`, agora fechado aqui para `configs/ai.yml`.
+    """
+    launcher.preparar_ambiente(tmp_path)
+
+    import os
+
+    assert os.environ["DEVCOCKPIT_AI_CONFIG_FILE"] == str(tmp_path / "configs" / "ai.yml")
 
 
 def test_env_ao_lado_do_executavel_e_lido(

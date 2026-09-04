@@ -139,12 +139,29 @@ política determinística e legível, nesta ordem de precedência:
    com explicação — nunca promovida para a nuvem.
 2. Caso contrário, a complexidade decide entre os modelos cloud habilitados que
    tenham a capacidade pedida: até 40, o mais barato; acima de 40, o de janela
-   maior.
+   maior. **O modelo local que declare a mesma capacidade entra ao final desta
+   lista**, depois de todo candidato de nuvem — nunca disputa "o mais barato"
+   nem "a maior janela" (por isso fica fora do critério de ordenação), mas
+   segue sendo candidato de último recurso quando a nuvem inteira falhar.
+   Restrição manual de provider (REQ-08) não se estende ao local: pedir um
+   provider específico é a pessoa dizendo "só este endereço", e completar por
+   baixo dela com o local seria contrariar o pedido.
 3. Sem candidato com a capacidade pedida, cai no modelo padrão configurado em
    vez de falhar.
 
 A política vive num único lugar legível e é alterável por `configs/ai.yml`. Os
 limiares são configuração, não constante espalhada.
+
+**Correção de 2026-09-04, por verificação ao vivo da T-14.** A primeira
+implementação do item 2 excluía o local da lista de candidatos por completo
+(certo, para não disputar "o mais barato" — ver a nota de premissa abaixo),
+mas não o reintroduzia como último recurso depois. Com DeepSeek e Kimi sem
+saldo e o Qwen local saudável e de pé, a pergunta falhava sem nunca oferecer
+o local como candidato — o comentário do próprio `configs/ai.yml` sobre "o
+local é a rede de segurança sem internet" não correspondia ao que o código
+fazia. `_modelos_de_nuvem` continua excluindo o local do critério de
+ordenação; o que mudou é que ele entra depois, como último candidato da fila
+que o runner consome.
 
 **Nota de premissa.** A meta LOCAL FIRST do PRD (§3 e §48: 70–80% das tarefas
 locais) **não se aplica a esta máquina** e não é critério de aceite deste ciclo.
@@ -167,12 +184,23 @@ Privacidade é portão, não preferência. Escolha manual com identificador
 desconhecido cai no automático, sem levantar e sem mandar o nome cru ao
 fornecedor.
 
-**REQ-09** — Quando uma tentativa falha por timeout, erro de rede, erro do
-provider ou modelo inexistente, o sistema tenta o próximo candidato da cadeia
-declarada em `configs/ai.yml`, até um máximo configurável de tentativas (padrão
-3). Erro que não adianta repetir — chave inválida, orçamento estourado, pergunta
-recusada por política — não dispara fallback. Nenhum provider é tentado duas
-vezes na mesma execução.
+**REQ-09** — Quando uma tentativa falha, o sistema tenta o próximo candidato da
+cadeia declarada em `configs/ai.yml`, até um máximo configurável de tentativas
+(padrão 3). Nenhum provider é tentado duas vezes na mesma execução — é essa
+regra, não o motivo do erro, que evita repetir uma tentativa inútil contra o
+mesmo provider que já falhou (chave inválida, sem saldo, recusa por política).
+Erro de um provider nunca impede a tentativa do próximo: chave inválida ou
+saldo esgotado na DeepSeek não diz nada sobre o Kimi, que é outra conta e outro
+endereço. O único bloqueio que interrompe a cadeia **inteira antes de começar**
+é `_exigir_orcamento()` — o teto diário é limite nosso, não falha de provider,
+e por isso nunca gera tentativa nem consome a cadeia.
+
+**Correção de 2026-09-04, por verificação ao vivo da T-14.** A primeira
+implementação lia "erro que não adianta repetir... não dispara fallback" como
+"para a cadeia inteira", e a chave da DeepSeek sem saldo (402) impediu até o
+Kimi, saudável, de ser tentado. Esse não é o comportamento que se quer: o
+critério certo de "vale a pena tentar de novo" é sempre por *provider*, nunca
+pela cadeia como um todo.
 
 ### Observabilidade e custo
 
@@ -219,9 +247,9 @@ Pasta ausente não é erro e não muda o comportamento de hoje.
 | REQ-04 | Suíte roda com `configs/ai.yml` ausente e todos os testes atuais do Cockpit AI continuam passando sem alteração. |
 | REQ-05 | Teste sobe servidor de imitação para DeepSeek e para Kimi, exercita `stream` e `complete` em cada um, e confere texto acumulado e tokens. Um terceiro teste prova que os dois usam a mesma classe, diferindo só por configuração. Verificação ao vivo com a chave real do usuário fecha o REQ. |
 | REQ-06 | Tabela de casos: para cada `task_type`, ao menos uma pergunta de exemplo produz a classificação esperada. Teste mede que classificar 100 perguntas fica abaixo de 50 ms cada. |
-| REQ-07 | Teste alimenta classificações sintéticas de complexidade 10, 50 e 90 e confere o modelo escolhido em cada faixa. Teste com `privacy: local` confere que o escolhido é local mesmo com complexidade 95; e que, sem modelo local habilitado, a pergunta é recusada — teste que falha se a escolha cair em provider `type: cloud`. Caso sem candidato com a capacidade cai no padrão e não levanta. |
+| REQ-07 | Teste alimenta classificações sintéticas de complexidade 10, 50 e 90 e confere o modelo escolhido em cada faixa. Teste com `privacy: local` confere que o escolhido é local mesmo com complexidade 95; e que, sem modelo local habilitado, a pergunta é recusada — teste que falha se a escolha cair em provider `type: cloud`. Caso sem candidato com a capacidade cai no padrão e não levanta. Teste confere que o local aparece como **último** candidato da lista (nunca primeiro, nunca ausente) quando declara a mesma capacidade; e que restrição manual de provider não o inclui. |
 | REQ-08 | Teste envia modelo explícito junto da pergunta e confere que o registro da execução marca `manual` e usa o modelo pedido, mesmo com a regra apontando outro. |
-| REQ-09 | Com `FakeProvider` configurado para timeout, depois erro, depois sucesso: a resposta chega, três linhas de tentativa são gravadas e a última tem status `ok`. Teste separado prova que chave inválida não gera segunda tentativa. |
+| REQ-09 | Com `FakeProvider` configurado para timeout, depois erro, depois sucesso: a resposta chega, três linhas de tentativa são gravadas e a última tem status `ok`. Teste separado prova que chave inválida na primeira conta AVANÇA para a segunda (provider diferente) e responde; e que dois candidatos do MESMO provider nunca chamam o segundo. |
 | REQ-10 | Depois de uma pergunta com fallback, consultar o registro pelo `correlation_id` devolve as tentativas em ordem, com latência preenchida. Teste varre as linhas procurando trecho do prompt e não encontra. |
 | REQ-11 | Modelo com preço declarado gera `estimated_cost` numérico coerente com tokens × preço. Modelo sem preço gera `null`, e a rota de consumo traz "não medido" em vez de `0`. |
 | REQ-12 | Rota de consumo devolve todos os campos listados; teste com banco vazio confere que os indicadores vêm como não medidos, não como zero. Verificação visual na tela fecha o REQ. |
@@ -240,8 +268,12 @@ Pasta ausente não é erro e não muda o comportamento de hoje.
 - **Todos os providers da cadeia falham:** erro único ao usuário dizendo quantas
   tentativas houve e o motivo da última, com as tentativas gravadas. Não repetir
   a cadeia.
-- **Teto diário de tokens estourado no meio da cadeia:** interrompe sem tentar o
-  próximo — orçamento não é falha de provider (REQ-09).
+- **Teto diário de tokens estourado:** interrompe **antes** da cadeia começar —
+  orçamento é checado uma vez, no início, não "no meio"; não é falha de
+  provider e não consome tentativa (REQ-09).
+- **Chave inválida ou sem saldo num provider da cadeia:** não impede o próximo
+  candidato, que é sempre outro provider — `_fila()` nunca oferece o mesmo
+  provider duas vezes (REQ-09, corrigido em 2026-09-04).
 - **Ollama no ar mas sem o modelo instalado:** conta como falha que dispara
   fallback, com o nome do modelo na mensagem, porque é o erro mais comum nesta
   máquina.

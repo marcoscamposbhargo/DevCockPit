@@ -193,6 +193,31 @@ def escolher(
             )
         candidatos = _pares(registro, ordenados, pedido.provider)
         if candidatos:
+            # O local entra no FIM da fila, depois de todo candidato de nuvem
+            # — nunca disputa "o mais barato" nem "a maior janela" (é por
+            # isso que _modelos_de_nuvem o exclui acima), mas continua sendo
+            # a rede de segurança quando a nuvem inteira falhar (achado da
+            # verificação ao vivo da T-14, 2026-09-04: as duas contas cloud
+            # ficaram sem saldo, o Qwen local estava de pé e saudável, e a
+            # pergunta falhou sem nunca oferecê-lo como candidato — o
+            # comentário de `configs/ai.yml` sobre "último elo sem internet"
+            # não correspondia ao que o router fazia).
+            # Restrição manual de provider é a pessoa dizendo "só este
+            # endereço" — não estender ao local por baixo dela seria ignorar
+            # um pedido explícito. Sem restrição, o local entra como último
+            # recurso de qualquer forma.
+            if not pedido.provider:
+                locais_com_capacidade = [
+                    modelo
+                    for modelo in _modelos_locais(registro)
+                    if capacidade in modelo.capabilities
+                ]
+                # `so_local=True`: um modelo servido tanto por nuvem quanto
+                # por Ollama não pode duplicar aqui o candidato de nuvem que
+                # já está em `candidatos` — só o lado local dele entra.
+                candidatos = candidatos + _pares(
+                    registro, locais_com_capacidade, so_local=True
+                )
             modo: Modo = "manual" if pedido.provider else "auto"
             return Decisao(candidatos, modo, f"{nota}{criterio} entre os que fazem {capacidade}")
 

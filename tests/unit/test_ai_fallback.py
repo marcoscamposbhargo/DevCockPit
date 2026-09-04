@@ -381,11 +381,20 @@ class TestCadeiaQueAnda:
         assert cadeia[0].decision == "auto"
 
 
-# --- 2. a cadeia para: erro que não adianta repetir -----------------------
+# --- 2. erro não repetível pula de provider, não para a cadeia ------------
+#
+# Corrigido em 2026-09-04 pela verificação ao vivo da T-14: a DeepSeek estava
+# sem saldo (402) e o Kimi, saudável, nunca chegou a ser tentado — a cadeia
+# parava no primeiro erro de configuração, mesmo com outro provider logo
+# depois. `repetivel` decide se vale a pena tentar o MESMO provider de novo;
+# `_fila()` já nunca repete provider (REQ-09), então "não repetível" nunca
+# deveria significar "para tudo" — só "não insista com este endereço".
+# Quem para a cadeia inteira é `_exigir_orcamento()`, que roda antes de
+# qualquer tentativa: aquele é limite nosso, não falha de um provider.
 
 
-class TestCadeiaQuePara:
-    def test_chave_invalida_nao_gera_segunda_tentativa(
+class TestErroNaoRepetivelPulaDeProvider:
+    def test_chave_invalida_avanca_para_o_proximo_provider(
         self, session: Session, settings: Settings, registro: AiConfig
     ) -> None:
         seguinte = ProvedorRoteirizado("nuvem-b")
@@ -400,10 +409,29 @@ class TestCadeiaQuePara:
             task_type="coding",
         )
 
+        resposta = "".join(execucao.stream())
+
+        assert resposta
+        assert seguinte.chamadas == 1
+
+        cadeia = linhas(session, execucao.correlation_id)
+        assert len(cadeia) == 2
+        assert cadeia[0].status == RunStatus.ERROR.value
+        assert cadeia[1].status == RunStatus.OK.value
+
+    def test_chave_invalida_sem_segundo_provider_esgota_a_cadeia(
+        self, session: Session, settings: Settings, registro: AiConfig
+    ) -> None:
+        """Sem candidato depois, o comportamento de esgotar continua o mesmo."""
+        roteiro = {"nuvem-a": ProvedorRoteirizado("nuvem-a", erro=erro_de_chave())}
+        runner = Runner(session, settings, config=registro, fabrica=fabrica(roteiro))
+        execucao = runner.executar(
+            decisao(registro, ("rapido", "nuvem-a")), pedido(), task_type="coding"
+        )
+
         with pytest.raises(CadeiaEsgotada) as capturado:
             "".join(execucao.stream())
 
-        assert seguinte.chamadas == 0
         assert "1 tentativa." in capturado.value.message
         assert "chave de API" in capturado.value.message
 
@@ -411,10 +439,11 @@ class TestCadeiaQuePara:
         assert len(cadeia) == 1
         assert cadeia[0].status == RunStatus.ERROR.value
 
-    def test_erro_desconhecido_nao_repete(
+    def test_erro_desconhecido_tambem_avanca_para_o_proximo_provider(
         self, session: Session, settings: Settings, registro: AiConfig
     ) -> None:
-        """Errar para o lado de não gastar: cada tentativa custa dinheiro."""
+        """Errar para o lado de não gastar é não insistir no MESMO provider —
+        não é recusar um provider saudável só porque outro falhou antes."""
         seguinte = ProvedorRoteirizado("nuvem-b")
         roteiro = {
             "nuvem-a": ProvedorRoteirizado("nuvem-a", erro=erro_desconhecido()),
@@ -427,10 +456,32 @@ class TestCadeiaQuePara:
             task_type="coding",
         )
 
+        resposta = "".join(execucao.stream())
+
+        assert resposta
+        assert seguinte.chamadas == 1
+        assert len(linhas(session, execucao.correlation_id)) == 2
+
+    def test_nenhum_provider_e_tentado_duas_vezes_mesmo_com_erro_nao_repetivel(
+        self, session: Session, settings: Settings, registro: AiConfig
+    ) -> None:
+        """A garantia que segue intocada: `_fila()` não repete provider,
+        erro repetível ou não. `rapido` e `irmao` são dois modelos do MESMO
+        provider (`nuvem-a`) — só o primeiro candidato chega a ser chamado."""
+        unico = ProvedorRoteirizado("nuvem-a", erro=erro_de_chave())
+        runner = Runner(
+            session, settings, config=registro, fabrica=fabrica({"nuvem-a": unico})
+        )
+        execucao = runner.executar(
+            decisao(registro, ("rapido", "nuvem-a"), ("irmao", "nuvem-a")),
+            pedido(),
+            task_type="coding",
+        )
+
         with pytest.raises(CadeiaEsgotada):
             "".join(execucao.stream())
 
-        assert seguinte.chamadas == 0
+        assert unico.chamadas == 1
         assert len(linhas(session, execucao.correlation_id)) == 1
 
     def test_cadeia_esgotada_da_erro_unico_com_contagem_e_motivo(

@@ -802,8 +802,16 @@ def test_pergunta_rapida_marcada_local_sem_modelo_local_e_recusada_sem_tentar_pr
 def test_pergunta_rapida_com_registro_vazio_continua_indo_pelo_env_sem_runner(
     session: Session,
 ) -> None:
-    """REQ-04: sem `configs/ai.yml`, `ask_quick` continua no `.env`, sem provider injetado."""
-    chat = ChatService(session, config(ai_provider="fake", ai_model="fake-1"))
+    """REQ-04: sem `configs/ai.yml`, `ask_quick` continua no `.env`, sem provider injetado.
+
+    `registry=AiConfig()` isola o teste do `configs/ai.yml` real que possa
+    existir no disco desta máquina (a T-14 passou a manter um) — sem isso o
+    teste dependia por acidente de o arquivo não existir, em vez de testar o
+    comportamento de registro vazio que o nome promete.
+    """
+    chat = ChatService(
+        session, config(ai_provider="fake", ai_model="fake-1"), registry=AiConfig()
+    )
 
     saida = "".join(chat.ask_quick("como vejo a porta 3000?"))
 

@@ -175,10 +175,42 @@ def test_o_limiar_vem_do_yaml_e_nao_do_codigo(tmp_path: Path) -> None:
 
 
 def test_a_lista_e_ordenada_e_expande_provider(registro: AiConfig) -> None:
-    """O runner consome de cima para baixo: o segundo já vem decidido."""
+    """O runner consome de cima para baixo: o segundo já vem decidido.
+
+    `local-codigo@caseiro` fecha a fila — é o último recurso quando a nuvem
+    inteira falhar (achado da verificação ao vivo da T-14, 2026-09-04: com
+    as duas contas cloud sem saldo e o Qwen local saudável, a pergunta
+    falhava sem nunca oferecê-lo como candidato).
+    """
     decisao = escolher(_pergunta(90), config=registro)
 
-    assert _ids(decisao) == ["janelao@nuvem-b", "janelao@nuvem-a", "barato@nuvem-a"]
+    assert _ids(decisao) == [
+        "janelao@nuvem-b",
+        "janelao@nuvem-a",
+        "barato@nuvem-a",
+        "local-codigo@caseiro",
+    ]
+
+
+def test_nuvem_inteira_falhando_o_local_e_o_ultimo_recurso(registro: AiConfig) -> None:
+    """Reproduz o achado da T-14 (2026-09-04): o `fallback:` do YAML lista o
+    local por último, e o router precisa de fato oferecê-lo — não só quando a
+    pergunta é privada, mas como candidato final para qualquer pergunta cuja
+    capacidade ele também declare, depois de toda opção de nuvem.
+    """
+    decisao = escolher(_pergunta(90), config=registro)
+
+    assert decisao.candidatos[-1].modelo_id == "local-codigo"
+    assert decisao.candidatos[-1].provider.type == "local"
+
+
+def test_pedido_manual_de_provider_nao_estende_ao_local(registro: AiConfig) -> None:
+    """Pedir um provider específico é a pessoa restringindo o alcance da
+    resposta — não pode virar "e também o local por baixo" sem que ela peça.
+    """
+    decisao = escolher(_pergunta(90), EscolhaManual(provider="nuvem-a"), config=registro)
+
+    assert "local-codigo" not in [c.modelo_id for c in decisao.candidatos]
 
 
 def test_modelo_com_provider_desligado_fica_de_fora(registro: AiConfig) -> None:
@@ -190,10 +222,15 @@ def test_modelo_com_provider_desligado_fica_de_fora(registro: AiConfig) -> None:
 
 
 def test_modelo_so_local_nao_disputa_o_mais_barato(registro: AiConfig) -> None:
-    """`local-codigo` é free, mas o local não entra por economia (nota do REQ-07)."""
+    """`local-codigo` é free, mas o local não vence "o mais barato" por
+    economia (nota do REQ-07): ele entra na fila, mas só no fim, depois de
+    todo candidato de nuvem — nunca na frente deles.
+    """
     decisao = escolher(_pergunta(10), config=registro)
 
-    assert "local-codigo" not in [candidato.modelo_id for candidato in decisao.candidatos]
+    ids = [candidato.modelo_id for candidato in decisao.candidatos]
+    assert ids[0] == "barato", "o mais barato de nuvem continua vencendo o critério"
+    assert ids[-1] == "local-codigo", "o local é o último recurso, não descartado"
 
 
 # --- REQ-07, item 1: privacidade antes de tudo ---------------------------

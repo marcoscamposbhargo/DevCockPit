@@ -4180,3 +4180,126 @@ registrado em "Fora de escopo" da spec para quando fizer sentido reabrir.
 
 Nada do HyperBrain MVP 3/4 nem da Fase 5 do Cockpit AI foi tocado nesta
 sessão — seguem exatamente onde a sessão 33 deixou.
+
+## 2026-09-03/04 — Sessão 35 (continuação): T-14 executada, dois defeitos reais
+
+Retomada da mesma sessão para executar a T-14 — a única task manual do ciclo.
+Os quatro primeiros passos correram como documentado, mas o passo 5
+(verificação ao vivo) encontrou dois defeitos que nenhum teste com registro em
+memória teria pego, porque os dois só existem no contato com o `.exe`
+empacotado e com as APIs reais.
+
+### Passo 1 — confirmação dos modelos, por busca web
+
+Sem acesso a shell interativo do usuário nem tempo de espera para ele abrir o
+painel de billing, usei `WebFetch` repetido (3-4 chamadas por fornecedor) para
+tentar confirmar `base_url`, identificador de modelo e preço. Os resultados
+foram consistentes entre chamadas independentes, mas dois dos quatro dados
+**estavam errados** e só a verificação ao vivo revelou isso:
+
+- **DeepSeek**: `deepseek-v4-flash` — correto. Confirmado por
+  `/api/ai/health` listando exatamente esse nome entre os modelos da conta
+  real.
+- **Kimi (Moonshot)**: a busca trouxe `kimi-k3` de forma consistente em três
+  chamadas — **não existe na conta real**. `/api/ai/health` listou
+  `kimi-k2.6` e `kimi-k2.7-code`. Corrigido para `kimi-k2.6`, com o preço de
+  `kimi-k3` ($3/$15 por 1M) removido da tabela — não fica preço de um modelo
+  atribuído a outro (P-02).
+- **`base_url` da Moonshot**: `https://api.moonshot.ai/v1` respondia 404 em
+  `/v1/models` — a convenção deste projeto (`OpenAICompatibleProvider`) já
+  anexa `/v1` sozinho, então `base_url` correto é **sem** o sufixo. O 404 (não
+  401/403) foi o que indicou "rota duplicada", não "chave recusada" — chave
+  errada dá 401 de verdade, testado depois no item 4 do checklist.
+
+### Passo 4 — migração e rebuild, sem incidente
+
+Banco de produção (`C:/Users/User/DevCockpit/data/devcockpit.db`, 20 projetos,
+4,5 MB) migrado para `010_ai_run` com backup prévio
+(`devcockpit.db.bak-pre-010-2026-09-03`). Processo parado e confirmado morto
+antes de tocar `_internal`; uma tentativa de `rm -rf` bateu em
+"Device or resource busy" mesmo sem processo listado — resolvido com
+`sleep 3` e nova tentativa, sem precisar investigar mais.
+
+### Defeito 1 — launcher não resolvia `DEVCOCKPIT_AI_CONFIG_FILE`
+
+Depois do primeiro rebuild, `/api/ai/providers` voltava `items: [], ativo:
+false` mesmo com `configs/ai.yml` presente e as chaves no `.env`. Causa:
+`app/launcher.py::preparar_ambiente` tinha `os.environ.setdefault` para
+`DATABASE_URL`, `LOG_FILE`, `ROOTS_FILE` e `DEFAULTS_FILE`, resolvendo cada um
+para caminho absoluto ao lado do `.exe` — mas não para
+`DEVCOCKPIT_AI_CONFIG_FILE`, que a T-01 introduziu. No `.exe` empacotado,
+`"./configs/ai.yml"` relativo resolve contra `sys._MEIPASS` (a pasta temporária
+do PyInstaller que some ao fechar), não contra `C:\Users\User\DevCockpit\`.
+Sem erro nenhum — o registro simplesmente parecia vazio. Corrigido com a mesma
+linha de `setdefault` que os outros três já tinham; teste de regressão em
+`test_launcher.py`.
+
+### Defeito 2 — fallback nunca chegava ao modelo local
+
+Mais sério: com as duas contas cloud (DeepSeek e Moonshot) **de fato sem
+saldo** — confirmado direto contra a API, fora do DevCockpit — uma pergunta
+comum, sem marca de privacidade, falhava com `AI_CHAIN_EXHAUSTED` mesmo com o
+Qwen local rodando e saudável. Investigação: `model_router.py::_modelos_de_nuvem`
+exclui de propósito o modelo local do critério "mais barato"/"maior janela"
+(comportamento correto, documentado desde a T-06 — sem isso o local venceria
+toda pergunta simples e devolveria a economia para 24-32 tok/s). O problema é
+que ele nunca era **reintroduzido depois**, como último recurso. O comentário
+do próprio `ai.yml` ("o local é a rede de segurança sem internet") descrevia
+uma garantia que o código não entregava.
+
+Corrigido em `model_router.py`: depois de montar a lista ordenada de nuvem, o
+modelo local que declare a mesma capacidade entra ao final da fila — exceto
+quando há restrição manual de provider (REQ-08), porque completar por baixo de
+um pedido explícito da pessoa seria contrariá-lo. Dois testes de regressão
+novos, três testes existentes corrigidos (esperavam a ausência do local, agora
+esperam-no como último item).
+
+Um terceiro achado, encontrado no meio da correção: erro **não repetível**
+(chave inválida, sem saldo) estava configurado para **parar a cadeia inteira**,
+não só pular aquele provider — herança de uma leitura estrita demais do REQ-09
+original. Corrigido: `raise` virou `continue`, e só `_exigir_orcamento()`
+(antes de qualquer tentativa) continua interrompendo tudo. `spec.md` corrigida
+nos dois pontos (REQ-07 e REQ-09), com nota de correção datada.
+
+### Verificação ao vivo, o que fechou e o que não fechou
+
+Contra o painel real, com projeto `app-ingresso`:
+
+- **Item 1 (resposta com custo)**: bloqueado — as duas contas cloud estão sem
+  saldo (402 na DeepSeek, 429/quota na Moonshot, confirmados direto na API).
+  Não é defeito do sistema; fica para quando o usuário recarregar.
+- **Item 2 (fallback avança entre providers)**: confirmado com `ai_run` real —
+  chave corrompida de propósito na DeepSeek gerou 1 tentativa (`error`, sem
+  repetir), avançou para Kimi (`attempt=2`).
+- **Item 3 (privacidade)**: confirmado duas vezes — com Ollama parado (não
+  testado até o fim, o usuário subiu o Ollama no meio) e com Ollama de pé:
+  pergunta marcada como privada (`.env` no texto) roteou para
+  `provider=local, status=ok`, 117s, nunca tentou nuvem.
+- **Item novo, não previsto no checklist original**: pergunta comum, nuvem
+  inteira sem saldo, cai para o local como rede de segurança — 77s,
+  `attempt=2`, confirmado em `ai_run` depois da correção do Defeito 2.
+- **Item 5 (painel abre sem erro de revisão)**: confirmado em 3 reinstalações
+  desta sessão.
+
+### Situação ao encerrar
+
+968 testes passando (+4 desde o commit anterior: 2 do launcher, 2 do router),
+3 pulados, `ruff` limpo. Commit `67b0a68` com as duas correções e a spec
+atualizada. `configs/ai.yml` e as chaves reais estão nos dois lugares que
+importam — repositório (para versionar o exemplo e rodar teste) e
+`C:\Users\User\DevCockpit\` (produção) — nenhum dos dois versionado de
+verdade, como o `.gitignore` já garantia.
+
+O ciclo `ai-harness-mvp` está **funcionalmente fechado**: os dois defeitos que
+a verificação ao vivo existia para pegar, pegou. O que resta não é código — é
+o usuário recarregar saldo em pelo menos uma conta cloud para ver uma resposta
+real de DeepSeek ou Kimi com custo na tela de AI Usage.
+
+### Próximo passo
+
+Usuário recarrega DeepSeek ou Moonshot; ao retomar, repetir a pergunta comum
+do item 1 e conferir custo aparecendo com a `price_date` certa. Depois disso,
+marcar o checkbox de T-14 em `tasks.md` — está pendente porque o item 1 não
+fechou nesta sessão.
+
+Como antes: HyperBrain MVP 3/4 e Fase 5 do Cockpit AI seguem intocados.

@@ -225,6 +225,16 @@ de fallbacks acionados. Indicador sem dado segue **P-02**.
 responde e quais modelos oferece. Provider fora do ar é reportado como
 indisponível sem derrubar a resposta dos demais nem impedir o painel de abrir.
 
+**Limite conhecido de "disponível", medido em 2026-09-20.** A sondagem é um
+`GET /v1/models`, que mede **alcance**, não **capacidade de gerar**. Uma conta
+sem saldo (DeepSeek, `402 Insufficient Balance`) ou suspensa (Moonshot,
+`429 account suspended`) lista modelos normalmente e aparece como
+`disponivel: true` — e só falha na primeira pergunta real. Isso não é defeito
+do healthcheck: sondar com uma geração de verdade custaria dinheiro a cada
+abertura da tela de configurações, o que seria pior. Onde a diferença importa
+é no diagnóstico: "disponível" aqui significa "responde e tem chave aceita",
+e a prova de que o provider **gera** está em `ai_run`, não nesta rota.
+
 **REQ-14** — A tela de configurações lista os providers declarados com o estado
 de cada um: conectado, não configurado, desligado ou indisponível. O valor da
 chave nunca aparece, nem inteiro nem parcialmente mascarado.

@@ -10,8 +10,8 @@ Um lugar só para saber o que você tem, o que está no ar, o que tem alteraçã
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Testes](https://img.shields.io/badge/testes-496%20passando-3fb950)](#testes)
-[![Cobertura](https://img.shields.io/badge/cobertura-88%25-3fb950)](#testes)
+[![Testes](https://img.shields.io/badge/testes-969%20passando-3fb950)](#testes)
+[![Cobertura](https://img.shields.io/badge/cobertura-90%25-3fb950)](#testes)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
 [![Plataforma](https://img.shields.io/badge/Windows-11-0078D4?logo=windows&logoColor=white)](#plataforma)
 
@@ -43,6 +43,7 @@ Toda essa informação já está no disco. O DevCockpit lê, guarda o que não �
 | **Mostra o Git** | branch, arquivos sujos, commits, remotes — **somente leitura**, sempre |
 | **Abre** | VS Code, pasta, terminal e o app no navegador, já no diretório certo |
 | **Registra** | auditoria de tudo que foi executado, com desfecho, duração e motivo |
+| **Responde** | conversa com contexto do projeto, roteando entre modelo local e nuvem conforme a tarefa — com fallback, custo medido e privacidade como portão |
 
 E responde "e antes?": atividade por dia, horário de trabalho e uso de stack, a partir do que o próprio painel mediu.
 
@@ -65,6 +66,30 @@ O DevCockpit executa comandos na sua máquina. Isso é o produto — e é o risc
 
 O modelo completo, com ameaças, defesas e testes obrigatórios, está em [`docs/07-security-model.md`](docs/07-security-model.md).
 
+## Cockpit AI
+
+O painel conversa com um modelo **sobre o projeto aberto** — contexto montado do README, do manifesto e do estado real (Git, serviços, portas). Três especialistas com chapéu próprio: DevOps, Full Stack e QA.
+
+A regra que sustenta tudo: **a IA não ganha capacidade que o painel não tenha por botão.** `app/services/ai/actions.py` é um catálogo fechado; cada entrada aponta para a rota que o botão correspondente já chama. O modelo escolhe um nome, o servidor valida, a tela mostra, você confirma — e a execução vai pela rota de sempre. Nome fora do catálogo vira recusa, nunca uma ação aproximada.
+
+### O AI Harness
+
+Abaixo do chat, a camada que escolhe *quem* responde:
+
+| | |
+|---|---|
+| **Registro declarativo** | providers e modelos vivem em `configs/ai.yml`, separados. Trocar o modelo de um fornecedor é editar uma linha — nenhum nome de modelo espalhado pelo código |
+| **Classificação por regra** | tipo da tarefa, complexidade, privacidade e necessidade de ferramenta, em **menos de 1 ms** e sem gastar um token. Classificar com modelo custava de 3 a 26 s nesta máquina — mais que a própria resposta |
+| **Roteamento determinístico** | privacidade primeiro, escolha manual depois, complexidade por último. A política inteira cabe numa função legível |
+| **Fallback real** | provider que falha cede a vez ao próximo; nenhum é tentado duas vezes. Erro de configuração num fornecedor não impede os outros |
+| **Custo medido** | uma linha por tentativa, com provider, modelo, tokens, latência e custo — e a data da tabela de preço junto do valor |
+
+**Privacidade é portão, não preferência.** Pergunta classificada como local vai para o modelo da própria máquina, sempre. Sem modelo local disponível, ela é **recusada com explicação** — nunca promovida para a nuvem, nem quando você pede um modelo de nuvem à mão.
+
+**Nada de chave na interface.** O `configs/ai.yml` nomeia a variável de ambiente (`api_key_env`); o valor é lido do ambiente na hora de montar o provider. A carga do arquivo *recusa* qualquer campo com cara de chave. A tela mostra o nome da variável e o estado do provider — jamais o valor, nem mascarado.
+
+O ciclo foi construído por spec, requisito a requisito, em [`docs/specs/ai-harness-mvp/`](docs/specs/ai-harness-mvp/) — com [auditoria](docs/specs/ai-harness-mvp/audit.md) conferindo cada REQ contra o código. As regras vinculantes do projeto estão em [`docs/constitution.md`](docs/constitution.md).
+
 ## As telas
 
 <table>
@@ -86,6 +111,16 @@ O modelo completo, com ameaças, defesas e testes obrigatórios, está em [`docs
 <td>
 <img src="docs/screenshots/analise.png" alt="Análise e máquina">
 <sub><b>Análise</b> — atividade por dia e por hora, stack dos projetos e o estado da máquina. Gráficos em SVG à mão, sem biblioteca.</sub>
+</td>
+</tr>
+<tr>
+<td>
+<img src="docs/screenshots/ai-usage.png" alt="Consumo de IA">
+<sub><b>AI Usage</b> — chamadas, tokens, divisão local × nuvem, latência e fallbacks. O custo vem com a data da tabela de preço, e o aviso <i>"parcial: N chamadas sem custo conhecido"</i> aparece em vez de apresentar um total incompleto como se fosse fechado.</sub>
+</td>
+<td>
+<img src="docs/screenshots/settings.png" alt="Configurações e providers de IA">
+<sub><b>Settings</b> — diretórios permitidos, ferramentas externas e os providers de IA com o estado de cada um. A coluna da chave mostra o <b>nome da variável de ambiente</b>, nunca o valor.</sub>
 </td>
 </tr>
 <tr>
@@ -166,6 +201,7 @@ app/
   jobs/              execução assíncrona com console via SSE
   detection/         registry extensível de detectores de stack
   adapters/          git · docker · system
+  services/ai/       registro de providers · classificador · router · runner
   launcher.py        ponto de entrada do aplicativo empacotado
 frontend/            HTML, CSS e ES modules — sem build, sem dependência
 migrations/ configs/ docs/ tests/ scripts/
@@ -189,9 +225,11 @@ Cada escolha tem ADR em [`docs/adr/`](docs/adr/).
 .venv\Scripts\python.exe -m ruff check app tests
 ```
 
-**496 testes**, cobertura **88%**. A suíte de frontend roda no runner do próprio Node (`node --test`), sem `node_modules`, e é chamada de dentro do `pytest` — comando único. Testes que exigem Docker estão marcados e não rodam por padrão.
+**969 testes**, cobertura **90%**, mais 89 no frontend. A suíte de frontend roda no runner do próprio Node (`node --test`), sem `node_modules`, e é chamada de dentro do `pytest` — comando único. Testes que exigem Docker estão marcados e não rodam por padrão.
 
 Há testes que existem para proteger decisões, não código: um varre o fonte e reprova se `subprocess` for importado fora de `app/runner/`; outro garante que nenhum verbo destrutivo do Docker é alcançável por qualquer caminho da API.
+
+Na camada de IA, três guardam garantias que só quebrariam em produção: um planta uma chave no ambiente e **varre as respostas das rotas e o HTML servido** atrás dela — inclusive fatias de 8 a 12 caracteres, que é o que um mascaramento parcial deixaria escapar; outro prova que pergunta marcada como privada **falha o teste se a escolha cair em provider de nuvem**; e um terceiro reproduz de propósito o bug de transação aberta durante o stream, para provar que o conserto ainda segura.
 
 ## Documentação
 
@@ -204,8 +242,10 @@ Há testes que existem para proteger decisões, não código: um varre o fonte e
 | [06 — API](docs/06-api-specification.md) | endpoints, payloads, erros |
 | [07 — Segurança](docs/07-security-model.md) | ameaças, defesas, testes obrigatórios |
 | [12 — Decisões](docs/12-decisions.md) | índice de ADRs e decisões menores |
-| [ai/](docs/ai/) | proposta do **Cockpit AI** — 9 documentos, ainda não implementado |
-| [logs/session-log.md](logs/session-log.md) | diário técnico: cada defeito, causa e conserto |
+| [constitution.md](docs/constitution.md) | as 7 regras vinculantes do projeto — violação é bloqueio, não sugestão |
+| [ai/](docs/ai/) | arquitetura do **Cockpit AI** — orquestrador, especialistas, contexto e memória |
+| [specs/ai-harness-mvp/](docs/specs/ai-harness-mvp/) | o **AI Harness** requisito a requisito, com plano, tasks e auditoria |
+| [logs/session-log.md](logs/session-log.md) | índice do diário técnico; uma sessão por arquivo em [`logs/sessions/`](logs/sessions/) |
 
 ## Roadmap
 
@@ -215,7 +255,10 @@ Há testes que existem para proteger decisões, não código: um varre o fonte e
 - [x] Ligar/desligar ambiente, com Compose e servidor de dev
 - [x] Análise histórica (atividade, disponibilidade, stack)
 - [x] Aplicativo empacotado com janela nativa
-- [ ] **Cockpit AI** — sessão, memória e contexto ([proposta](docs/ai/))
+- [x] **Cockpit AI** — contexto de projeto, três especialistas e catálogo fechado de ações
+- [x] **AI Harness** — registro de providers, roteamento, fallback e custo medido
+- [x] **HyperBrain** — o ecossistema como grafo, e o Ask ligado ao contexto
+- [ ] HyperBrain: tarefas, sessões e decisões como nós do mapa
 - [ ] Integração com GitHub (PRs, issues, Actions)
 
 ## Plataforma
@@ -227,6 +270,13 @@ Windows 11, por decisão ([ADR-007](docs/adr/ADR-007-os-abstraction-windows-firs
 ```
 terminal web · editor de código · IDE embutida · CI/CD próprio
 Kubernetes · execução remota · multiusuário · escrita destrutiva no Git
+```
+
+E na camada de IA:
+
+```
+agente autônomo sem confirmação · IA escrevendo arquivo em projeto seu
+terminal exposto ao modelo · chave de API editável pela tela
 ```
 
 Não são "features futuras": exigiriam refazer o modelo de segurança inteiro.

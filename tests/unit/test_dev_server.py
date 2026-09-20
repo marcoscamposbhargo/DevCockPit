@@ -482,6 +482,22 @@ def test_porta_observada_sem_servico_e_reportada(client, workspace) -> None:  # 
     assert estado["undeclared_ports"] == [5000]
 
 
+def test_porta_efemera_nao_e_reportada(client, workspace) -> None:  # type: ignore[no-untyped-def]
+    """Socket de controle interno (esbuild, inspector) tem prova de dono igual
+    a um servidor de verdade, mas nasce numa porta nova a cada `Ligar` — virar
+    sugestão de cadastro empilharia serviço fantasma atrás de fantasma."""
+    caminho = workspace / "vite-com-esbuild"
+    caminho.mkdir()
+    (caminho / "app.py").write_text("from flask import Flask\n", encoding="utf-8")
+
+    projeto = _cadastrar(client, caminho)
+    _observar(client, projeto, caminho, 62712)
+
+    estado = client.get(f"/api/projects/{projeto['id']}/server").json()
+
+    assert estado["undeclared_ports"] == []
+
+
 def test_porta_ja_cadastrada_nao_e_reportada(client, workspace) -> None:  # type: ignore[no-untyped-def]
     from tests.conftest import WRITE_HEADERS
 

@@ -39,6 +39,15 @@ router = APIRouter(prefix="/api/projects/{project_id}/server", tags=["server"])
 #: exige abrir projeto por projeto — e no fim do dia, lembrar quais foram.
 global_router = APIRouter(prefix="/api/servers", tags=["server"])
 
+#: Início da faixa dinâmica/efêmera (IANA + Windows). Servidor de dev escolhe
+#: porta fixa e memorável (3000, 5173, 8000...); quem nasce aqui é ajudante
+#: interno do processo — o `esbuild` do Vite abre um socket de controle nesta
+#: faixa a cada `npm run dev`, sempre num número novo. Sem este corte, cada
+#: reinício oferecia "Cadastrar" para um número diferente, e clicar de boa fé
+#: empilhava serviço fantasma atrás de serviço fantasma: foi assim que a
+#: AUTOMAÇÃO DE EXTRAÇÃO chegou a 13 "serviços" — nove eram isto.
+PORTA_EFEMERA_MIN = 49152
+
 
 @global_router.get("", response_model=RunningServerList)
 def running_servers(
@@ -87,6 +96,11 @@ def _portas_sem_cadastro(project, ports) -> list[int]:  # type: ignore[no-untype
 
     Só com prova de dono: atribuir pela porta declarada seria circular, e
     atribuir por palpite já custou a este projeto duas sessões de conserto.
+
+    E só fora da faixa efêmera (`PORTA_EFEMERA_MIN`): um socket de controle
+    interno tem dono tão legítimo quanto o servidor de verdade — o `cwd` bate,
+    a evidência é forte —, mas não é a porta que alguém digitaria no navegador,
+    e oferecer "Cadastrar" para ele não é ajuda, é armadilha.
     """
     if ports is None:
         return []
@@ -96,7 +110,9 @@ def _portas_sem_cadastro(project, ports) -> list[int]:  # type: ignore[no-untype
         {
             porta.port
             for porta in ports.last_known().for_project(project.id)
-            if porta.strong_evidence and porta.port not in declaradas
+            if porta.strong_evidence
+            and porta.port not in declaradas
+            and porta.port < PORTA_EFEMERA_MIN
         }
     )
 

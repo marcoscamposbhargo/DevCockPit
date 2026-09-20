@@ -10,7 +10,7 @@ Um lugar só para saber o que você tem, o que está no ar, o que tem alteraçã
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Testes](https://img.shields.io/badge/testes-969%20passando-3fb950)](#testes)
+[![Testes](https://img.shields.io/badge/testes-970%20passando-3fb950)](#testes)
 [![Cobertura](https://img.shields.io/badge/cobertura-90%25-3fb950)](#testes)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
 [![Plataforma](https://img.shields.io/badge/Windows-11-0078D4?logo=windows&logoColor=white)](#plataforma)
@@ -126,7 +126,7 @@ O ciclo foi construído por spec, requisito a requisito, em [`docs/specs/ai-harn
 <tr>
 <td colspan="2">
 <img src="docs/screenshots/hyperbrain.png" alt="HyperBrain — o ecossistema como grafo">
-<sub><b>HyperBrain</b> — o ecossistema como mapa: o núcleo, os projetos e as tecnologias que ligam projeto a projeto. Foco atenua o resto, arrastar organiza, e o nó fica onde foi solto. Também em SVG à mão, sem biblioteca de grafo (<a href="docs/adr/ADR-009-graph-rendering.md">ADR-009</a>).</sub>
+<sub><b>HyperBrain</b> — o ecossistema como mapa: o núcleo, os projetos e as tecnologias que ligam projeto a projeto. Foco atenua o resto, arrastar organiza, e o nó fica onde foi solto. Selecionar um projeto abre o contexto dele — tarefas, sessões, decisões e serviços, cada um buscado só quando a seção é aberta. Também em SVG à mão, sem biblioteca de grafo (<a href="docs/adr/ADR-009-graph-rendering.md">ADR-009</a>).</sub>
 </td>
 </tr>
 </table>
@@ -225,7 +225,7 @@ Cada escolha tem ADR em [`docs/adr/`](docs/adr/).
 .venv\Scripts\python.exe -m ruff check app tests
 ```
 
-**969 testes**, cobertura **90%**, mais 89 no frontend. A suíte de frontend roda no runner do próprio Node (`node --test`), sem `node_modules`, e é chamada de dentro do `pytest` — comando único. Testes que exigem Docker estão marcados e não rodam por padrão.
+**970 testes**, cobertura **90%**, mais 96 no frontend. A suíte de frontend roda no runner do próprio Node (`node --test`), sem `node_modules`, e é chamada de dentro do `pytest` — comando único. Testes que exigem Docker estão marcados e não rodam por padrão.
 
 Há testes que existem para proteger decisões, não código: um varre o fonte e reprova se `subprocess` for importado fora de `app/runner/`; outro garante que nenhum verbo destrutivo do Docker é alcançável por qualquer caminho da API.
 

@@ -325,6 +325,42 @@ def test_a_chave_chega_ao_provider_mas_nao_volta_para_a_tela(
     assert CHAVE_DE_TESTE not in client.get("/api/ai/health").text
 
 
+def test_a_anthropic_e_sondada_no_formato_dela(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Anthropic não usa `Bearer`: é `x-api-key` mais `anthropic-version`.
+
+    Com o cabeçalho errado ela devolve 401, e a tela mostraria "indisponível"
+    com a chave certa no ambiente — o pior tipo de erro, o que acusa quem não
+    errou. `/v1/models` existe lá e responde no mesmo formato `data[].id` que
+    `_modelos_listados` já entende, então só o cabeçalho precisava mudar.
+    """
+    from app.api.routes.ai import _cabecalho_de_sondagem
+    from app.services.ai.registry import ProviderDeclarado
+
+    monkeypatch.setenv("CHAVE_ANTHROPIC_DE_TESTE", CHAVE_DE_TESTE)
+    anthropic = ProviderDeclarado(
+        id="anthropic",
+        enabled=True,
+        type="cloud",
+        base_url="https://api.anthropic.com",
+        api_key_env="CHAVE_ANTHROPIC_DE_TESTE",
+    )
+    cabecalho = _cabecalho_de_sondagem(anthropic)
+
+    assert cabecalho["x-api-key"] == CHAVE_DE_TESTE
+    assert cabecalho["anthropic-version"] == "2023-06-01"
+    assert "Authorization" not in cabecalho
+
+    # Quem fala o formato OpenAI continua no Bearer de sempre.
+    outro = ProviderDeclarado(
+        id="deepseek",
+        enabled=True,
+        type="cloud",
+        base_url="https://api.deepseek.com",
+        api_key_env="CHAVE_ANTHROPIC_DE_TESTE",
+    )
+    assert _cabecalho_de_sondagem(outro) == {"Authorization": f"Bearer {CHAVE_DE_TESTE}"}
+
+
 # --- REQ-04: sem o arquivo no disco ---------------------------------------
 
 

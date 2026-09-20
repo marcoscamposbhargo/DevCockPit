@@ -630,8 +630,20 @@ def _chave_presente(provider: ProviderDeclarado) -> bool:
 
 
 def _cabecalho_de_sondagem(provider: ProviderDeclarado) -> dict[str, str]:
+    """Como autenticar a sondagem, no formato que cada provider entende.
+
+    `Bearer` cobre quem fala o formato OpenAI (DeepSeek, Kimi e afins). A
+    Anthropic não: ela usa `x-api-key` e exige `anthropic-version`, e com o
+    cabeçalho errado devolveria 401 — a tela mostraria "indisponível" com a
+    chave correta no ambiente, que é o pior tipo de erro, o que acusa quem
+    não errou.
+    """
     chave = os.environ.get(provider.api_key_env, "").strip() if provider.api_key_env else ""
-    return {"Authorization": f"Bearer {chave}"} if chave else {}
+    if not chave:
+        return {}
+    if provider.id == "anthropic":
+        return {"x-api-key": chave, "anthropic-version": "2023-06-01"}
+    return {"Authorization": f"Bearer {chave}"}
 
 
 def _modelos_listados(dados: object) -> tuple[str, ...]:

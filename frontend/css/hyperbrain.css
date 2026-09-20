@@ -786,3 +786,120 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
 }
+
+/* --- MVP 3: o que o projeto tem dentro ---------------------------------
+   Tarefas, sessões, decisões e serviços. O painel de contexto é uma faixa
+   horizontal desde a sessão 28, então estas não são acordeões empilhados:
+   são quatro botões na faixa, e o corpo do que abrir ocupa a linha inteira
+   abaixo — `flex-basis: 100%` no `flex-wrap` do painel. */
+.hb-detalhes {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.hb-detalhe {
+  display: contents;
+}
+
+.hb-detalhe__cabecalho {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.hb-detalhe__cabecalho:hover {
+  color: var(--fg-primary);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.hb-detalhe__cabecalho[aria-expanded='true'] {
+  color: var(--fg-primary);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.hb-detalhe__seta {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.hb-detalhe__cabecalho[aria-expanded='true'] .hb-detalhe__seta {
+  transform: rotate(90deg);
+}
+
+/* O corpo quebra a linha da faixa e ocupa a largura toda: lista estreita
+   espremida entre chips não se lê. */
+.hb-detalhe__corpo {
+  flex-basis: 100%;
+  min-width: 0;
+  margin-top: var(--sp-1);
+}
+
+/* A faixa de contexto divide altura com o grafo, que é a razão da tela
+   existir. Teto baixo e rolagem própria: abrir duas seções não pode empurrar
+   o mapa para fora da vista. */
+.hb-detalhe__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 124px;
+  overflow-y: auto;
+}
+
+.hb-detalhe__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+/* O título é o que importa e o que mais varia de tamanho: encolhe com
+   reticências em vez de empurrar o estado para fora da linha. */
+.hb-detalhe__titulo {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hb-detalhe__meta {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+/* Cor nunca é o único sinal: o estado vem escrito por extenso em
+   `__meta` ao lado, e o ponto só reforça. */
+.hb-detalhe__pip {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+
+.hb-detalhe__pip--aberta,
+.hb-detalhe__pip--online {
+  background: var(--status-running);
+}
+
+.hb-detalhe__pip--offline {
+  background: var(--status-error);
+}
+
+.hb-detalhe__pip--fechada {
+  background: color-mix(in srgb, var(--fg-muted) 50%, transparent);
+}

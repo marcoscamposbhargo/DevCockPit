@@ -25,6 +25,7 @@ import {
   vizinhos,
 } from '../lib/graph/adapter.js';
 import { criarNucleo } from '../lib/graph/core.js';
+import { detalhesDoProjeto } from '../lib/graph/detalhes.js';
 import { ligarInteracao } from '../lib/graph/interaction.js';
 import { criarLayout } from '../lib/graph/layout.js';
 import {
@@ -109,6 +110,11 @@ function painelDeProjeto(no, grafo, { aoFocar, emFoco }) {
     projeto.services_total
       ? el('p', { class: 'field__hint', text: `${projeto.services_total} serviço(s) declarado(s)` })
       : null,
+
+    // MVP 3: tarefas, sessões, decisões e serviços, cada um buscado só quando
+    // a seção é aberta. Fica **antes** das ações porque é contexto do projeto,
+    // e o que leva para fora da tela vem por último.
+    detalhesDoProjeto(projeto.id),
 
     el('div', { class: 'hb-panel__acoes' }, [
       el('a', {

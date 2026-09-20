@@ -189,7 +189,7 @@ MVP 1   GET /api/projects → adapter → layout → render
 MVP 2   frase → regra local de filtro de visão
               → se a regra não decidir: POST /ai/propose, ids validados
                 contra o registro de projetos
-MVP 3   clique no nó → tasks() | sessions() | memory() | services()
+MVP 3   seção aberta no painel → tasks() | sessions() | memory() | services()
               (uma chamada por clique, nunca tudo de uma vez)
 MVP 4   consulta periódica a /api/activity → pulso na aresta correspondente
 ```
@@ -272,7 +272,8 @@ ficam intocados. O diff prova.
 |-----|---------|-----------|-------|
 | 1 ✅ | canvas, núcleo, projetos, arestas, zoom, pan, arraste, foco, painel, teclado | não | baixo |
 | 2 ✅ | Ask HyperBrain, estados do núcleo, destaque por comando | não | baixo |
-| 3 | tarefas, sessões, decisões, stack, serviços, expansão progressiva | uma, para listar documentos | médio |
+| 3 ✅ | tarefas, sessões, decisões e serviços no painel de contexto, carregados sob demanda | não | baixo |
+| 3.1 | documentação do projeto como fonte | uma, para listar os `.md` | médio |
 | 4 | atividade ao vivo e execução visualizada | depende da Fase 3.6 | médio |
 | 5 | busca semântica, clusters automáticos, visualização temporal | — | adiado |
 
@@ -300,6 +301,16 @@ schema de saída. Isso é a Fase 3.6.
 4. **Virar enfeite.** Um grafo bonito que ninguém usa é custo de manutenção puro.
    Por isso o critério de aceite inclui comparação de tempo de tarefa contra a
    lista de projetos.
+
+   **Este risco decidiu a forma do MVP 3** (2026-09-20). O fluxo de dados acima
+   dizia "clique no nó → `tasks()`", o que se lê naturalmente como tarefas
+   virando satélites no grafo. Com 19 projetos, isso daria centenas de nós —
+   e um mapa ilegível é a versão acabada deste risco. As quatro fontes viraram
+   **seções do painel de contexto**, carregadas sob demanda: a mesma
+   informação, sem custo nenhum para a legibilidade do mapa. Decisão tomada
+   com o usuário; a alternativa (satélites só do projeto em foco) foi
+   considerada e descartada por acrescentar casos de borda — o que acontece ao
+   trocar de foco, ao arrastar, ao dar zoom — sem ganho de informação.
 5. **Projeto com `ai_enabled = false`.** Aparece como nó, mas nunca entra em
    requisição de IA, e o nó precisa dizer isso na tela (defesa D-A1).
 6. **Reorganização automática desorienta.** Toda mudança de visão feita por

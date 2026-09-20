@@ -258,7 +258,8 @@ Na camada de IA, três guardam garantias que só quebrariam em produção: um pl
 - [x] **Cockpit AI** — contexto de projeto, três especialistas e catálogo fechado de ações
 - [x] **AI Harness** — registro de providers, roteamento, fallback e custo medido
 - [x] **HyperBrain** — o ecossistema como grafo, e o Ask ligado ao contexto
-- [ ] HyperBrain: tarefas, sessões e decisões como nós do mapa
+- [x] **HyperBrain MVP 3** — tarefas, sessões, decisões e serviços no contexto do nó
+- [ ] HyperBrain: documentação do projeto como fonte, e atividade ao vivo no mapa
 - [ ] Integração com GitHub (PRs, issues, Actions)
 
 ## Plataforma

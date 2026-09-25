@@ -88,11 +88,29 @@ modelos:
     cost_tier: high
     context_window: 0  # a confirmar na T-14
 
+  # Dois modelos locais: a ORDEM entre eles é o que decide qual atende a
+  # pergunta marcada como privada. `_capacidade_primeiro` mantém a ordem
+  # declarada no empate, então o primeiro com a capacidade pedida ganha.
+  - id: local-gemma
+    # Modelo local maior. Vale a preferência quando a qualidade importa mais
+    # que o relógio — e no caminho local ela importa, porque quem chegou aqui
+    # é pergunta privada ou máquina sem internet: a espera já é aceita.
+    #
+    # Meça na SUA máquina antes de confiar no número: num Windows sem GPU
+    # dedicada, o gemma4:26b deu 27,7 tok/s de prefill e 2,5 tok/s de
+    # geração — 3min36 numa pergunta com ~3.900 tokens de contexto.
+    model: gemma4:26b
+    capabilities: [coding, debugging, architecture, documentation, qa, planning, refactoring, simple_task]
+    providers: [local]
+    cost_tier: free
+    context_window: 262144
+
   - id: local-codigo
-    # Confirmado: é o que está instalado nesta máquina. Medido em 24 a 32
-    # tok/s, sem GPU dedicada — pergunta com contexto real leva minutos. Ele
-    # está na cadeia por privacidade e por ser o último elo sem internet, não
-    # por economia.
+    # Reserva local rápida: cerca de metade do tempo do modelo maior, e o que
+    # resta quando não há RAM para carregar os 18 GB do outro. Medido em 24 a
+    # 32 tok/s, sem GPU dedicada — pergunta com contexto real leva minutos.
+    # Ele está na cadeia por privacidade e por ser o último elo sem internet,
+    # não por economia.
     model: qwen2.5-coder:7b
     capabilities: [coding, debugging, simple_task, refactoring]
     providers: [local]
@@ -120,6 +138,13 @@ precos:
     output_por_milhao: 0.0
     anotado_em: "2026-09-03"
 
+  local-gemma:
+    # Idem: roda na máquina. O custo dele é tempo, e tempo não entra nesta
+    # tabela — está anotado no comentário do modelo.
+    input_por_milhao: 0.0
+    output_por_milhao: 0.0
+    anotado_em: "2026-09-24"
+
 # --- Cadeia de fallback ---------------------------------------------------
 #
 # Ordem em que o runner tenta, de cima para baixo, quando a tentativa anterior
@@ -130,12 +155,15 @@ precos:
 # Erro que não adianta repetir — chave inválida, orçamento estourado, pergunta
 # recusada por política — não anda na cadeia.
 #
-# O local fica por último: é o mais lento desta máquina, e existe aqui como
-# rede de segurança para quando não há internet.
+# Os locais ficam por último: são os mais lentos, e existem aqui como rede de
+# segurança para quando não há internet. Entre eles, o maior vem primeiro —
+# quem chegou até este ponto da cadeia já esperou, então o que sobra deve ser
+# o melhor local, não o mais rápido.
 
 fallback:
   - deepseek-principal
   - kimi-principal
+  - local-gemma
   - local-codigo
 
 # --- Roteamento -----------------------------------------------------------

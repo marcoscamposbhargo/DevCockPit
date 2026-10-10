@@ -477,7 +477,9 @@ async def ask_quick(
 
     def eventos():  # type: ignore[no-untyped-def]
         try:
-            for pedaco in chat.ask_quick(payload.question, perfil=payload.model):
+            for pedaco in chat.ask_quick(
+                payload.question, perfil=payload.model, modelo=payload.modelo
+            ):
                 dados = json.dumps({"text": pedaco}, ensure_ascii=False)
                 yield f"event: chunk\ndata: {dados}\n\n"
         except DomainError as erro:
@@ -486,6 +488,7 @@ async def ask_quick(
             )
             yield f"event: error\ndata: {corpo}\n\n"
             return
+        yield from _evento_de_quem_respondeu(chat)
         yield "event: end\ndata: {}\n\n"
 
     return StreamingResponse(eventos(), media_type="text/event-stream")
@@ -523,6 +526,7 @@ async def chat_ask(
                 estado=estado,
                 perfil=payload.model,
                 agente=payload.agent,
+                modelo=payload.modelo,
             ):
                 dados = json.dumps({"text": pedaco}, ensure_ascii=False)
                 yield f"event: chunk\ndata: {dados}\n\n"
@@ -532,6 +536,7 @@ async def chat_ask(
             )
             yield f"event: error\ndata: {corpo}\n\n"
             return
+        yield from _evento_de_quem_respondeu(chat)
         yield "event: end\ndata: {}\n\n"
 
     return StreamingResponse(
@@ -543,6 +548,18 @@ async def chat_ask(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _evento_de_quem_respondeu(chat: ChatService):  # type: ignore[no-untyped-def]
+    """`event: meta` com quem respondeu, quando se sabe.
+
+    Vai depois do texto, não antes: com fallback, quem responde só é conhecido
+    quando a cadeia termina — anunciar o pedido antes seria afirmar o que pode
+    não ter acontecido.
+    """
+    if chat.quem_respondeu:
+        dados = json.dumps(chat.quem_respondeu, ensure_ascii=False)
+        yield f"event: meta\ndata: {dados}\n\n"
 
 
 def _mensagem_out(registro: AiMessage) -> ChatMessageOut:

@@ -817,3 +817,85 @@ def test_pergunta_rapida_com_registro_vazio_continua_indo_pelo_env_sem_runner(
 
     assert saida
     assert session.query(AiRun).count() == 0, "caminho do .env não grava ai_run"
+
+
+# --- REQ-08: modelo fixado na tela ----------------------------------------
+
+
+def test_modelo_fixado_na_tela_vence_o_roteamento_automatico(
+    session: Session, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """Pergunta simples iria para o mais barato; fixado, vai para o pedido."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado("nuvem-a", resposta="do barato"),
+        "nuvem-b": ProvedorRoteirizado("nuvem-b", resposta="do escolhido"),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    saida = "".join(chat.ask_quick("como desfaço um commit?", modelo="reserva"))
+
+    assert "do escolhido" in saida
+    assert roteiro["nuvem-a"].last_request is None
+    assert chat.quem_respondeu == {
+        "modelo": "reserva",
+        "model": "modelo-reserva",
+        "provider": "nuvem-b",
+    }
+
+
+def test_modelo_fixado_desconhecido_cai_no_automatico(
+    session: Session, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """**P-06**: id que o registro não conhece não vira nome cru na API."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado("nuvem-a", resposta="do barato"),
+        "nuvem-b": ProvedorRoteirizado("nuvem-b"),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    saida = "".join(chat.ask_quick("como desfaço um commit?", modelo="nao-existe"))
+
+    assert "do barato" in saida
+    assert chat.quem_respondeu["modelo"] == "rapido"
+
+
+def test_modelo_fixado_nao_tira_pergunta_privada_da_maquina(
+    session: Session, projeto: Project, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """REQ-07 item 1 vem antes do REQ-08: escolher nuvem não vaza pergunta local."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado("nuvem-a"),
+        "nuvem-b": ProvedorRoteirizado("nuvem-b"),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    with pytest.raises(PerguntaRecusada, match="não vai para a nuvem"):
+        list(
+            chat.ask(
+                projeto, "isso é confidencial, não pode sair da máquina", modelo="reserva"
+            )
+        )
+
+    assert roteiro["nuvem-b"].last_request is None
+
+
+def test_status_oferece_so_modelo_com_chave_no_ambiente(
+    session: Session, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """Modelo cujo provider não tem chave falharia na primeira tentativa."""
+    monkeypatch.setenv("DEVCOCKPIT_AI_KEY_TESTE_A", "x")
+    monkeypatch.delenv("DEVCOCKPIT_AI_KEY_TESTE_B", raising=False)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    modelos = chat.status()["modelos"]
+
+    assert [item["id"] for item in modelos] == ["rapido"]
+    assert modelos[0] == {
+        "id": "rapido",
+        "model": "modelo-rapido",
+        "provider": "nuvem-a",
+        "local": False,
+    }

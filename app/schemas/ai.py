@@ -154,6 +154,16 @@ class BriefingOut(BaseModel):
 # --- chat -----------------------------------------------------------------
 
 
+class ModeloEscolhivelOut(BaseModel):
+    """Um modelo que a pessoa pode fixar na tela, pelo id lógico do registro."""
+
+    id: str
+    #: Nome do modelo no fornecedor. Só para a tela mostrar; nunca volta.
+    model: str
+    provider: str
+    local: bool = False
+
+
 class AiStatusOut(BaseModel):
     """O que a tela precisa saber antes de oferecer o chat.
 
@@ -173,6 +183,9 @@ class AiStatusOut(BaseModel):
     tokens_today: int = 0
     daily_budget: int = 0
     calls_today: int = 0
+    #: Modelos do registro (`configs/ai.yml`) que a tela pode fixar (REQ-08).
+    #: Vazio sem registro — aí vale o seletor antigo de `model`/`model_alt`.
+    modelos: list[ModeloEscolhivelOut] = Field(default_factory=list)
 
 
 class ChatAsk(BaseModel):
@@ -183,6 +196,10 @@ class ChatAsk(BaseModel):
     #: definiu, do mesmo jeito que `OpenBrowserRequest` recebe a chave do
     #: serviço e jamais a URL (decisão D-13).
     model: Literal["default", "alt"] = "default"
+    #: Id lógico de um modelo do registro (`claude-principal`), ou vazio para o
+    #: roteamento automático (REQ-08). Nunca o nome no fornecedor (**P-06**): id
+    #: que o registro não conhece cai no automático, sem virar nome cru na API.
+    modelo: str = Field(default="", max_length=64, pattern=r"^[a-z0-9._-]*$")
     #: Fixa o especialista. Vazio, a regra escolhe. Como o `model`, é conjunto
     #: fechado: chave de perfil que o servidor conhece, nunca prompt do cliente
     #: — quem manda instrução para o modelo é o servidor (defesa D-A4).

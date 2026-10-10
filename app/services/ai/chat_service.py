@@ -33,6 +33,7 @@ gastar nem a primeira tentativa da cadeia.
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from collections.abc import Iterator
@@ -146,6 +147,10 @@ class ChatService:
         #: injetar um `AiConfig` sem tocar no arquivo do disco; sem ele vale o
         #: desta instalação — vazio quando `configs/ai.yml` não existe (REQ-04).
         self.registry = registry if registry is not None else get_ai_config()
+        #: Quem respondeu a última pergunta desta instância: id lógico, nome no
+        #: fornecedor e provider. A rota lê depois do stream para a tela dizer
+        #: quem respondeu — com fallback, não é necessariamente quem foi pedido.
+        self.quem_respondeu: dict[str, str] | None = None
         #: Um provedor por perfil de modelo. Construir é barato, mas repetir a
         #: cada pergunta desperdiçaria a conexão que o cliente HTTP reaproveita.
         self._por_perfil: dict[str, object] = {}
@@ -179,7 +184,37 @@ class ChatService:
             "tokens_today": hoje.tokens_in + hoje.tokens_out,
             "daily_budget": self.settings.ai_daily_token_budget,
             "calls_today": hoje.calls,
+            "modelos": self.modelos_escolhiveis(),
         }
+
+    def modelos_escolhiveis(self) -> list[dict]:
+        """Os modelos do registro que a tela pode fixar (REQ-08).
+
+        Só entra modelo com provider habilitado **e** chave no ambiente: oferecer
+        um que falharia na primeira tentativa por falta de chave é pior que não
+        oferecer. O provider listado é o primeiro da ordem declarada, o mesmo
+        que o runner tentaria primeiro.
+        """
+        if self.registry is None:
+            return []
+        escolhiveis = []
+        for modelo in self.registry.modelos:
+            prontos = [
+                declarado
+                for declarado in self.registry.providers_do_modelo(modelo.id)
+                if not declarado.api_key_env
+                or os.environ.get(declarado.api_key_env, "").strip()
+            ]
+            if prontos:
+                escolhiveis.append(
+                    {
+                        "id": modelo.id,
+                        "model": modelo.model,
+                        "provider": prontos[0].id,
+                        "local": prontos[0].local,
+                    }
+                )
+        return escolhiveis
 
     # --- conversa ---
 
@@ -191,6 +226,7 @@ class ChatService:
         estado: dict | None = None,
         perfil: str = PERFIL_PADRAO,
         agente: str | None = None,
+        modelo: str = "",
     ) -> Iterator[str]:
         """Pergunta e resposta em stream. Persiste no fim, com o gasto.
 
@@ -202,6 +238,9 @@ class ChatService:
         nunca o nome de um modelo. É a mesma doutrina de `open_service_url`,
         que recebe a chave do serviço e jamais a URL (decisão D-13): o cliente
         escolhe entre opções que o servidor definiu, em vez de ditar o valor.
+
+        `modelo` é o id lógico de um modelo do registro, fixado na tela
+        (REQ-08). Vazio, o router decide; id desconhecido também cai nele.
         """
         texto = (pergunta or "").strip()
         if not texto:
@@ -212,7 +251,7 @@ class ChatService:
         # em qualquer provedor: estourar o teto não é falha de provedor, e não
         # pode gastar nem a primeira tentativa da cadeia de fallback (REQ-09).
         self._exigir_orcamento()
-        rota = self._preparar_execucao(texto, estado, perfil)
+        rota = self._preparar_execucao(texto, estado, perfil, modelo)
 
         contexto = self.context.build(project, texto, estado=estado)
         sessao = self.sessions.open_for(project.id)
@@ -253,12 +292,14 @@ class ChatService:
                 partes.append(pedaco)
                 yield pedaco
             resultado = execucao.resultado
+            self._anotar_quem_respondeu(resultado, perfil)
             tokens_in = resultado.tokens_in if resultado else contexto.tokens
             tokens_out = resultado.tokens_out if resultado else 0
         else:
             for pedaco in rota.provedor.stream(pedido):
                 partes.append(pedaco)
                 yield pedaco
+            self._anotar_quem_respondeu(None, perfil, rota.provedor)
             uso = getattr(rota.provedor, "last_usage", None)
             tokens_in = getattr(uso, "tokens_in", 0) or contexto.tokens
             tokens_out = getattr(uso, "tokens_out", 0) or 0
@@ -290,7 +331,9 @@ class ChatService:
                 "couberam no orçamento de tokens)_"
             )
 
-    def ask_quick(self, pergunta: str, *, perfil: str = PERFIL_PADRAO) -> Iterator[str]:
+    def ask_quick(
+        self, pergunta: str, *, perfil: str = PERFIL_PADRAO, modelo: str = ""
+    ) -> Iterator[str]:
         """Pergunta avulsa, **sem projeto e sem contexto**.
 
         É o modo "agente de terminal": "como desfaço um commit?", "o que
@@ -323,7 +366,7 @@ class ChatService:
 
         self._exigir_ia_ligada()
         self._exigir_orcamento()
-        rota = self._preparar_execucao_rapida(texto, perfil)
+        rota = self._preparar_execucao_rapida(texto, perfil, modelo)
 
         pedido = AIRequest(
             messages=[Message(role="user", content=texto)],
@@ -351,12 +394,14 @@ class ChatService:
                 partes.append(pedaco)
                 yield pedaco
             resultado = execucao.resultado
+            self._anotar_quem_respondeu(resultado, perfil)
             tokens_in = resultado.tokens_in if resultado else 0
             tokens_out = resultado.tokens_out if resultado else 0
         else:
             for pedaco in rota.provedor.stream(pedido):
                 partes.append(pedaco)
                 yield pedaco
+            self._anotar_quem_respondeu(None, perfil, rota.provedor)
             uso = getattr(rota.provedor, "last_usage", None)
             tokens_in = getattr(uso, "tokens_in", 0) or 0
             tokens_out = getattr(uso, "tokens_out", 0) or 0
@@ -453,6 +498,26 @@ class ChatService:
             self._por_perfil[perfil] = build_provider(self.settings, model=self._modelo(perfil))
         return self._por_perfil[perfil]
 
+    def _anotar_quem_respondeu(self, resultado, perfil: str, provedor=None) -> None:  # type: ignore[no-untyped-def]
+        """Guarda quem respondeu, para a rota repassar à tela depois do stream.
+
+        Pelo runner, é o candidato que de fato respondeu (pode ser o segundo da
+        cadeia). Pelo caminho antigo do `.env`, é o provedor único do perfil.
+        Dublê de teste injetado não tem nome a mostrar, e aí não se anota nada.
+        """
+        if resultado is not None:
+            self.quem_respondeu = {
+                "modelo": resultado.modelo,
+                "model": resultado.modelo_real,
+                "provider": resultado.provider,
+            }
+        elif provedor is not None and provedor is not self.provider:
+            self.quem_respondeu = {
+                "modelo": "",
+                "model": self._modelo(perfil),
+                "provider": self.settings.ai_provider,
+            }
+
     def _modelo(self, perfil: str) -> str:
         """Nome do modelo do perfil. Perfil desconhecido cai no padrão.
 
@@ -475,7 +540,9 @@ class ChatService:
                 "Aumente DEVCOCKPIT_AI_DAILY_TOKEN_BUDGET ou espere amanhã."
             )
 
-    def _preparar_execucao(self, texto: str, estado: dict | None, perfil: str) -> Rota:
+    def _preparar_execucao(
+        self, texto: str, estado: dict | None, perfil: str, modelo: str = ""
+    ) -> Rota:
         """Classifica, roteia e decide entre o Runner e o `.env` (T-12).
 
         `self.provider` injetado vence sempre — dublê de teste não é trocado
@@ -498,9 +565,9 @@ class ChatService:
         # (`ai_model`/`ai_model_alt`) — vocabulário do caminho antigo, não os
         # ids lógicos de `configs/ai.yml`. Os dois catálogos não se traduzem
         # entre si, então o perfil não vira `EscolhaManual`: o modo AUTO do
-        # router decide, e o REQ-08 (escolha explícita de modelo do registro)
-        # fica para quando a tela mandar um id do registro, fora desta task.
-        decisao = rotear(classificacao, EscolhaManual(), self.registry)
+        # router decide. A escolha explícita do REQ-08 chega por `modelo`, que
+        # é id do registro: essa sim vira `EscolhaManual`.
+        decisao = rotear(classificacao, EscolhaManual(modelo=modelo), self.registry)
         if decisao.recusada:
             raise PerguntaRecusada(decisao.recusa)
         if decisao.candidatos:
@@ -510,7 +577,7 @@ class ChatService:
         # sempre, sem Runner e sem linha em `ai_run`.
         return Rota(classificacao.task_type, None, self._exigir_provedor(perfil))
 
-    def _preparar_execucao_rapida(self, texto: str, perfil: str) -> Rota:
+    def _preparar_execucao_rapida(self, texto: str, perfil: str, modelo: str = "") -> Rota:
         """A mesma decisão de `_preparar_execucao`, para a pergunta sem projeto (T-12.1).
 
         Existe separada porque `ask_quick` não tem `estado` (não há tela de
@@ -524,7 +591,7 @@ class ChatService:
         if self.provider is not None:
             return Rota(classificacao.task_type, None, self.provider)
 
-        decisao = rotear(classificacao, EscolhaManual(), self.registry)
+        decisao = rotear(classificacao, EscolhaManual(modelo=modelo), self.registry)
         if decisao.recusada:
             raise PerguntaRecusada(decisao.recusa)
         if decisao.candidatos:

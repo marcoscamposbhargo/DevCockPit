@@ -2562,8 +2562,33 @@
   overflow: hidden;
 }
 
-.chat-modelo + .chat-uso {
+.chat-modelo + .chat-uso,
+.chat-modelo-select + .chat-uso {
   margin-left: var(--sp-3);
+}
+
+/* Com registro (configs/ai.yml) os modelos são vários, e o nome é o que
+   decide o clique: lista, não segmentos. Mesmo tamanho da pílula acima. */
+.chat-modelo-select {
+  margin-left: auto;
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--fg-secondary);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.chat-modelo-select:hover {
+  border-color: var(--border-strong);
+  color: var(--fg-primary);
+}
+
+.chat-modelo-select:focus-visible {
+  outline: var(--ring-width) solid var(--ring);
+  outline-offset: 2px;
 }
 
 .chat-modelo__opcao {

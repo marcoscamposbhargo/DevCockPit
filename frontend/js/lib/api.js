@@ -66,13 +66,17 @@ async function request(method, path, { body, params, proposta } = {}) {
  * sabe fazer GET. O parser é curto porque o formato é curto.
  *
  * `model` é `'default'` ou `'alt'` — a escolha entre os dois modelos que o
- * servidor configurou, nunca o nome de um modelo.
+ * servidor configurou, nunca o nome de um modelo. `modelo` é o id lógico de
+ * um modelo do registro, fixado na tela; vazio, o servidor roteia sozinho.
+ *
+ * `onMeta` recebe quem respondeu, depois do texto: com fallback, só se sabe
+ * no fim da cadeia.
  */
-async function sseAsk(path, body, { onChunk, onError, model = 'default' } = {}) {
+async function sseAsk(path, body, { onChunk, onError, onMeta, model = 'default', modelo = '' } = {}) {
   const resposta = await fetch(new URL(BASE + path, window.location.origin), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-DevCockpit-Client': 'web' },
-    body: JSON.stringify({ ...body, model }),
+    body: JSON.stringify({ ...body, model, modelo }),
   });
 
   if (!resposta.ok) {
@@ -106,6 +110,7 @@ async function sseAsk(path, body, { onChunk, onError, model = 'default' } = {}) 
       const payload = JSON.parse(dados);
       if (evento === 'chunk') onChunk?.(payload.text ?? '');
       else if (evento === 'error') onError?.(payload);
+      else if (evento === 'meta') onMeta?.(payload);
     }
   }
 }

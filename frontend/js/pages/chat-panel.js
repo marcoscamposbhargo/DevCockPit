@@ -13,6 +13,7 @@ import { api } from '../lib/api.js';
 import { COMANDOS, interpretarComando, sugerir } from '../lib/comandos.js';
 import { el, mount } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
+import { quemRespondeu, seletorDoRegistro } from '../lib/modelo-escolhido.js';
 import { showError, toast } from '../lib/ui.js';
 
 const NOME_DO_CHAPEU = { devops: 'DevOps', fullstack: 'Full Stack', qa: 'QA' };
@@ -126,7 +127,11 @@ function medidor(status) {
   const fracao = teto ? Math.min(1, usado / teto) : 0;
 
   return el('div', { class: 'chat-uso' }, [
-    el('span', { class: 'field__hint', text: `${status.provider} · ${status.model}` }),
+    // Com registro, quem responde é decidido por pergunta: o modelo do `.env`
+    // aqui seria um rótulo errado na maior parte das respostas.
+    status.modelos?.length
+      ? null
+      : el('span', { class: 'field__hint', text: `${status.provider} · ${status.model}` }),
     teto
       ? el('span', { class: 'field__hint' }, [
           `${usado.toLocaleString('pt-BR')} de ${teto.toLocaleString('pt-BR')} tokens hoje`,
@@ -193,8 +198,10 @@ export async function renderChatPanel(container, project) {
     icon('search', { size: 14 }),
     'Perguntar',
   ]);
-  // `null` quando só há um modelo configurado.
-  const seletor = status.model_alt ? seletorDeModelo(status) : null;
+  // O registro (`configs/ai.yml`) manda quando existe; sem ele, o seletor
+  // antigo entre os dois modelos do `.env`. `null` quando não há escolha.
+  const doRegistro = seletorDoRegistro(status);
+  const seletor = doRegistro ?? (status.model_alt ? seletorDeModelo(status) : null);
 
   const perguntar = async () => {
     const digitado = entrada.value.trim();
@@ -214,12 +221,14 @@ export async function renderChatPanel(container, project) {
     if (conversa.querySelector?.('.panel__empty')) conversa.replaceChildren();
     conversa.append(bolha({ role: 'user', content: comando ? digitado : pergunta }));
 
-    const resposta = el('div', { class: 'chat-msg', dataset: { role: 'assistant' } }, [
-      // Só assina o chapéu quando ele foi escolhido aqui (comando ou seletor).
-      // No modo automático quem escolhe é a regra do servidor, e o painel só
-      // descobre qual foi ao recarregar o histórico — chutar seria pior.
-      el('div', { class: 'chat-msg__quem', text: assinatura({ role: 'assistant', agent: agente }) }),
-    ]);
+    // Só assina o chapéu quando ele foi escolhido aqui (comando ou seletor).
+    // No modo automático quem escolhe é a regra do servidor, e o painel só
+    // descobre qual foi ao recarregar o histórico — chutar seria pior.
+    const quem = el('div', {
+      class: 'chat-msg__quem',
+      text: assinatura({ role: 'assistant', agent: agente }),
+    });
+    const resposta = el('div', { class: 'chat-msg', dataset: { role: 'assistant' } }, [quem]);
     const texto = el('div', { class: 'chat-msg__texto', text: '…' });
     resposta.append(texto);
     conversa.append(resposta);
@@ -228,8 +237,13 @@ export async function renderChatPanel(container, project) {
       // Stream por SSE, mesmo transporte do console de job: a resposta aparece
       // conforme chega, em vez de o painel ficar mudo por dez segundos.
       await api.chatStream(project.id, pergunta, {
-        model: seletor?.dataset.escolha ?? 'default',
+        model: doRegistro ? 'default' : (seletor?.dataset.escolha ?? 'default'),
+        modelo: doRegistro?.value ?? '',
         agente,
+        onMeta: (meta) => {
+          const frase = quemRespondeu(meta);
+          if (frase) quem.textContent += ` · ${frase}`;
+        },
         onChunk: (pedaco) => {
           if (texto.textContent === '…') texto.textContent = '';
           texto.textContent += pedaco;

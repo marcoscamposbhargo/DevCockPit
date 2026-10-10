@@ -16,6 +16,7 @@
 import { api } from './api.js';
 import { el } from './dom.js';
 import { icon } from './icons.js';
+import { quemRespondeu, seletorDoRegistro } from './modelo-escolhido.js';
 import { showError, toast } from './ui.js';
 
 let aberta = null;
@@ -125,6 +126,9 @@ function montar(status) {
     return cartao;
   };
 
+  // Com registro, o modelo é escolhido aqui, e a mesma escolha vale no chat.
+  const doRegistro = status.enabled && status.configured ? seletorDoRegistro(status) : null;
+
   const perguntar = async (texto, perfil) => {
     entrada.disabled = true;
     resposta.replaceChildren(el('span', { class: 'loading', text: 'Pensando…' }));
@@ -155,10 +159,15 @@ function montar(status) {
 
     const saida = el('div', { class: 'quick-ask__texto', text: '' });
     let primeiro = true;
+    let meta = null;
 
     try {
       await api.askQuick(texto, {
         model: perfil,
+        modelo: doRegistro?.value ?? '',
+        onMeta: (dados) => {
+          meta = dados;
+        },
         onChunk: (pedaco) => {
           if (primeiro) {
             resposta.replaceChildren(saida);
@@ -185,6 +194,12 @@ function montar(status) {
     // ela veio do modelo rápido. É a orquestração barata: o modelo pequeno
     // responde sempre, o grande é a segunda tentativa — custa zero quando o
     // pequeno acerta, e ele acerta na maioria.
+    if (doRegistro) {
+      const frase = quemRespondeu(meta);
+      if (frase && !primeiro) rodape.replaceChildren(el('span', { class: 'field__hint', text: frase }));
+      return;
+    }
+
     if (perfil === 'default' && status.model_alt && !primeiro) {
       const refazer = el('button', { class: 'btn btn--sm', type: 'button' }, [
         icon('refresh', { size: 13 }),
@@ -215,10 +230,11 @@ function montar(status) {
       el('div', { class: 'quick-ask__head' }, [
         icon('terminal', { size: 15 }),
         el('h2', { text: 'Pergunta rápida' }),
-        el('span', {
+        // O modelo aparece porque a espera depende dele: saber que o rápido
+        // está respondendo explica por que voltou em 10 s e não em 40. Com
+        // registro, é a escolha em si que aparece — automático ou fixado.
+        doRegistro ?? el('span', {
           class: 'field__hint',
-          // O modelo aparece porque a espera depende dele: saber que o rápido
-          // está respondendo explica por que voltou em 10 s e não em 40.
           text: status.enabled && status.configured ? status.model : '—',
         }),
         el('button', { class: 'btn btn--sm', type: 'button', text: 'Fechar', onClick: fechar }),

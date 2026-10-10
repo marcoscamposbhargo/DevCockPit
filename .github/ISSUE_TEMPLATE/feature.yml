@@ -1,0 +1,44 @@
+name: Propor uma mudança
+description: Uma capacidade nova, ou mudar como algo funciona hoje
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de escrever: confira a lista do que o projeto
+        [decidiu não fazer](https://github.com/marcoscamposbhargo/DevCockPit/blob/main/CONTRIBUTING.md#o-que-já-foi-decidido-que-o-projeto-não-faz)
+        e os sete princípios da [constituição](https://github.com/marcoscamposbhargo/DevCockPit/blob/main/docs/constitution.md).
+        Não é burocracia — é para você não investir tempo numa proposta que
+        esbarra numa decisão já tomada.
+
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual o problema
+      description: |
+        O que dói hoje, no seu uso real. Descreva a dor, não a solução —
+        às vezes existe um caminho melhor que o que qualquer um de nós pensou
+        primeiro.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposta
+    attributes:
+      label: O que você propõe
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: O que você considerou e descartou
+      description: Se pensou em outro caminho e abandonou, dizer por quê ajuda muito.
+
+  - type: checkboxes
+    id: principios
+    attributes:
+      label: Confirmação
+      options:
+        - label: Li a constituição e acredito que esta proposta não fere nenhum dos sete princípios — ou, se ferir, digo acima qual e por que acho que vale alterá-lo.
+          required: true

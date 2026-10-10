@@ -1,0 +1,11 @@
+# Issue em branco fica desligada de propósito: os dois formulários pedem
+# versão, como roda e passos de reprodução — sem isso um defeito não é
+# investigável, e pedir depois custa um ciclo de ida e volta.
+blank_issues_enabled: false
+contact_links:
+  - name: Falha de segurança
+    url: https://github.com/marcoscamposbhargo/DevCockPit/security/advisories/new
+    about: Reporte em privado. Issue é pública e indexada em minutos — expõe quem já tem o painel instalado antes de existir correção.
+  - name: Dúvida de uso ou de decisão de projeto
+    url: https://github.com/marcoscamposbhargo/DevCockPit/blob/main/docs/constitution.md
+    about: Antes de abrir issue, veja a constituição e os ADRs — muita pergunta de "por que assim" já está respondida ali.

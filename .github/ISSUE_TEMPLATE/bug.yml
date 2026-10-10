@@ -1,0 +1,65 @@
+name: Reportar um defeito
+description: Algo que o painel faz errado, ou deixa de fazer
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Falha de segurança não vai aqui.** Use a aba *Security* ›
+        *Report a vulnerability*, ou o e-mail em [SECURITY.md](https://github.com/marcoscamposbhargo/DevCockPit/blob/main/SECURITY.md).
+        Issue é pública e indexada em minutos.
+
+  - type: textarea
+    id: o-que-aconteceu
+    attributes:
+      label: O que aconteceu
+      description: E o que você esperava que acontecesse.
+    validations:
+      required: true
+
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. Abri a tela de Ports
+        2. Cliquei em "corrigir" num projeto com porta divergente
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: versao
+    attributes:
+      label: Versão
+      description: Aparece em Settings, no topo. Se roda pelo repositório, o hash do commit (`git rev-parse --short HEAD`).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: como-roda
+    attributes:
+      label: Como você roda
+      options:
+        - Executável instalado (DevCockpit.exe)
+        - Pelo repositório (scripts/dev.ps1)
+    validations:
+      required: true
+
+  - type: input
+    id: so
+    attributes:
+      label: Sistema operacional
+      description: O projeto é Windows-first por decisão (ADR-007). Em outro SO, diga qual.
+      value: Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log, se houver
+      description: |
+        `logs/devcockpit.log`, ao lado do executável. **Confira antes de colar**
+        que não há caminho ou nome que você não queira publicar.
+      render: text

@@ -282,6 +282,12 @@ terminal exposto ao modelo · chave de API editável pela tela
 
 Não são "features futuras": exigiriam refazer o modelo de segurança inteiro.
 
+## Contribuir, reportar, licença
+
+- Pull request e ambiente de desenvolvimento: [CONTRIBUTING.md](CONTRIBUTING.md).
+- Falha de segurança **não vai em issue pública** — o canal privado está em [SECURITY.md](SECURITY.md).
+- Licença: [AGPL-3.0-or-later](LICENSE). Rodar o painel modificado como serviço acessível a outros obriga a publicar o código dessa versão.
+
 ---
 
 <div align="center">

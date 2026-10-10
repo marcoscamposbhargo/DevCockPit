@@ -4,12 +4,17 @@ version = "0.1.0"
 description = "Central local de gerenciamento dos projetos de desenvolvimento"
 requires-python = ">=3.11"
 readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    # Piso em 2.0 de propósito, não em 2.1: a suíte inteira (970 testes)
+    # passou com 2.1.4 em 2026-10-10, e nada aqui usa API exclusiva de
+    # 2.1 — apertar o piso só excluiria quem está em 2.0 sem ganho.
     "sqlalchemy>=2.0",
     "alembic>=1.14",
     "pyyaml>=6.0",
@@ -41,7 +46,9 @@ build = [
 ]
 
 [build-system]
-requires = ["setuptools>=68"]
+# >=77: PEP 639 (`license` como expressão SPDX + `license-files`). Abaixo disso
+# o build falha em vez de ignorar a licença declarada.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

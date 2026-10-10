@@ -121,10 +121,27 @@ function seletorDeModelo(status) {
   return caixa;
 }
 
+/** US$ com duas casas, ou quatro quando o valor some em duas (US$ 0,0060). */
+function dolares(valor) {
+  const casas = valor > 0 && valor < 0.01 ? 4 : 2;
+  return `US$ ${valor.toLocaleString('pt-BR', {
+    minimumFractionDigits: casas,
+    maximumFractionDigits: casas,
+  })}`;
+}
+
 function medidor(status) {
-  const teto = status.daily_budget || 0;
-  const usado = status.tokens_today || 0;
+  // Com teto em dinheiro, ele é o que a barra mede: tokens de modelos
+  // diferentes custam até 30× diferente, e o dinheiro é o que acaba.
+  const emDinheiro = (status.daily_cost_budget || 0) > 0;
+  const teto = emDinheiro ? status.daily_cost_budget : status.daily_budget || 0;
+  const usado = emDinheiro ? status.cost_today || 0 : status.tokens_today || 0;
   const fracao = teto ? Math.min(1, usado / teto) : 0;
+  const tokens = (status.tokens_today || 0).toLocaleString('pt-BR');
+  const legenda = emDinheiro
+    ? `${dolares(usado)} de ${dolares(teto)} hoje`
+    : `${usado.toLocaleString('pt-BR')} de ${teto.toLocaleString('pt-BR')} tokens hoje`;
+  const tom = fracao >= 1 ? 'critico' : fracao >= 0.8 ? 'atencao' : null;
 
   return el('div', { class: 'chat-uso' }, [
     // Com registro, quem responde é decidido por pergunta: o modelo do `.env`
@@ -133,9 +150,9 @@ function medidor(status) {
       ? null
       : el('span', { class: 'field__hint', text: `${status.provider} · ${status.model}` }),
     teto
-      ? el('span', { class: 'field__hint' }, [
-          `${usado.toLocaleString('pt-BR')} de ${teto.toLocaleString('pt-BR')} tokens hoje`,
-          el('span', { class: 'bar' }, [
+      ? el('span', { class: 'field__hint', title: emDinheiro ? `${tokens} tokens hoje` : null }, [
+          legenda,
+          el('span', { class: 'bar', dataset: tom ? { tom } : {} }, [
             el('span', {
               class: 'bar__fill',
               // Com qualquer gasto, no mínimo um ponto da altura da barra: 483

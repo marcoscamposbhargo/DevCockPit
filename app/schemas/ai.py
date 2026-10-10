@@ -183,6 +183,11 @@ class AiStatusOut(BaseModel):
     tokens_today: int = 0
     daily_budget: int = 0
     calls_today: int = 0
+    #: Custo estimado do dia em US$, somado de `ai_run`. Só o que passou pelo
+    #: registro; o caminho antigo do `.env` não tem preço.
+    cost_today: float = 0.0
+    #: Teto em US$ por dia. Zero = sem teto em dinheiro.
+    daily_cost_budget: float = 0.0
     #: Modelos do registro (`configs/ai.yml`) que a tela pode fixar (REQ-08).
     #: Vazio sem registro — aí vale o seletor antigo de `model`/`model_alt`.
     modelos: list[ModeloEscolhivelOut] = Field(default_factory=list)

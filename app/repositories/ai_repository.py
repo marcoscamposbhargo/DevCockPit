@@ -275,6 +275,20 @@ class RunRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
+    def custo_de_hoje(self) -> float:
+        """Custo estimado desde a meia-noite **local**, para o teto em dinheiro.
+
+        Aqui `NULL` vira zero, ao contrário de `aggregate`: o teto precisa de um
+        número para comparar, e tentativa sem preço declarado (o local, ou
+        modelo sem tabela) não gastou dinheiro que se saiba.
+        """
+        agora = utcnow().astimezone()
+        meia_noite = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+        stmt = select(func.coalesce(func.sum(AiRun.estimated_cost), 0.0)).where(
+            AiRun.created_at >= meia_noite
+        )
+        return float(self.session.execute(stmt).scalar_one())
+
     def aggregate(
         self,
         *,

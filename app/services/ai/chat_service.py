@@ -45,7 +45,12 @@ from app.core.errors import DomainError, ValidationError
 from app.models.ai import AiMessage, AiSession
 from app.models.base import utcnow
 from app.models.project import Project
-from app.repositories.ai_repository import MessageRepository, SessionRepository, UsageRepository
+from app.repositories.ai_repository import (
+    MessageRepository,
+    RunRepository,
+    SessionRepository,
+    UsageRepository,
+)
 from app.services.ai.classifier import classificar
 from app.services.ai.context_engine import ContextEngine
 from app.services.ai.especialistas import VERSAO_DOS_PROMPTS, escolher
@@ -192,6 +197,7 @@ class ChatService:
         self.messages = MessageRepository(session)
         self.sessions = SessionRepository(session)
         self.usage = UsageRepository(session)
+        self.runs = RunRepository(session)
         self.context = ContextEngine(session, max_tokens=settings.ai_max_context_tokens)
 
     # --- estado ---
@@ -219,6 +225,8 @@ class ChatService:
             "tokens_today": hoje.tokens_in + hoje.tokens_out,
             "daily_budget": self.settings.ai_daily_token_budget,
             "calls_today": hoje.calls,
+            "cost_today": round(self.runs.custo_de_hoje(), 6),
+            "daily_cost_budget": self.settings.ai_daily_cost_budget,
             "modelos": self.modelos_escolhiveis(),
         }
 
@@ -580,15 +588,24 @@ class ChatService:
 
     def _exigir_orcamento(self) -> None:
         teto = self.settings.ai_daily_token_budget
-        if not teto:
-            return
-        hoje = self.usage.today()
-        gasto = hoje.tokens_in + hoje.tokens_out
-        if gasto >= teto:
-            raise BudgetExceeded(
-                f"O orçamento de {teto} tokens do dia acabou ({gasto} usados). "
-                "Aumente DEVCOCKPIT_AI_DAILY_TOKEN_BUDGET ou espere amanhã."
-            )
+        if teto:
+            hoje = self.usage.today()
+            gasto = hoje.tokens_in + hoje.tokens_out
+            if gasto >= teto:
+                raise BudgetExceeded(
+                    f"O orçamento de {teto} tokens do dia acabou ({gasto} usados). "
+                    "Aumente DEVCOCKPIT_AI_DAILY_TOKEN_BUDGET ou espere amanhã."
+                )
+
+        teto_em_dinheiro = self.settings.ai_daily_cost_budget
+        if teto_em_dinheiro:
+            gasto_em_dinheiro = self.runs.custo_de_hoje()
+            if gasto_em_dinheiro >= teto_em_dinheiro:
+                raise BudgetExceeded(
+                    f"O orçamento de US$ {teto_em_dinheiro:.2f} do dia acabou "
+                    f"(US$ {gasto_em_dinheiro:.4f} estimados). Aumente "
+                    "DEVCOCKPIT_AI_DAILY_COST_BUDGET ou espere amanhã."
+                )
 
     def _preparar_execucao(
         self, texto: str, estado: dict | None, perfil: str, modelo: str = ""

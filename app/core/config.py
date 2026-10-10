@@ -141,6 +141,10 @@ class Settings(BaseSettings):
     #: Teto de tokens por dia. Zero desliga o teto — desaconselhado: custo
     #: invisível é o que um dia assusta.
     ai_daily_token_budget: int = 200_000
+    #: Teto de custo estimado por dia, em US$. Zero desliga. Mede o que o teto
+    #: de tokens não mede: 200.000 tokens custam ~US$ 0,13 no DeepSeek e até
+    #: US$ 4 no Claude. Vale só para o que passa pelo registro (`ai_run`).
+    ai_daily_cost_budget: float = 0.0
     #: Registro declarativo de providers e modelos. Arquivo ausente não é erro:
     #: sem ele o Cockpit AI segue montando um provider único a partir das
     #: variáveis acima, como antes (REQ-04).

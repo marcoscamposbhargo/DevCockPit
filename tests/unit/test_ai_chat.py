@@ -16,6 +16,7 @@ from app.core.config import Settings
 from app.models.ai import MemoryKind
 from app.models.ai_run import AiRun
 from app.models.project import Project
+from app.repositories.ai_repository import RunRepository
 from app.services.ai import redaction
 from app.services.ai.chat_service import AiDisabled, BudgetExceeded, ChatService
 from app.services.ai.context_engine import ContextEngine
@@ -935,3 +936,58 @@ def test_provedor_roteado_sem_registro_continua_no_env(session: Session) -> None
     provedor = chat.provedor_roteado("reinicia o serviço")
 
     assert not hasattr(provedor, "rota")
+
+
+# --- teto diário em dinheiro ----------------------------------------------
+
+
+def _gasto_gravado(session: Session, custo: float | None) -> None:
+    RunRepository(session).add(
+        AiRun(
+            correlation_id="c-1",
+            provider="nuvem-a",
+            model="rapido",
+            task_type="qa",
+            decision="auto",
+            status="ok",
+            estimated_cost=custo,
+        )
+    )
+
+
+def test_teto_em_dinheiro_barra_antes_de_tentar_provider(
+    session: Session, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """Tokens do Claude custam até 30× os do DeepSeek: o teto que vale é o de US$."""
+    roteiro = {"nuvem-a": ProvedorRoteirizado("nuvem-a")}
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    _gasto_gravado(session, 0.60)
+    _gasto_gravado(session, 0.45)
+    chat = ChatService(
+        session,
+        config(ai_provider="none", ai_daily_cost_budget=1.0),
+        registry=registro_com_fallback,
+    )
+
+    with pytest.raises(BudgetExceeded, match="US\$ 1.00"):
+        list(chat.ask_quick("como desfaço um commit?"))
+
+    assert roteiro["nuvem-a"].last_request is None
+
+
+def test_teto_em_dinheiro_zero_nao_barra(session: Session) -> None:
+    _gasto_gravado(session, 50.0)
+    chat = ChatService(session, config(ai_daily_cost_budget=0), registry=AiConfig())
+
+    assert "".join(chat.ask_quick("como vejo a porta 3000?"))
+
+
+def test_status_traz_o_custo_do_dia_sem_contar_tentativa_sem_preco(session: Session) -> None:
+    _gasto_gravado(session, 0.006)
+    _gasto_gravado(session, None)
+    chat = ChatService(session, config(ai_daily_cost_budget=2.5), registry=AiConfig())
+
+    status = chat.status()
+
+    assert status["cost_today"] == pytest.approx(0.006)
+    assert status["daily_cost_budget"] == 2.5

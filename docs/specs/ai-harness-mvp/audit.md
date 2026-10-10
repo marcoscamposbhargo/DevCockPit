@@ -68,6 +68,27 @@ Nenhum REQ indicou que a spec estava errada frente à realidade construída — 
   (`C:/Users/User/DevCockpit/data/devcockpit.db`) e reconstrução/reinstalação
   do executável na mesma sessão.
 
+## Adendo de 2026-10-10 — REQ-08 alcançável pela tela
+
+A auditoria marcou o REQ-08 como cumprido olhando o router, e o router de fato
+honrava `EscolhaManual`. Mas nenhuma tela mandava a escolha: `chat_service`
+passava sempre `EscolhaManual()` vazia, e o comentário dizia que isso ficava
+"para quando a tela mandar um id do registro". Na prática, a pessoa não tinha
+como pedir o Claude — e a tela ainda mostrava o modelo do `.env` (Gemma) como
+rótulo, embora quem respondesse fosse decidido pelo router.
+
+Fechado nos commits `984660f` e `372358e`: `ChatAsk.modelo`, `modelos` em
+`/ai/status`, `event: meta` com quem respondeu, e um `<select>` no chat e na
+pergunta rápida. É o mesmo achado da T-13 (tela sem link na sidebar):
+"alcançável pelo usuário" faz parte do critério de pronto, mesmo quando a task
+lista só arquivos de backend.
+
+A primeira pergunta real ao `claude-opus-5-5` revelou ainda que o
+`AnthropicProvider` mandava `temperature`, que o modelo recusa com 400. A
+sondagem do REQ-13 não pegava porque `/v1/models` não recebe corpo. Depois da
+correção, `ai_run` gravou `decision=manual`, 228/255 tokens e US$ 0,006 — o
+gasto medido que faltava desde a T-14.
+
 ## Conclusão
 
 Ciclo convergido na primeira rodada de auditoria — não há lacuna que justifique

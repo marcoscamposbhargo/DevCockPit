@@ -193,6 +193,11 @@ DEVCOCKPIT_AI_MAX_CONTEXT_TOKENS=4000
 `DEVCOCKPIT_AI_MODEL_ALT` vazio desliga a escolha, e o seletor nem aparece na
 tela — oferecer escolha entre uma opção só é ruído.
 
+Com `configs/ai.yml` presente, este par rápido/caprichado sai da tela. No lugar
+entra uma lista com **Automático** e todos os modelos do registro que têm chave
+no ambiente, locais incluídos. Ver a seção "Cockpit AI — conversa" em
+`docs/06-api-specification.md`.
+
 **Ligar a IA é ato fora da interface, de propósito** (defesa D-A1). Nenhuma
 tela do painel edita essas variáveis: a API não amplia a si mesma.
 

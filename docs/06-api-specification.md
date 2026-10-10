@@ -328,6 +328,54 @@ usa `after`, a troca de transporte não duplica nem perde linha.
 }
 ```
 
+## Cockpit AI — conversa
+
+| Endpoint | Descrição |
+|----------|-----------|
+| `GET /api/ai/status` | se dá para conversar, o gasto do dia e os modelos que a tela pode fixar |
+| `POST /api/ai/ask` | pergunta avulsa, sem contexto de projeto (SSE) |
+| `POST /api/projects/{id}/chat` | pergunta com o contexto do projeto (SSE) |
+
+Corpo das duas perguntas:
+
+```json
+{ "question": "o que faz git stash?", "modelo": "claude-principal", "agent": null }
+```
+
+`modelo` é o **id lógico** de um modelo de `configs/ai.yml`, nunca o nome no
+fornecedor (P-06). Vazio, o router escolhe pela complexidade. Id que o registro
+não conhece cai no automático, sem erro. Pergunta classificada como privada vai
+só para modelo local, mesmo com um modelo de nuvem fixado (REQ-07 vem antes do
+REQ-08). `model` (`"default"`/`"alt"`) continua aceito: escolhe entre os dois
+modelos do `.env`, e só vale quando não há registro.
+
+`GET /api/ai/status` devolve em `modelos` só os que têm provider habilitado
+**e** chave no ambiente — oferecer um que falharia na primeira tentativa por
+falta de chave é pior que não oferecer:
+
+```json
+"modelos": [
+  { "id": "claude-principal", "model": "claude-opus-5-5", "provider": "anthropic", "local": false }
+]
+```
+
+O stream emite:
+
+```
+event: chunk
+data: {"text": "Guarda numa pilha "}
+
+event: meta
+data: {"modelo": "claude-principal", "model": "claude-opus-5-5", "provider": "anthropic"}
+
+event: end
+data: {}
+```
+
+`meta` vem **depois** do texto: com fallback, quem respondeu só se sabe quando
+a cadeia termina, e pode não ser o modelo pedido. Falha vira
+`event: error` com `{"code", "message"}`, e aí não há `meta` nem `end`.
+
 ## Dashboard
 
 ### `GET /api/dashboard`

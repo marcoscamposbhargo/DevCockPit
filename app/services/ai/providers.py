@@ -495,10 +495,15 @@ BASE_URL_PADRAO = {
     "local": "http://127.0.0.1:11434",
 }
 
+#: Último recurso, quando nem `configs/ai.yml` nem `DEVCOCKPIT_AI_MODEL` dizem
+#: qual modelo usar. É o padrão do PROJETO, não o desta máquina: o local aqui
+#: é deliberadamente pequeno, porque quem clona o repositório pode não ter RAM
+#: para um modelo grande, e "modelo não encontrado" na primeira pergunta é uma
+#: recepção ruim. Quem quer outro declara no registro.
 MODELO_PADRAO = {
     "anthropic": "claude-sonnet-5",
     "openai": "gpt-4o-mini",
-    "local": "llama3.1",
+    "local": "llama3.2:3b",
 }
 
 

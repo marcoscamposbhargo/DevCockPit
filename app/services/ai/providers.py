@@ -239,10 +239,13 @@ class AnthropicProvider(_HttpProvider):
         }
 
     def _body(self, request: AIRequest, stream: bool) -> dict:
+        # Sem `temperature`, de propósito: os modelos atuais da Anthropic
+        # recusam o campo com 400 ("`temperature` is deprecated for this
+        # model"), visto na primeira pergunta real ao claude-opus-5-5 em
+        # 2026-10-10. A sondagem de /v1/models não pegava — ela não manda corpo.
         return {
             "model": self.model,
             "max_tokens": request.max_output_tokens,
-            "temperature": request.temperature,
             "system": request.system,
             "messages": [{"role": m.role, "content": m.content} for m in request.messages],
             "stream": stream,

@@ -390,3 +390,16 @@ def test_erro_do_generico_diz_qual_fornecedor_falhou() -> None:
 
     with pytest.raises(ProviderError, match="Falha ao falar com kimi"):
         provedor.complete(pedido())
+
+
+def test_anthropic_nao_manda_temperature() -> None:
+    """O claude-opus-5-5 recusa o campo com 400; a sondagem não pegava.
+
+    Visto na primeira pergunta real em 2026-10-10: `/v1/models` respondia 200,
+    e toda pergunta falhava com "`temperature` is deprecated for this model".
+    """
+    provedor = AnthropicProvider(api_key="k", model="claude-x", base_url="http://a.invalido")
+
+    corpo = provedor._body(pedido(), stream=True)
+
+    assert "temperature" not in corpo

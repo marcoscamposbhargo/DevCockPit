@@ -51,7 +51,7 @@ from app.services.ai.context_engine import ContextEngine
 from app.services.ai.especialistas import VERSAO_DOS_PROMPTS, escolher
 from app.services.ai.model_router import Decisao, EscolhaManual
 from app.services.ai.model_router import escolher as rotear
-from app.services.ai.providers import AIProvider, AIRequest, Message
+from app.services.ai.providers import AIProvider, AIRequest, AIResponse, AIUsage, Message
 from app.services.ai.registry import AiConfig, get_ai_config
 from app.services.ai.runner import PerguntaRecusada, Runner
 
@@ -116,6 +116,41 @@ class RespostaDoChat:
     context_tokens: int
     cortados: list[str]
     model: str
+
+
+class _ProvedorPeloRunner:
+    """`complete()` que percorre a cadeia do Runner em vez de um provedor só.
+
+    Existe para o orquestrador, que só conhece `provedor.complete(pedido)`:
+    assim ele ganha fallback e `ai_run` sem saber que o Runner existe.
+    """
+
+    def __init__(self, chat: ChatService, rota: Rota) -> None:
+        self.chat = chat
+        self.rota = rota
+        escolhido = rota.decisao.escolhido if rota.decisao else None
+        self.name = escolhido.provider_id if escolhido else ""
+        self.model = escolhido.modelo.model if escolhido else ""
+
+    def complete(self, pedido: AIRequest) -> AIResponse:
+        runner = Runner(self.chat.session, self.chat.settings, config=self.chat.registry)
+        execucao = runner.executar(
+            self.rota.decisao,
+            pedido,
+            task_type=self.rota.task_type,
+            correlation_id=str(uuid.uuid4()),
+        )
+        texto = "".join(execucao.stream())
+        resultado = execucao.resultado
+        uso = AIUsage(
+            tokens_in=resultado.tokens_in if resultado else 0,
+            tokens_out=resultado.tokens_out if resultado else 0,
+        )
+        self.chat.usage.add(tokens_in=uso.tokens_in, tokens_out=uso.tokens_out)
+        self.chat._anotar_quem_respondeu(resultado, PERFIL_PADRAO)
+        return AIResponse(
+            text=texto, usage=uso, model=resultado.modelo_real if resultado else ""
+        )
 
 
 @dataclass
@@ -464,6 +499,21 @@ class ChatService:
         teto próprios, mas não deveria remontar a configuração por conta.
         """
         return self._exigir_provedor(perfil)
+
+    def provedor_roteado(self, texto: str, perfil: str = PERFIL_PADRAO):  # type: ignore[no-untyped-def]
+        """Um provedor para `texto` escolhido pelo router, com fallback e `ai_run`.
+
+        É o que o orquestrador usa quando a regra não decide. Antes ele pegava
+        `provedor_do_perfil`, o provedor único do `.env` — nesta máquina o
+        Gemma local, a 2,5 tok/s, sem fallback, sem custo gravado e fora do
+        teto do dia. Agora passa pela mesma decisão de `ask_quick`: sem
+        registro, cai no `.env` de sempre (REQ-04).
+        """
+        self._exigir_orcamento()
+        rota = self._preparar_execucao_rapida(texto, perfil)
+        if rota.decisao is None:
+            return rota.provedor
+        return _ProvedorPeloRunner(self, rota)
 
     def _exigir_ia_ligada(self) -> None:
         if not self.settings.ai_enabled:

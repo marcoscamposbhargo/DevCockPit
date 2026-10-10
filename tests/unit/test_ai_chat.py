@@ -899,3 +899,39 @@ def test_status_oferece_so_modelo_com_chave_no_ambiente(
         "provider": "nuvem-a",
         "local": False,
     }
+
+
+# --- a proposta de ação também passa pelo router --------------------------
+
+
+def test_provedor_roteado_usa_o_runner_com_fallback_e_ai_run(
+    session: Session, registro_com_fallback: AiConfig, monkeypatch
+) -> None:
+    """O orquestrador pegava o provedor do `.env` (o Gemma local), sem fallback."""
+    roteiro = {
+        "nuvem-a": ProvedorRoteirizado(
+            "nuvem-a", erro=ProviderError("O provedor respondeu 503. serviço indisponível")
+        ),
+        "nuvem-b": ProvedorRoteirizado("nuvem-b", resposta='{"action": null}', tokens=(30, 5)),
+    }
+    _monkeypatch_fabrica(monkeypatch, roteiro)
+    chat = ChatService(session, config(ai_provider="none"), registry=registro_com_fallback)
+
+    provedor = chat.provedor_roteado("reinicia aquele serviço que caiu")
+    resposta = provedor.complete(AIRequest(messages=[Message(role="user", content="x")]))
+
+    assert resposta.text.strip() == '{"action": null}'
+    assert (resposta.usage.tokens_in, resposta.usage.tokens_out) == (30, 5)
+    assert session.query(AiRun).count() == 2, "a falha e o acerto, os dois gravados"
+    assert chat.usage.today().tokens_in == 30, "o gasto entra no teto do dia"
+
+
+def test_provedor_roteado_sem_registro_continua_no_env(session: Session) -> None:
+    """REQ-04: sem `configs/ai.yml`, o orquestrador segue com o provedor de sempre."""
+    chat = ChatService(
+        session, config(ai_provider="fake", ai_model="fake-1"), registry=AiConfig()
+    )
+
+    provedor = chat.provedor_roteado("reinicia o serviço")
+
+    assert not hasattr(provedor, "rota")

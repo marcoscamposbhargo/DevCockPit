@@ -302,6 +302,17 @@ def test_escolha_manual_vence_e_marca_manual(registro: AiConfig) -> None:
     assert decisao.escolhido.modelo_id == "janelao"
 
 
+def test_escolha_manual_mantem_a_cadeia_automatica_como_reserva(registro: AiConfig) -> None:
+    """Fixar um modelo não desliga o fallback (REQ-09): o resto vem atrás, sem repetir."""
+    decisao = escolher(_pergunta(10), EscolhaManual(modelo="janelao"), config=registro)
+    automatica = escolher(_pergunta(10), config=registro)
+
+    ids = _ids(decisao)
+    assert ids[0].startswith("janelao@")
+    assert len(ids) == len(set(ids)), "nenhum par modelo × provider tentado duas vezes"
+    assert set(_ids(automatica)) <= set(ids)
+
+
 def test_provider_manual_recorta_a_escolha_automatica(registro: AiConfig) -> None:
     decisao = escolher(_pergunta(90), EscolhaManual(provider="nuvem-a"), config=registro)
 

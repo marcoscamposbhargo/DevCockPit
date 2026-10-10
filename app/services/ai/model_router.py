@@ -167,7 +167,19 @@ def escolher(
     if pedido.modelo:
         candidatos = _pares(registro, _modelo_pedido(registro, pedido.modelo), pedido.provider)
         if candidatos:
-            return Decisao(candidatos, "manual", f"modelo {pedido.modelo!r} pedido na tela")
+            # O pedido vai na frente, e a cadeia automática vem atrás como
+            # reserva. Sem ela, fixar um modelo desligava o fallback: o Claude
+            # fora do ar matava a pergunta mesmo com o DeepSeek de pé (REQ-09).
+            reserva = escolher(
+                classificacao, EscolhaManual(provider=pedido.provider), registro
+            )
+            vistos = {(c.modelo_id, c.provider_id) for c in candidatos}
+            atras = tuple(
+                c for c in reserva.candidatos if (c.modelo_id, c.provider_id) not in vistos
+            )
+            return Decisao(
+                candidatos + atras, "manual", f"modelo {pedido.modelo!r} pedido na tela"
+            )
         # Id que o registro não conhece, ou cujo provider está desligado, não
         # pode virar nome cru enviado ao fornecedor (**P-06**): segue o
         # automático, dizendo na frase por que o pedido não valeu.

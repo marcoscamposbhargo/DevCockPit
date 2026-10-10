@@ -435,7 +435,7 @@ def propose_action(
     if proposta is None:
         try:
             chat.exigir_ia_ligada()
-            provedor = chat.provedor_do_perfil(payload.model)
+            provedor = chat.provedor_roteado(payload.question, payload.model)
         except DomainError as erro:
             return ProposeOut(message=erro.message)
         try:

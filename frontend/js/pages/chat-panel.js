@@ -138,7 +138,11 @@ function medidor(status) {
           el('span', { class: 'bar' }, [
             el('span', {
               class: 'bar__fill',
-              style: `width:${(fracao * 100).toFixed(1)}%`,
+              // Com qualquer gasto, no mínimo um ponto da altura da barra: 483
+              // de 200.000 tokens dão 0,2 px, e a barra parecia sem uso nenhum.
+              style: usado
+                ? `width:max(6px, ${(fracao * 100).toFixed(1)}%)`
+                : 'width:0',
             }),
           ]),
         ])
